@@ -8,6 +8,7 @@ from tensorflow_models import nlp # need for PositionEmbedding without cannot lo
 from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances # need for unifrac_loss_var without cannot load base_model
 from amplicon_gpt.losses import regression_loss_variance, regression_loss_difference_in_means, regression_loss_combined, regression_loss_normal
 from amplicon_gpt.layers import NucleotideSequenceEmbedding, ASVEncoder, NeuralMemory
+
 physical_devices = tf.config.list_physical_devices('GPU')
 for device in physical_devices:
   tf.config.experimental.set_memory_growth(device, True)
@@ -55,65 +56,61 @@ def transfer_learn_base(lstm_seq_out, batch_size, max_num_per_seq, dropout, root
     norm_first = False
     conv_1_filter = 256
     conv_2_filter = 64
+    MAX_SEQ = 1600
 
-
-    input = tf.keras.Input(shape=(None, 150), batch_size=16,
+    input = tf.keras.Input(shape=(None, max_num_per_seq), batch_size=16,
                                dtype=tf.int32, name='model_input')
     
+    """
+    encode individual asvs
+    """
     output = NucleotideSequenceEmbedding(32, dropout)(input)
-    # output = ASVEncoder(dropout)(output)
-    # """
-    # Get ASV position encodings
-    # """
+
+    """
+    encode entire sample
+    """
+    output *= tf.math.sqrt(tf.cast(nucleotide_embedding_dim, dtype=tf.float32))
     microbime_pos = nlp.layers.PositionEmbedding(max_length=MAX_SEQ)(output)
-    microbime_pos = tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon)(microbime_pos)
+    output += microbime_pos
+    encoding_blocks = [
+        keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
+                activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
+                name=f'base_encoder_block_{i}')
+        for i in range(num_enc_layers)]
+    output = encoding_blocks[0](output)
+    for block in encoding_blocks[1:]:
+        output = block(output)
 
-    # # """
-    # # Transformer AVS encoder
-    # # """
-    # mask = tf.reduce_any(tf.not_equal(input, 0), axis=2)
-    # output *= tf.math.sqrt(tf.cast(nucleotide_embedding_dim, dtype=tf.float32))
-    output = tf.keras.layers.Add()([output, microbime_pos])
-    # microbime_pos = tf.keras.layers.Dropout(dropout)(microbime_pos)
-    # encoders = [keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
-    #                                    activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
-    #                                    name=f'base_encoder_block_{i}')
-    #                 for i in range(num_enc_layers)]
-    # output = encoders[0](output, padding_mask=mask)
-    # for encoder in encoders[1:]:
-    #     output = encoder(output, padding_mask=mask)
+    """
+    feature component ie use sample encodings to calculate unifrac
+    """
+    output = tf.keras.layers.LSTM(32, dropout=dropout, name='asv_lstm')(output)
+    output = tf.expand_dims(output, axis=-1)
+    conv_config = [
+        create_conv_config(num_filters=32, kernel_size=5, stride=1, padding='valid'),
+        create_conv_config(num_filters=64, kernel_size=5, stride=1, padding='valid'),
+    ]
+    for i, (conv_filter, kernel_size, stride, padding) in enumerate(conv_config):
+        output = tf.keras.layers.Conv1D(conv_filter, kernel_size, 
+                                        strides=stride, padding=padding, activation='relu',
+                                        name=f'base_conv_{i}_1')(output)
+        output = tf.keras.layers.Dropout(dropout)(output, training=True)
+        output = tf.keras.layers.Conv1D(conv_filter, kernel_size, 
+                                        strides=stride, padding=padding, activation='relu',
+                                        name=f'base_conv_{i}_2')(output)
+        output = tf.keras.layers.Dropout(dropout)(output, training=True)
+        output = tf.keras.layers. MaxPool1D(2)(output)
+    
+    output = tf.keras.layers.Flatten()(output)
+    output = tf.keras.layers.Dense(emb_vec, use_bias=False, name='base_output')(output)
 
-    # """
-    # LSTM
-    # """
-    # output = tf.keras.layers.LSTM(lstm_seq_out, dropout=dropout, name='base_lstm')(output, mask=mask)
-    # output = tf.keras.layers.Dropout(dropout)(output)
-    # output = tf.expand_dims(output, axis=-1)
-    output = NeuralMemory(4, 128, 64)(output)
-    
-    # conv_config = [
-    #     create_conv_config(num_filters=32, kernel_size=5, stride=1, padding='valid'),
-    #     create_conv_config(num_filters=64, kernel_size=5, stride=1, padding='valid'),
-    # ]
-    # for i, (conv_filter, kernel_size, stride, padding) in enumerate(conv_config):
-    #     output = tf.keras.layers.Conv1D(conv_filter, kernel_size, 
-    #                                     strides=stride, padding=padding, activation='relu',
-    #                                     name=f'base_conv_{i}_1')(output)
-    #     output = tf.keras.layers.Dropout(dropout)(output, training=True)
-    #     output = tf.keras.layers.Conv1D(conv_filter, kernel_size, 
-    #                                     strides=stride, padding=padding, activation='relu',
-    #                                     name=f'base_conv_{i}_2')(output)
-    #     output = tf.keras.layers.Dropout(dropout)(output, training=True)
-    #     output = tf.keras.layers. MaxPool1D(2)(output)
-    
-    # output = tf.keras.layers.Flatten()(output)
-    # # output = tf.keras.layers.Dense(256, activation='relu')(output)
-    # output = tf.keras.layers.Dense(emb_vec, use_bias=False, name='base_output')(output)
-    # model = tf.keras.Model(inputs=input, outputs=output)
-        
-    # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=100000, decay_rate=0.99, staircase=True)
-    # optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-9)
-    # model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
+    """
+    compile model
+    """
+    model = tf.keras.Model(inputs=input, outputs=output)    
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=100000, decay_rate=0.99, staircase=True)
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-9)
+    model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
     return model
 
 

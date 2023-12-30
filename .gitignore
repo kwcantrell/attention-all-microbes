@@ -5,4 +5,6 @@ data/*
 paper/*
 pcoa/*
 veg-prediction/*
-.Trash-o/*
+hazel/*
+*.ipynb
+.Trash-0

@@ -1,4 +1,5 @@
 import os
+from collections import namedtuple
 import tensorflow as tf
 import keras_nlp
 from amplicon_gpt.initializers import UnitUniform
@@ -16,37 +17,102 @@ norm_first = False
 conv_1_filter = 256
 conv_2_filter = 64
 
+@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="HyenaProjection")
+class HyenaProjection(tf.keras.layers.Layer):
+    def __init__(self, d_model, N, conv_len):
+        self.d_model = d_model
+        self.N = N,
+        self.linear = tf.keras.layers.Dense(d_model * (N + 1))
+        self.conv = tf.keras.layers.Conv1D(filters=d_model * (N + 1), groups=d_model * (N + 1), padding='causal')
+
+    def call(self, input):
+        z = self.linear(input)
+        z = tf.transpose(z, perm=[0, 2, 1])
+
+        L = tf.shape(z)[2]
+        z = self.conv(z)[:, :, :L]
+        z = tf.unstack(z, axis=1)
+        return z
+
+@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="FFTConv")
+class FFTConv(tf.keras.layers.Layer):
+    def __init__(self):
+        super().__init__()
+
+    def call(self, input):
+        z = self.linear(input)
+        z = tf.transpose(z, perm=[0, 2, 1])
+
+        L = tf.shape(z)[2]
+        z = self.conv(z)[:, :, :L]
+        z = tf.unstack(z, axis=1)
+        return z
+        
+
+@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceConvLayer")
+class NucleotideSequenceConvLayer(tf.keras.layers.Layer):
+    def __init__(self, embedding_dim, dropout, **kwargs):
+        super().__init__(name="nucleotide_sequence_conv_layer", **kwargs)
+        conv_config = [
+            ['conv', (16, 4, 1, 'valid')],
+            ['conv',(16, 4, 1, 'valid')],
+            ['pool',(2, 2, 'same')],
+            ['conv',(32, 4, 1, 'valid')],
+            ['conv',(32, 4, 1, 'valid')],
+            ['pool',(2, 2, 'same')],
+            ['conv',(16, 4, 1, 'valid')],
+            ['conv',(16, 3, 1, 'valid')],
+            ['pool',(2, 2, 'same')]
+        ]
+        conv_layers = []
+        for t, config in conv_config:
+            if t == 'conv':
+                conv_layers += [tf.keras.layers.Conv1D(*config),
+                                tf.keras.layers.Dropout(dropout)]
+            else:
+                conv_layers += [tf.keras.layers. MaxPool1D(*config)]
+        
+        self.conv_block = tf.keras.Sequential(
+            conv_layers + [
+                tf.keras.layers.Flatten(),
+                tf.keras.layers.Dense(embedding_dim, activation='relu'),
+                tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon)
+            ]
+        )
+
+    @tf.function
+    def call(self, input):
+        output = self.conv_block(input)
+        return output
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+                "embedding_dim": self.embedding_dim,
+                "dropout": self.dropout
+        })
+        return config
+
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceEmbedding")
 class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
     def __init__(self, embedding_dim, dropout, **kwargs):
         super().__init__(name="nucleotide_sequence_embedding", **kwargs)
         self.embedding_dim = embedding_dim
         self.dropout = dropout
-        
         self.embedding = tf.keras.layers.Embedding(5, embedding_dim, input_length=150, mask_zero=False)
-        self.pos_embedding = keras_nlp.layers.PositionEmbedding(sequence_length=150)
-        self.lstm = tf.keras.layers.LSTM(32, return_sequences=False, dropout=dropout)
+        self.conv_block = NucleotideSequenceConvLayer(embedding_dim, dropout)
+
 
     def call(self, input, training=False):
-        emb = self.embedding(input)
-        output = emb + self.pos_embedding(emb)
-
-        # def map_lstm(sequences, mask):
-        def map_lstm(sequences):
-            seq_in = tf.TensorArray(tf.float32, size=16, dynamic_size=False, colocate_with_first_write_call=False)
-            seq_in = seq_in.unstack(sequences)
-            seq_out = tf.TensorArray(tf.float32, size=16, dynamic_size=False, colocate_with_first_write_call=False)
-            # mask_array = tf.TensorArray(tf.bool, size=16, dynamic_size=False)
-            # mask_array = mask_array.unstack(mask)
-        
-            for i in tf.range(16):
-                seq_out = seq_out.write(
-                    i,
-                    self.lstm(seq_in.read(i))
-                )
-            return seq_out.stack() 
-        # sequence_masks = tf.not_equal(input, 0)
-        return map_lstm(output)
+        output = self.embedding(input, training=training)
+        output = tf.transpose(output, perm=[1,0,2,3])
+        fn = lambda t: self.conv_block(t)
+        @tf.function
+        def apply_conv(elems):
+            return tf.map_fn(fn, elems, parallel_iterations=10, swap_memory=True)
+        output = apply_conv(output)
+        output = tf.transpose(output, perm=[1,0,2])
+        return output
     
     def get_config(self):
         config = super().get_config()
@@ -183,7 +249,7 @@ class MemoryUnit(tf.keras.layers.Layer):
         """
         k: amplify or attenuate the precision, tanh activation
         
-        converts input dim BxIxM into BxHxM 
+        converts input dim BxM into BxHxM 
            weight matrix: IxH 
            I -> 2 + H (i.e. 1 for current, prev output, H-reads)
         """
@@ -275,7 +341,7 @@ class NeuralMemory(tf.keras.layers.Layer):
         self.mem_vec_size = mem_vec_size
         self.mem_rows = mem_rows
 
-        self.controller = tf.keras.layers.LSTM(32, return_state=True, return_sequences=False, dropout=0.5)
+        self.controller = tf.keras.layers.LSTM(mem_vec_size, return_state=True, return_sequences=False, dropout=0.5)
         self.memory = Memory(num_heads, mem_rows, mem_vec_size)
         self.reader = ReadMemory(num_heads, mem_rows, mem_vec_size)
         self.unit_init = UnitUniform(self.mem_rows)
@@ -287,8 +353,8 @@ class NeuralMemory(tf.keras.layers.Layer):
 
         self.prev_output = tf.Variable(tf.zeros((16, self.num_heads, self.mem_rows)),dtype=tf.float32)
         self.prev_reads = tf.Variable(tf.zeros((16, self.num_heads, self.mem_rows)),dtype=tf.float32)
-        self.lstm_mem_state = tf.Variable(tf.zeros((16,32,)),dtype=tf.float32)
-        self.lstm_cell_state = tf.Variable(tf.zeros((16,32)),dtype=tf.float32)
+        self.lstm_mem_state = tf.Variable(tf.zeros((16,self.mem_vec_size)),dtype=tf.float32)
+        self.lstm_cell_state = tf.Variable(tf.zeros((16,self.mem_vec_size)),dtype=tf.float32)
 
     def call(self, input, training=False):
         tf.print("1", input.shape)
@@ -297,7 +363,7 @@ class NeuralMemory(tf.keras.layers.Layer):
         time_steps = tf.shape(transposed_input)[0]
 
         def process_memory(inputs, time_steps):
-            inputs = tf.expand_dims(inputs, axis=-2)
+            # inputs = tf.expand_dims(inputs, axis=-2)
             memory_write = tf.TensorArray(tf.float32, 0, dynamic_size=True, clear_after_read=True)
             memory_write = memory_write.unstack(inputs)
             
@@ -305,29 +371,49 @@ class NeuralMemory(tf.keras.layers.Layer):
             memory_read = memory_read.unstack(inputs)
 
             for i in tf.range(0, time_steps):
+                # write_input = tf.concat([memory_write.read(i), self.prev_output], axis=1)
+                # tf.print("3", write_input.shape)
+                # write_input = tf.concat([write_input, self.prev_reads], axis=1)
+                # tf.print("4", write_input.shape)
+                # new_memory, new_w_h = self.memory(write_input, self.w_h, self.M)
+                # self.w_h = self.w_h.assign(new_w_h)
+
+                # read_input = tf.concat([memory_read.read(i), self.prev_output], axis=1)
+                # read_input = tf.concat([read_input, self.prev_reads], axis=1)
+                # read, new_r_h = self.reader(read_input, self.r_h, self.M)
+                # self.r_h = self.r_h.assign(new_r_h)
+
+                # prev_output, lstm_mem_state, lstm_cell_state = self.controller(read, initial_state=[self.lstm_mem_state, self.lstm_cell_state])
+
+                # self.M = self.M.assign(new_memory)
+                # self.prev_reads = self.prev_reads.assign(read)
+                # self.prev_output = self.prev_output.assign(prev_output)
+                # self.lstm_mem_state = self.lstm_mem_state.assign(lstm_mem_state)
+                # self.lstm_cell_state = self.lstm_cell_state.assign(lstm_cell_state)
                 """
-                Write memory: [input, prev out], k, prev output
+                controller input: [thing_we_want_to_read_or_write, prev_reads]
                 """
-                write_input = tf.concat([memory_write.read(i), self.prev_output], axis=1)
-                tf.print("3", write_input.shape)
-                write_input = tf.concat([write_input, self.prev_reads], axis=1)
-                tf.print("4", write_input.shape)
-                new_memory, new_w_h = self.memory(write_input, self.w_h, self.M)
-                self.w_h = self.w_h.assign(new_w_h)
-
-                read_input = tf.concat([memory_read.read(i), self.prev_output], axis=1)
-                read_input = tf.concat([read_input, self.prev_reads], axis=1)
-                read, new_r_h = self.reader(read_input, self.r_h, self.M)
-                self.r_h = self.r_h.assign(new_r_h)
-
-                prev_output, lstm_mem_state, lstm_cell_state = self.controller(read, initial_state=[self.lstm_mem_state, self.lstm_cell_state])
-
-                self.M = self.M.assign(new_memory)
-                self.prev_reads = self.prev_reads.assign(read)
-                self.prev_output = self.prev_output.assign(prev_output)
+                controller_write_external_input = tf.expand_dims(memory_write.read(i),axis=1)
+                controller_write_input = tf.concat([self.prev_reads, controller_write_external_input])
+                controller_write_output, lstm_mem_state, lstm_cell_state = self.controller(
+                    controller_write_input, 
+                    initial_state=[self.lstm_mem_state, self.lstm_cell_state]
+                )
                 self.lstm_mem_state = self.lstm_mem_state.assign(lstm_mem_state)
                 self.lstm_cell_state = self.lstm_cell_state.assign(lstm_cell_state)
-            
+                new_memory = self.memory(controller_write_output, self.M)
+                self.M = self.M.assign(new_memory)
+
+                controller_read_external_input = tf.expand_dims(memory_read.read(i),axis=1)
+                controller_read_input = tf.concat([self.prev_reads, controller_read_external_input])
+                controller_read_output, lstm_mem_state, lstm_cell_state = self.controller(
+                    controller_read_input, 
+                    initial_state=[self.lstm_mem_state, self.lstm_cell_state]
+                )
+                self.lstm_mem_state = self.lstm_mem_state.assign(lstm_mem_state)
+                self.lstm_cell_state = self.lstm_cell_state.assign(lstm_cell_state)
+                read = self.reader(controller_read_output, self.M)
+                self.prev_reads = self.prev_reads.assign(read)            
             return self.prev_output
         return process_memory(transposed_input, time_steps)
 
