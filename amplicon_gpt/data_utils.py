@@ -204,6 +204,7 @@ def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_pe
     """
     CREATE DATASETS, THIS IS ALWAYS DONE
     """
+    @tf.function
     def get_items(indices, seq_data, unifrac_data):
         seq_items = tf.gather(seq_data, indices).to_tensor(default_value=0)
         unifrac_items = tf.gather(unifrac_data, indices)
@@ -211,17 +212,14 @@ def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_pe
         return seq_items, unifrac_items
 
     def create_dataset(start, end, seq_data, unifrac_data, batch_size=16, repeat=1):
-        dataset = tf.data.Dataset.range(seq_data.shape[0])
-        dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=False)
-        dataset = dataset.range(start, end)
-
-
+        indices = tf.range(seq_data.shape[0], dtype=tf.int32)[start:end]
+        dataset = tf.data.Dataset.from_tensor_slices(indices)
         dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
-        dataset = dataset.batch(batch_size)
-        dataset = dataset.map(lambda indices: get_items(indices, seq_data, unifrac_data),
+        dataset = dataset.batch(batch_size, drop_remainder=True,
                                 num_parallel_calls=tf.data.AUTOTUNE)
-        dataset = dataset.repeat(repeat)
-        dataset = dataset.prefetch(10)
+        dataset = dataset.map(lambda indices: get_items(indices, seq_data, unifrac_data),
+            num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
         return dataset
     
     if split_percent:

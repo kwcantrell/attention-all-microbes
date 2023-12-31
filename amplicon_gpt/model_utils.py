@@ -7,7 +7,7 @@ import keras_nlp
 from tensorflow_models import nlp # need for PositionEmbedding without cannot load base_model
 from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances # need for unifrac_loss_var without cannot load base_model
 from amplicon_gpt.losses import regression_loss_variance, regression_loss_difference_in_means, regression_loss_combined, regression_loss_normal
-from amplicon_gpt.layers import NucleotideSequenceEmbedding, ASVEncoder, NeuralMemory
+from amplicon_gpt.layers import NucleotideSequenceEmbedding, SampleEncoder
 
 # physical_devices = tf.config.list_physical_devices('GPU')
 # for device in physical_devices:
@@ -47,68 +47,48 @@ def transfer_learn_base(lstm_seq_out, batch_size, max_num_per_seq, dropout, root
     nucleotide_embedding_dim=128
     nuc_norm_epsilon=1e-5
     d_model = 128
-    dff = 256
+    dff = 512
     num_heads = 6
     num_enc_layers = 4
     lstm_nuc_out = 128
     lstm_seq_out = 128
-    emb_vec = 32
+    emb_vec = 128
     norm_first = False
     conv_1_filter = 256
     conv_2_filter = 64
     MAX_SEQ = 1600
 
-    input = tf.keras.Input(shape=(None, max_num_per_seq), batch_size=16,
+    input = tf.keras.Input(shape=(None, max_num_per_seq), batch_size=batch_size,
                                dtype=tf.int32, name='model_input')
     
-    """
-    encode individual asvs
-    """
-    output = NucleotideSequenceEmbedding(d_model, dropout)(input)
-
-    """
-    encode entire sample
-    """
-    output *= tf.math.sqrt(tf.cast(nucleotide_embedding_dim, dtype=tf.float32))
-    microbime_pos = nlp.layers.PositionEmbedding(max_length=MAX_SEQ)(output)
-    output += microbime_pos
-    encoding_blocks = [
-        keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
-                activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
-                name=f'base_encoder_block_{i}')
-        for i in range(num_enc_layers)]
-    output = encoding_blocks[0](output)
-    for block in encoding_blocks[1:]:
-        output = block(output)
-
-    """
-    feature component ie use sample encodings to calculate unifrac
-    """
-    output = tf.keras.layers.LSTM(32, dropout=dropout, name='asv_lstm')(output)
-    output = tf.expand_dims(output, axis=-1)
+    mask = tf.reduce_any(tf.not_equal(input, 0), axis=2)
+    
+    encoding_blocks = [NucleotideSequenceEmbedding(d_model, dropout), 
+                       SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)]
+    encoding_blocks += [tf.keras.layers.LSTM(32, dropout=dropout, name='asv_lstm'),
+                        tf.keras.layers.Reshape((32, 1))]
     conv_config = [
         create_conv_config(num_filters=32, kernel_size=5, stride=1, padding='valid'),
         create_conv_config(num_filters=64, kernel_size=5, stride=1, padding='valid'),
     ]
     for i, (conv_filter, kernel_size, stride, padding) in enumerate(conv_config):
-        output = tf.keras.layers.Conv1D(conv_filter, kernel_size, 
+        encoding_blocks += [tf.keras.layers.Conv1D(conv_filter, kernel_size, 
                                         strides=stride, padding=padding, activation='relu',
-                                        name=f'base_conv_{i}_1')(output)
-        output = tf.keras.layers.Dropout(dropout)(output, training=True)
-        output = tf.keras.layers.Conv1D(conv_filter, kernel_size, 
+                                        name=f'base_conv_{i}_1'),
+                            tf.keras.layers.Conv1D(conv_filter, kernel_size, 
                                         strides=stride, padding=padding, activation='relu',
-                                        name=f'base_conv_{i}_2')(output)
-        output = tf.keras.layers.Dropout(dropout)(output, training=True)
-        output = tf.keras.layers. MaxPool1D(2)(output)
+                                        name=f'base_conv_{i}_2'),
+                            tf.keras.layers. MaxPool1D(2)]
     
-    output = tf.keras.layers.Flatten()(output)
-    output = tf.keras.layers.Dense(emb_vec, use_bias=False, name='base_output')(output)
+    encoding_blocks += [tf.keras.layers.Flatten(),
+                        tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
+                        tf.keras.layers.Dropout(dropout),
+                        tf.keras.layers.Dense(emb_vec, use_bias=False, name='base_output', activation='relu')]
 
-    """
-    compile model
-    """
+    output = tf.keras.Sequential(encoding_blocks)(input, mask=mask, training=True)
+
     model = tf.keras.Model(inputs=input, outputs=output)    
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=100000, decay_rate=0.99, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=10000, decay_rate=0.99, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
     return model

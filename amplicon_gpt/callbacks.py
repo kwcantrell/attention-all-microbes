@@ -90,8 +90,9 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         return super().on_epoch_end(epoch, logs)
     
 class ProjectEncoder(tf.keras.callbacks.Callback):
-    def __init__(self, data, model_path, pred_pcoa_path, true_pcoa_path, table_path, tree_path, num_samples, **kwargs):
+    def __init__(self, data, model_path, pred_pcoa_path, true_pcoa_path, table_path, tree_path, num_samples, batch_size, **kwargs):
         super().__init__()
+        self.batch_size = batch_size
         self.data = data
         self.table = load_table(table_path)
         self.model_path = model_path
@@ -105,7 +106,7 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
     def _log_epoch_data(self):
         tf.print('loggin data...')
         self.model.save(os.path.join(self.model_path, 'encoder.keras'), save_format='keras')
-        total_samples = int(self.table.shape[1] / 16) * 16
+        total_samples = int(self.table.shape[1] / self.batch_size) * self.batch_size
         
         sample_indices = np.arange(total_samples)
         np.random.shuffle(sample_indices)

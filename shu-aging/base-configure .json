@@ -11,7 +11,7 @@
     "dff": 128,
     "lstm_seq_out": 32,
     "dropout": 0.50,
-    "batch_size": 16,
+    "batch_size": 32,
     "epochs": 10000,
     "patience": 1000, 
     "validation_percent":0.3,
