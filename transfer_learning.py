@@ -108,7 +108,7 @@ def unifrac(config_json, continue_training, output_model_summary):
          epochs=config['epochs'], initial_epoch=0, batch_size=config['batch_size'],
          callbacks=[
                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', start_from_epoch=0, patience=patience, mode='min'),
-                    ProjectEncoder(create_unifrac_sequencing_data(**config),**config)
+                    ProjectEncoder(validation_dataset,**config)
         ]
     )
     model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')

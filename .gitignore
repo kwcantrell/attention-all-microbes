@@ -8,3 +8,4 @@ veg-prediction/*
 hazel/*
 *.ipynb
 .Trash-0
+amplicon_gpt/__pycache__/*

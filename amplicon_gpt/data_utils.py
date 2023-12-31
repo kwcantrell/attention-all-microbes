@@ -172,97 +172,71 @@ def _get_sequencing_data(table, metadata, group_step):
     return sequencing_data, age_data
 
 def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_per_seq, seq_len, repeat=1, split_percent=None, **kwargs):
-    table = load_table(table_path)
+    """
+    ONLY NEED TO RUN THIS IS MISSING PRELOADED DATASETS
+    """
+    # table = load_table(table_path)
 
-    s_ids = table.ids(axis='sample')
-    o_ids = np.array(table.ids(axis='observation'))
+    # s_ids = table.ids(axis='sample')
+    # o_ids = np.array(table.ids(axis='observation'))
 
-    samples = [np.argwhere(table.data(id, axis='sample') > 0).astype(np.int32).flatten() for id in s_ids]
+    # samples = [np.argwhere(table.data(id, axis='sample') > 0).astype(np.int32).flatten() for id in s_ids]
 
-    get_ids = lambda x: o_ids[x]
-    get_seq = lambda x: [[*seq] for seq in x]
-    equal = lambda x: [seq == np.array([[b'A'], [b'C'], [b'G'], [b'T']], dtype='<U1') for seq in x]
-    argmax = lambda x: [np.argmax(seq, 0) + 1 for seq in x]
-    sequencing_data = [np.apply_along_axis(
-                        lambda sample: argmax(equal(get_seq(get_ids(sample)))), 0, sample)
-    for sample in samples]
-    unifrac_distances = unweighted(table_path, tree_path).data
+    # get_ids = lambda x: o_ids[x]
+    # get_seq = lambda x: [[*seq] for seq in x]
+    # equal = lambda x: [seq == np.array([[b'A'], [b'C'], [b'G'], [b'T']], dtype='<U1') for seq in x]
+    # argmax = lambda x: [np.argmax(seq, 0) + 1 for seq in x]
+    # sequencing_data = [np.apply_along_axis(
+    #                     lambda sample: argmax(equal(get_seq(get_ids(sample)))), 0, sample)
+    #                         for sample in samples]
+    # unifrac_distances = unweighted(table_path, tree_path).data
 
-    class Dataset:
-        def __init__(self, sequencing_data, unifrac_distances, batch_size=32, randomize=False, repeat=1, max_num_per_seq=100, seq_len=100):
-            self.sequencing_data = sequencing_data
-            self.unifrac_distances = unifrac_distances
-            self.batch_size = batch_size
-            self.xs = np.arange(len(sequencing_data))
-            self.randomize = randomize
-            self.repeat = repeat
-            self.max_num_per_seq = max_num_per_seq
-            self.seq_len = seq_len
-            self._shuffle()
+    """
+    PRELOADED DATASETS
+    """
+    seq_dataset = tf.data.Dataset.load('agp-data/base-seq')
+    seq_dataset = seq_dataset.ragged_batch(seq_dataset.cardinality())
+    seq_data = [x for x in seq_dataset][0]
+    unifrac_dataset = tf.data.Dataset.load('agp-data/base-unifrac')
+    unifrac_dataset = unifrac_dataset.ragged_batch(unifrac_dataset.cardinality())
+    unifrac_data = [x for x in unifrac_dataset][0]
 
-        def __len__(self):
-            return int(len(self.sequencing_data)/self.batch_size)
-        
-        def __getitem__(self, index):
-            start = index*self.batch_size
-            pad = lambda x, pad_width: np.array([np.pad(z.tolist(),((0, pad_width - len(z)), (0,self.max_num_per_seq-self.seq_len))) for z in x])
-            pad_width = lambda x: pad(x, np.max([len(z) for z in x]))
-            sequence_batch = lambda i: pad_width([self.sequencing_data[i] for i in self.xs[i:i+self.batch_size]])
-            unifrac_batch = lambda i: self.unifrac_distances[self.xs[i:i+self.batch_size], :][:, self.xs[i:i+self.batch_size]]
-            get_batch = lambda i: (sequence_batch(i), unifrac_batch(i))
-            return get_batch(start)
-        
-        def __call__(self):
-            for _ in range(self.repeat):
-                for i in range(self.__len__()):
-                    yield self.__getitem__(i)
-                self._shuffle()
+    """
+    CREATE DATASETS, THIS IS ALWAYS DONE
+    """
+    def get_items(indices, seq_data, unifrac_data):
+        seq_items = tf.gather(seq_data, indices).to_tensor(default_value=0)
+        unifrac_items = tf.gather(unifrac_data, indices)
+        unifrac_items = tf.gather(unifrac_items, indices, axis=1)
+        return seq_items, unifrac_items
 
-        def _shuffle(self):
-            if self.randomize:
-                np.random.shuffle(self.xs)
+    def create_dataset(start, end, seq_data, unifrac_data, batch_size=16, repeat=1):
+        dataset = tf.data.Dataset.range(seq_data.shape[0])
+        dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=False)
+        dataset = dataset.range(start, end)
 
-        def on_epoch_end(self):
-            self._shuffle()
-            
 
+        dataset = dataset.shuffle(dataset.cardinality(), reshuffle_each_iteration=True)
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(lambda indices: get_items(indices, seq_data, unifrac_data),
+                                num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.repeat(repeat)
+        dataset = dataset.prefetch(10)
+        return dataset
+    
     if split_percent:
-        s_id_indicies = np.arange(len(samples))
-        np.random.shuffle(s_id_indicies)
-        training_size = int(len(samples) * (1-split_percent))
-        
-        training_ids_ind = s_id_indicies[:training_size]
-        training_seq = [sequencing_data[i] for i in training_ids_ind]
-        training_dist = unifrac_distances[training_ids_ind, :][:, training_ids_ind]
-        train_dataset = Dataset(training_seq, training_dist, batch_size=batch_size, randomize=True, repeat=repeat, max_num_per_seq=max_num_per_seq, seq_len=seq_len)
-
-        val_ids_ind = s_id_indicies[training_size:]
-        val_seq = [sequencing_data[i] for i in val_ids_ind]
-        val_dist = unifrac_distances[val_ids_ind, :][:, val_ids_ind]
-        val_dataset = Dataset(val_seq, val_dist, batch_size=batch_size, randomize=False, repeat=1, max_num_per_seq=max_num_per_seq, seq_len=seq_len)
-        return tf.data.Dataset.from_generator(
-            train_dataset,
-            output_signature=(
-                tf.TensorSpec(shape=(batch_size, None, max_num_per_seq), dtype=tf.int32),
-                tf.TensorSpec(shape=(batch_size, batch_size), dtype=tf.float32)
-            )
-        ), tf.data.Dataset.from_generator(
-            val_dataset,
-            output_signature=(
-                tf.TensorSpec(shape=(batch_size, None, max_num_per_seq), dtype=tf.int32),
-                tf.TensorSpec(shape=(batch_size, batch_size), dtype=tf.float32)
-            )
-        )
-
-    dataset = Dataset(sequencing_data, unifrac_distances, batch_size=batch_size, randomize=False, repeat=repeat)
-    return tf.data.Dataset.from_generator(
-        dataset,
-        output_signature=(
-            tf.TensorSpec(shape=(batch_size, None, max_num_per_seq), dtype=tf.int32),
-            tf.TensorSpec(shape=(batch_size, batch_size), dtype=tf.float32)
-        )
-    )
-
+        training_dataset = create_dataset(0, int(seq_data.shape[0] * (1-split_percent)),
+                                          seq_data, unifrac_data,
+                                          batch_size=batch_size, repeat=repeat)
+        val_dataset = create_dataset(int(seq_data.shape[0] * (1-split_percent)), seq_data.shape[0],
+                                          seq_data, unifrac_data,
+                                          batch_size=batch_size, repeat=repeat)
+        return training_dataset, val_dataset
+    else:
+        return create_dataset(0, seq_data.shape[0],
+                       seq_data, unifrac_data,
+                       batch_size=batch_size, repeat=repeat)
+    
 def create_sequencing_data(table_path, metadata_path, split_percent=None, group_step=25, **kwargs):
     """
     voc for embedding layer is <MASK> := 0, A := 1, C := 2, G := 3, T := 4

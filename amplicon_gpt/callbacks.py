@@ -112,7 +112,7 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         sample_indices = sample_indices[:self.num_samples]
         pred = self.model.predict(self.data)
 
-        pred = tf.constant(pred[sample_indices])
+        pred = tf.gather(pred, sample_indices)
         distances = _pairwise_distances(pred, squared=False)
         pred_unifrac_distances = DistanceMatrix(distances.numpy(), self.table.ids(axis='sample')[sample_indices], validate=False)
         pred_pcoa = skbio.stats.ordination.pcoa(pred_unifrac_distances, method='eigh', inplace=False)
