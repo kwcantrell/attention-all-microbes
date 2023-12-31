@@ -189,13 +189,15 @@ def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_pe
     unifrac_distances = unweighted(table_path, tree_path).data
 
     class Dataset:
-        def __init__(self, sequencing_data, unifrac_distances, batch_size=32, randomize=False, repeat=1):
+        def __init__(self, sequencing_data, unifrac_distances, batch_size=32, randomize=False, repeat=1, max_num_per_seq=100, seq_len=100):
             self.sequencing_data = sequencing_data
             self.unifrac_distances = unifrac_distances
             self.batch_size = batch_size
             self.xs = np.arange(len(sequencing_data))
             self.randomize = randomize
             self.repeat = repeat
+            self.max_num_per_seq = max_num_per_seq
+            self.seq_len = seq_len
             self._shuffle()
 
         def __len__(self):
@@ -203,7 +205,7 @@ def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_pe
         
         def __getitem__(self, index):
             start = index*self.batch_size
-            pad = lambda x, pad_width: np.array([np.pad(z.tolist(),((0, pad_width - len(z)), (0,max_num_per_seq-seq_len))) for z in x])
+            pad = lambda x, pad_width: np.array([np.pad(z.tolist(),((0, pad_width - len(z)), (0,self.max_num_per_seq-self.seq_len))) for z in x])
             pad_width = lambda x: pad(x, np.max([len(z) for z in x]))
             sequence_batch = lambda i: pad_width([self.sequencing_data[i] for i in self.xs[i:i+self.batch_size]])
             unifrac_batch = lambda i: self.unifrac_distances[self.xs[i:i+self.batch_size], :][:, self.xs[i:i+self.batch_size]]
@@ -232,12 +234,12 @@ def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_pe
         training_ids_ind = s_id_indicies[:training_size]
         training_seq = [sequencing_data[i] for i in training_ids_ind]
         training_dist = unifrac_distances[training_ids_ind, :][:, training_ids_ind]
-        train_dataset = Dataset(training_seq, training_dist, batch_size=batch_size, randomize=True, repeat=repeat)
+        train_dataset = Dataset(training_seq, training_dist, batch_size=batch_size, randomize=True, repeat=repeat, max_num_per_seq=max_num_per_seq, seq_len=seq_len)
 
         val_ids_ind = s_id_indicies[training_size:]
         val_seq = [sequencing_data[i] for i in val_ids_ind]
         val_dist = unifrac_distances[val_ids_ind, :][:, val_ids_ind]
-        val_dataset = Dataset(val_seq, val_dist, batch_size=batch_size, randomize=False, repeat=1)
+        val_dataset = Dataset(val_seq, val_dist, batch_size=batch_size, randomize=False, repeat=1, max_num_per_seq=max_num_per_seq, seq_len=seq_len)
         return tf.data.Dataset.from_generator(
             train_dataset,
             output_signature=(
