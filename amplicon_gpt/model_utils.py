@@ -47,7 +47,7 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
     
     nucleotide_embedding_dim=128
     nuc_norm_epsilon=1e-5
-    d_model = 32
+    d_model = 64
     dff = 256
     num_heads = 6
     num_enc_layers = 4
@@ -66,32 +66,13 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
     mask = tf.reduce_any(tf.not_equal(output, 0), axis=2)
 
     encoding_blocks = [NucleotideSequenceEmbedding(d_model, dropout), 
-                       SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)]
-    encoding_blocks += [tf.keras.layers.LSTM(64, dropout=dropout, name='asv_lstm'),
-                        tf.keras.layers.Reshape((64, 1))]
-    conv_config = [
-        create_conv_config(num_filters=32, kernel_size=3, stride=1, padding='valid'),
-        create_conv_config(num_filters=64, kernel_size=3, stride=1, padding='valid'),
-    ]
-    for i, (conv_filter, kernel_size, stride, padding) in enumerate(conv_config):
-        encoding_blocks += [tf.keras.layers.Conv1D(conv_filter, kernel_size, 
-                                        strides=stride, padding=padding, activation='relu',
-                                        name=f'base_conv_{i}_1'),
-                            tf.keras.layers.Conv1D(conv_filter, kernel_size, 
-                                        strides=stride, padding=padding, activation='relu',
-                                        name=f'base_conv_{i}_2'),
-                            tf.keras.layers. MaxPool1D(2)]
-    
-    encoding_blocks += [tf.keras.layers.Flatten(),
-                        tf.keras.layers.Dense(dff, activation='relu'),
-                        tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
-                        tf.keras.layers.Dropout(dropout),
-                        tf.keras.layers.Dense(32, name='base_output')]
-
+                       SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first),
+                       tf.keras.layers.LSTM(64, dropout=dropout, name='asv_lstm'),
+                       tf.keras.layers.Dense(32, name='base_output')]
     output = tf.keras.Sequential(encoding_blocks)(output, mask=mask, training=True)
 
     model = tf.keras.Model(inputs=input, outputs=output)    
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=10000, decay_rate=0.99, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=100000, decay_rate=0.99, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
     return model

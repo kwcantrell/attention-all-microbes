@@ -49,48 +49,6 @@ conv_2_filter = 64
 #         return z
         
 
-@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceConvLayer")
-class NucleotideSequenceConvLayer(tf.keras.layers.Layer):
-    def __init__(self, embedding_dim, dropout, **kwargs):
-        super().__init__(name="nucleotide_sequence_conv_layer", **kwargs)
-        self.embedding_dim = embedding_dim
-        conv_config = [
-            ['conv', (32, 3, 1, 'valid')],
-            ['conv',(32, 3, 1, 'valid')],
-            ['pool',(2, 2, 'same')],
-            ['conv',(64, 3, 1, 'valid')],
-            ['conv',(64, 3, 1, 'valid')],
-            ['pool',(2, 2, 'same')],
-        ]
-        # conv_layers = []
-        # for t, config in conv_config:
-        #     if t == 'conv':
-        #         conv_layers += [tf.keras.layers.Conv1D(*config)]
-        #     else:
-        #         conv_layers += [tf.keras.layers. MaxPool1D(*config)]
-        # self.layers = conv_layers + [
-        #         tf.keras.layers.Flatten(),
-        #         tf.keras.layers.Dense(embedding_dim, activation='relu'),
-        #         tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
-        #         tf.keras.layers.Dropout(dropout)
-        #     ]
-        self.layers = tf.keras.layers.LSTM(embedding_dim, dropout=dropout)
-
-    def call(self, input, training=False):
-        # output = input
-        # for layer in self.layers:
-        #     output = layer(output, training=training)
-        output = self.layers(input)
-        return output
-    
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-                "embedding_dim": self.embedding_dim,
-                "dropout": self.dropout
-        })
-        return config
-
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceEmbedding")
 class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
     def __init__(self, embedding_dim, dropout, **kwargs):
@@ -101,7 +59,7 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
         self.dense = tf.keras.layers.TimeDistributed(tf.keras.Sequential([
             tf.keras.layers.Dense(1, activation='relu'),
-            tf.keras.layers.Flatten(),
+            tf.keras.layers.Flatten()
         ]))
         self.supports_masking = True
 

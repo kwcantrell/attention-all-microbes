@@ -52,7 +52,7 @@ def unifrac_loss_var(y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred)
         difference = y_pred_dist - y_true
         square_dist = tf.square(difference) / 2.0
-        var_dist = tf.math.reduce_sum(square_dist, axis=0) / 32.0
+        var_dist = tf.math.reduce_sum(square_dist, axis=0) / 16.0
         return tf.reduce_sum(var_dist)
     return loss(y_true, y_pred)
 

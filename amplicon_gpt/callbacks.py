@@ -116,11 +116,11 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         pred = tf.gather(pred, sample_indices)
         distances = _pairwise_distances(pred, squared=False)
         pred_unifrac_distances = DistanceMatrix(distances.numpy(), self.table.ids(axis='sample')[sample_indices], validate=False)
-        pred_pcoa = skbio.stats.ordination.pcoa(pred_unifrac_distances, method='fsvd', number_of_dimensions=3, inplace=False)
+        pred_pcoa = skbio.stats.ordination.pcoa(pred_unifrac_distances, method='fsvd', number_of_dimensions=3, inplace=True)
         pred_pcoa.write(self.pred_pcoa_path)
 
         true_unifrac_distances = unweighted(self.table_path, self.tree_path).filter(self.table.ids(axis='sample')[sample_indices])
-        true_pcoa = skbio.stats.ordination.pcoa(true_unifrac_distances, method='fsvd', number_of_dimensions=3, inplace=False)
+        true_pcoa = skbio.stats.ordination.pcoa(true_unifrac_distances, method='fsvd', number_of_dimensions=3, inplace=True)
         true_pcoa.write(self.true_pcoa_path)
 
     def on_epoch_end(self, epoch, logs=None):
