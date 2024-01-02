@@ -25,7 +25,7 @@ def append_config_num(config, num):
 
 """
 
-def transfer_learn_base(lstm_seq_out, batch_size, max_num_per_seq, dropout, root_path, load_prev_path=False, **kwargs):
+def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_per_seq, dropout, root_path, load_prev_path=False, **kwargs):
     loss = unifrac_loss_var
     @tf.keras.saving.register_keras_serializable(package="Scale16s", name="MAE")
     class MAE(tf.keras.metrics.Metric):
@@ -34,9 +34,10 @@ def transfer_learn_base(lstm_seq_out, batch_size, max_num_per_seq, dropout, root
             self.loss = self.add_weight(name='rl', initializer='zero', dtype=tf.float32)
             self.i = self.add_weight(name='i', initializer='zero', dtype=tf.float32)
 
-        def update_state(self, y_true, y_pred,  **kwargs):
+        @tf.function
+        def update_state(self, y_true, y_pred, sample_weight=None):
             self.loss.assign_add(tf.reduce_sum(tf.abs(_pairwise_distances(y_pred)-y_true)))
-            self.i.assign_add(16.0)
+            self.i.assign_add(tf.constant(batch_size, dtype=tf.float32))
 
         def result(self):
             return self.loss / self.i
@@ -58,18 +59,19 @@ def transfer_learn_base(lstm_seq_out, batch_size, max_num_per_seq, dropout, root
     conv_2_filter = 64
     MAX_SEQ = 1600
 
-    input = tf.keras.Input(shape=(None, max_num_per_seq), batch_size=batch_size,
-                               dtype=tf.int32, name='model_input')
+    input = tf.keras.Input(shape=(None, 1), batch_size=batch_size,  name='model_input',
+                           dtype=tf.string)
     
-    mask = tf.reduce_any(tf.not_equal(input, 0), axis=2)
-    
+    # mask = tf.reduce_any(tf.not_equal(input, 0), axis=2)
+    output = sequence_tokenizer(input)
+    # output = input
     encoding_blocks = [NucleotideSequenceEmbedding(d_model, dropout), 
                        SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)]
     encoding_blocks += [tf.keras.layers.LSTM(32, dropout=dropout, name='asv_lstm'),
                         tf.keras.layers.Reshape((32, 1))]
     conv_config = [
-        create_conv_config(num_filters=32, kernel_size=5, stride=1, padding='valid'),
-        create_conv_config(num_filters=64, kernel_size=5, stride=1, padding='valid'),
+        create_conv_config(num_filters=32, kernel_size=3, stride=1, padding='valid'),
+        create_conv_config(num_filters=64, kernel_size=3, stride=1, padding='valid'),
     ]
     for i, (conv_filter, kernel_size, stride, padding) in enumerate(conv_config):
         encoding_blocks += [tf.keras.layers.Conv1D(conv_filter, kernel_size, 
@@ -82,15 +84,16 @@ def transfer_learn_base(lstm_seq_out, batch_size, max_num_per_seq, dropout, root
     
     encoding_blocks += [tf.keras.layers.Flatten(),
                         tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
-                        tf.keras.layers.Dropout(dropout),
                         tf.keras.layers.Dense(emb_vec, use_bias=False, name='base_output', activation='relu')]
 
-    output = tf.keras.Sequential(encoding_blocks)(input, mask=mask, training=True)
+    # output = tf.keras.Sequential(encoding_blocks)(input, mask=mask, training=True)
+    output = tf.keras.Sequential(encoding_blocks)(output, training=True)
 
     model = tf.keras.Model(inputs=input, outputs=output)    
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=10000, decay_rate=0.99, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0005, decay_steps=10000, decay_rate=0.99, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
-    model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
+    # model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
+    model.compile(optimizer=optimizer,loss=loss)
     return model
 
 

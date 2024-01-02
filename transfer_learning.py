@@ -7,7 +7,10 @@ import os
 import tensorflow as tf
 import amplicon_gpt._parameter_descriptions as desc
 from amplicon_gpt.callbacks import MAE_Scatter, mean_absolute_error, mean_confidence_interval, Accuracy, ProjectEncoder
-from amplicon_gpt.data_utils import create_sequencing_data, create_dataset, create_veg_sequencing_data, create_veg_dataset, create_unifrac_sequencing_data
+from amplicon_gpt.data_utils import (
+    create_sequencing_data, create_dataset, create_veg_sequencing_data, create_veg_dataset, create_unifrac_sequencing_data,
+    get_sequencing_dataset, get_unifrac_dataset, combine_seq_dist_dataset, batch_dist_dataset
+)
 from amplicon_gpt.model_utils import transfer_learn_feature_regression, transfer_learn_feature_classification, transfer_learn_base
 
 # Allow using -h to show help information
@@ -93,8 +96,25 @@ def unifrac(config_json, continue_training, output_model_summary):
     with open(config_json) as f:
         config = json.load(f)
 
-    training_dataset, validation_dataset = create_unifrac_sequencing_data(split_percent=config['validation_percent'], **config)
-    model = transfer_learn_base(load_prev_path=False, **config)
+    # training_dataset, validation_dataset = create_unifrac_sequencing_data(split_percent=config['validation_percent'], **config)
+    seq_dataset = get_sequencing_dataset(**config)
+    unifrac_dataset = get_unifrac_dataset(**config)
+    sequence_tokenizer = tf.keras.layers.TextVectorization(max_tokens=10, split='character', output_mode='int', output_sequence_length=100)
+    sequence_tokenizer.adapt(seq_dataset.take(1))
+    dataset = combine_seq_dist_dataset(seq_dataset, unifrac_dataset, **config)
+
+    size = seq_dataset.cardinality().numpy()
+    batch_size = config['batch_size']
+    train_size = int(size*config['train_percent']/batch_size)*batch_size
+
+    training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
+    training_dataset = batch_dist_dataset(training_dataset, shuffle=True, **config)
+    
+    validation_dataset = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
+    validation_dataset = batch_dist_dataset(validation_dataset, **config)
+
+    model = transfer_learn_base(sequence_tokenizer=sequence_tokenizer, load_prev_path=False, **config)
+    
     if output_model_summary:
         model.summary()
     
@@ -103,10 +123,11 @@ def unifrac(config_json, continue_training, output_model_summary):
     else:
         patience=10
     config['repeat'] = 1
+    
     model.fit(
         training_dataset, validation_data=validation_dataset,
-         epochs=config['epochs'], initial_epoch=0, batch_size=config['batch_size'],
-         callbacks=[
+        epochs=config['epochs'], initial_epoch=0, batch_size=config['batch_size'],
+        callbacks=[
                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', start_from_epoch=0, patience=patience, mode='min'),
                     ProjectEncoder(validation_dataset,**config)
         ]

@@ -55,11 +55,11 @@ class NucleotideSequenceConvLayer(tf.keras.layers.Layer):
         super().__init__(name="nucleotide_sequence_conv_layer", **kwargs)
         self.embedding_dim = embedding_dim
         conv_config = [
-            ['conv', (16, 4, 1, 'valid')],
-            ['conv',(16, 4, 1, 'valid')],
-            ['pool',(2, 2, 'same')],
-            ['conv',(32, 4, 1, 'valid')],
+            ['conv', (32, 3, 1, 'valid')],
             ['conv',(32, 3, 1, 'valid')],
+            ['pool',(2, 2, 'same')],
+            ['conv',(64, 3, 1, 'valid')],
+            ['conv',(64, 3, 1, 'valid')],
             ['pool',(2, 2, 'same')],
         ]
         conv_layers = []

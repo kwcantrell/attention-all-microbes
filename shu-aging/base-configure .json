@@ -14,7 +14,7 @@
     "batch_size": 32,
     "epochs": 10000,
     "patience": 1000, 
-    "validation_percent":0.3,
+    "train_percent":0.7,
     "s_type": "gut",
     "mini_epochs": 5,
     "use_ema": true,

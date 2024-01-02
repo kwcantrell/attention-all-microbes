@@ -171,6 +171,62 @@ def _get_sequencing_data(table, metadata, group_step):
         groups.append(agp_meta.loc[(agp_meta['age']  >= i-step)  & (agp_meta['age']  < i)].shape[0])
     return sequencing_data, age_data
 
+def get_sequencing_dataset(table_path, **kwargs):
+    if type(table_path) == str:
+        table = load_table(table_path)
+    else:
+        table = table_path
+    o_ids = tf.constant(table.ids(axis='observation'))
+    table = table.transpose()
+    data = table.matrix_data.tocoo()
+    row_ind = data.row
+    col_ind = data.col
+    values = data.data
+    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
+    table_data = tf.sparse.SparseTensor(indices=indices, values=values,dense_shape=table.shape)
+    table_data = tf.sparse.reorder(table_data)
+    get_asv_id = lambda x: tf.gather(o_ids, x.indices)
+    return (tf.data.Dataset.from_tensor_slices(table_data)
+                           .map(get_asv_id, num_parallel_calls=tf.data.AUTOTUNE)
+                           .prefetch(tf.data.AUTOTUNE)
+    )
+
+def get_unifrac_dataset(table_path, tree_path, **kwargs):
+    distance = unweighted(table_path, tree_path).data
+    return (tf.data.Dataset.from_tensor_slices(distance)
+                           .prefetch(tf.data.AUTOTUNE)
+    )
+
+def combine_seq_dist_dataset(seq_dataset, dist_dataset, batch_size, **kwargs):
+    dataset_size = seq_dataset.cardinality()
+    return (tf.data.Dataset
+            .zip(seq_dataset, dist_dataset)
+            .enumerate()
+            .shuffle(dataset_size, reshuffle_each_iteration=False)
+            .prefetch(tf.data.AUTOTUNE)
+    )
+
+def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=None, **kwargs):
+    dataset = dataset.cache()
+    size = dataset.cardinality()
+    
+    if shuffle:
+        dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
+
+    get_pairwise_dist = lambda ind, x: (x[0], tf.gather(x[1], ind, axis=1, batch_dims=0))
+    dataset = (dataset
+        .ragged_batch(batch_size, drop_remainder=True)
+        .map(get_pairwise_dist, num_parallel_calls=tf.data.AUTOTUNE, deterministic=False)
+    )
+
+    if not shuffle:
+        dataset = dataset.cache()
+    else:
+        dataset = dataset.repeat(repeat)
+
+    return dataset.prefetch(tf.data.AUTOTUNE)
+
+
 def create_unifrac_sequencing_data(table_path, tree_path, batch_size, max_num_per_seq, seq_len, repeat=1, split_percent=None, **kwargs):
     """
     ONLY NEED TO RUN THIS IS MISSING PRELOADED DATASETS
