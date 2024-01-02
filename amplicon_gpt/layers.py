@@ -62,23 +62,25 @@ class NucleotideSequenceConvLayer(tf.keras.layers.Layer):
             ['conv',(64, 3, 1, 'valid')],
             ['pool',(2, 2, 'same')],
         ]
-        conv_layers = []
-        for t, config in conv_config:
-            if t == 'conv':
-                conv_layers += [tf.keras.layers.Conv1D(*config)]
-            else:
-                conv_layers += [tf.keras.layers. MaxPool1D(*config)]
-        self.layers = conv_layers + [
-                tf.keras.layers.Flatten(),
-                tf.keras.layers.Dense(embedding_dim, activation='relu'),
-                tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
-                tf.keras.layers.Dropout(dropout)
-            ]
+        # conv_layers = []
+        # for t, config in conv_config:
+        #     if t == 'conv':
+        #         conv_layers += [tf.keras.layers.Conv1D(*config)]
+        #     else:
+        #         conv_layers += [tf.keras.layers. MaxPool1D(*config)]
+        # self.layers = conv_layers + [
+        #         tf.keras.layers.Flatten(),
+        #         tf.keras.layers.Dense(embedding_dim, activation='relu'),
+        #         tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
+        #         tf.keras.layers.Dropout(dropout)
+        #     ]
+        self.layers = tf.keras.layers.LSTM(embedding_dim, dropout=dropout)
 
     def call(self, input, training=False):
-        output = input
-        for layer in self.layers:
-            output = layer(output, training=training)
+        # output = input
+        # for layer in self.layers:
+        #     output = layer(output, training=training)
+        output = self.layers(input)
         return output
     
     def get_config(self):
@@ -95,24 +97,19 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         super().__init__(name="nucleotide_sequence_embedding", **kwargs)
         self.embedding_dim = embedding_dim
         self.dropout = dropout
-        self.embedding = tf.keras.layers.Embedding(5, embedding_dim, input_length=150, mask_zero=False)
-        self.conv_block = NucleotideSequenceConvLayer(embedding_dim, dropout)
+        self.embedding = tf.keras.layers.Embedding(5, embedding_dim, input_length=100, mask_zero=False, embeddings_initializer="glorot_normal")
+        self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
+        self.dense = tf.keras.layers.TimeDistributed(tf.keras.Sequential([
+            tf.keras.layers.Dense(1, activation='relu'),
+            tf.keras.layers.Flatten(),
+        ]))
+        self.supports_masking = True
 
-
-    def call(self, input, training=False):
+    def call(self, input, mask=None, training=False):
         output = self.embedding(input, training=training)
-        output = tf.transpose(output, perm=[1,0,2,3])
-
-        conv_layers = lambda x: self.conv_block(x, training=training)
-        @tf.function(
-            input_signature=(tf.TensorSpec(shape=(None, 32, 100, self.embedding_dim), dtype=tf.float32),),
-            reduce_retracing=True
-        )
-        def apply_conv(elems):
-            return tf.map_fn(conv_layers, elems, parallel_iterations=10, swap_memory=False,
-                             fn_output_signature=tf.TensorSpec(shape=(None, self.embedding_dim), dtype=tf.float32))
-        output = apply_conv(output)
-        output = tf.transpose(output, perm=[1,0,2])
+        output = self.lstm(output, training=training)
+        output = tf.transpose(output, perm=[0,1,3,2])
+        output = self.dense(output)
         return output
     
     def get_config(self):
@@ -135,6 +132,7 @@ class SampleEncoder(tf.keras.layers.Layer):
                     activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
                     name=f'base_encoder_block_{i}')
             for i in range(num_enc_layers)]
+        self.supports_masking =True
 
     def call(self, input, mask=None, training=False):
         output = input

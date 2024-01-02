@@ -52,7 +52,7 @@ def regression(config_json, continue_training, output_model_summary):
 
     (training_seq, training_age), (val_seq, val_age) = create_sequencing_data(split_percent=config['validation_percent'], **config)
     training_dataset = create_dataset(training_seq, training_age, groups=None, randomize=True, repeat=config['mini_epochs'], **config)
-    validation_dataset = create_dataset(val_seq, val_age, groups=None, randomize=False, **config) #
+    validation_dataset = create_dataset(val_seq, val_age, groups=None, randomize=False, **config)
     model = transfer_learn_feature_regression(continue_training, **config)
 
     if output_model_summary:
@@ -96,7 +96,6 @@ def unifrac(config_json, continue_training, output_model_summary):
     with open(config_json) as f:
         config = json.load(f)
 
-    # training_dataset, validation_dataset = create_unifrac_sequencing_data(split_percent=config['validation_percent'], **config)
     seq_dataset = get_sequencing_dataset(**config)
     unifrac_dataset = get_unifrac_dataset(**config)
     sequence_tokenizer = tf.keras.layers.TextVectorization(max_tokens=10, split='character', output_mode='int', output_sequence_length=100)
@@ -110,8 +109,8 @@ def unifrac(config_json, continue_training, output_model_summary):
     training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
     training_dataset = batch_dist_dataset(training_dataset, shuffle=True, **config)
     
-    validation_dataset = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
-    validation_dataset = batch_dist_dataset(validation_dataset, **config)
+    val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
+    validation_dataset = batch_dist_dataset(val_data, **config)
 
     model = transfer_learn_base(sequence_tokenizer=sequence_tokenizer, load_prev_path=False, **config)
     
@@ -129,7 +128,7 @@ def unifrac(config_json, continue_training, output_model_summary):
         epochs=config['epochs'], initial_epoch=0, batch_size=config['batch_size'],
         callbacks=[
                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', start_from_epoch=0, patience=patience, mode='min'),
-                    ProjectEncoder(validation_dataset,**config)
+                    ProjectEncoder(seq_dataset.ragged_batch(32),**config)
         ]
     )
     model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')

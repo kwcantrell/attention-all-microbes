@@ -9,9 +9,9 @@ from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances # need for
 from amplicon_gpt.losses import regression_loss_variance, regression_loss_difference_in_means, regression_loss_combined, regression_loss_normal
 from amplicon_gpt.layers import NucleotideSequenceEmbedding, SampleEncoder
 
-# physical_devices = tf.config.list_physical_devices('GPU')
-# for device in physical_devices:
-#   tf.config.experimental.set_memory_growth(device, True)
+physical_devices = tf.config.list_physical_devices('GPU')
+for device in physical_devices:
+  tf.config.experimental.set_memory_growth(device, True)
 MAX_SEQ = 1600
 
 def create_conv_config(num_filters=32, kernel_size=5, stride=1, padding='valid'):
@@ -47,8 +47,8 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
     
     nucleotide_embedding_dim=128
     nuc_norm_epsilon=1e-5
-    d_model = 128
-    dff = 512
+    d_model = 32
+    dff = 256
     num_heads = 6
     num_enc_layers = 4
     lstm_nuc_out = 128
@@ -62,13 +62,13 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
     input = tf.keras.Input(shape=(None, 1), batch_size=batch_size,  name='model_input',
                            dtype=tf.string)
     
-    # mask = tf.reduce_any(tf.not_equal(input, 0), axis=2)
     output = sequence_tokenizer(input)
-    # output = input
+    mask = tf.reduce_any(tf.not_equal(output, 0), axis=2)
+
     encoding_blocks = [NucleotideSequenceEmbedding(d_model, dropout), 
                        SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)]
-    encoding_blocks += [tf.keras.layers.LSTM(32, dropout=dropout, name='asv_lstm'),
-                        tf.keras.layers.Reshape((32, 1))]
+    encoding_blocks += [tf.keras.layers.LSTM(64, dropout=dropout, name='asv_lstm'),
+                        tf.keras.layers.Reshape((64, 1))]
     conv_config = [
         create_conv_config(num_filters=32, kernel_size=3, stride=1, padding='valid'),
         create_conv_config(num_filters=64, kernel_size=3, stride=1, padding='valid'),
@@ -83,17 +83,17 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
                             tf.keras.layers. MaxPool1D(2)]
     
     encoding_blocks += [tf.keras.layers.Flatten(),
+                        tf.keras.layers.Dense(dff, activation='relu'),
                         tf.keras.layers.LayerNormalization(epsilon=nuc_norm_epsilon),
-                        tf.keras.layers.Dense(emb_vec, use_bias=False, name='base_output', activation='relu')]
+                        tf.keras.layers.Dropout(dropout),
+                        tf.keras.layers.Dense(32, name='base_output')]
 
-    # output = tf.keras.Sequential(encoding_blocks)(input, mask=mask, training=True)
-    output = tf.keras.Sequential(encoding_blocks)(output, training=True)
+    output = tf.keras.Sequential(encoding_blocks)(output, mask=mask, training=True)
 
     model = tf.keras.Model(inputs=input, outputs=output)    
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0005, decay_steps=10000, decay_rate=0.99, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=10000, decay_rate=0.99, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
-    # model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
-    model.compile(optimizer=optimizer,loss=loss)
+    model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
     return model
 
 
