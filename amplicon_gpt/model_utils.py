@@ -9,9 +9,9 @@ from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances # need for
 from amplicon_gpt.losses import regression_loss_variance, regression_loss_difference_in_means, regression_loss_combined, regression_loss_normal
 from amplicon_gpt.layers import NucleotideSequenceEmbedding, SampleEncoder
 
-physical_devices = tf.config.list_physical_devices('GPU')
-for device in physical_devices:
-  tf.config.experimental.set_memory_growth(device, True)
+# physical_devices = tf.config.list_physical_devices('GPU')
+# for device in physical_devices:
+#   tf.config.experimental.set_memory_growth(device, True)
 MAX_SEQ = 1600
 
 def create_conv_config(num_filters=32, kernel_size=5, stride=1, padding='valid'):
