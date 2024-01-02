@@ -91,7 +91,7 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
     output = tf.keras.Sequential(encoding_blocks)(output, mask=mask, training=True)
 
     model = tf.keras.Model(inputs=input, outputs=output)    
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=10000, decay_rate=0.99, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=10000, decay_rate=0.99, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=loss, metrics=[MAE()])
     return model
