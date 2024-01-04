@@ -11,7 +11,7 @@ from amplicon_gpt.data_utils import (
     create_sequencing_data, create_dataset, create_veg_sequencing_data, create_veg_dataset, create_unifrac_sequencing_data,
     get_sequencing_dataset, get_unifrac_dataset, combine_seq_dist_dataset, batch_dist_dataset
 )
-from amplicon_gpt.model_utils import transfer_learn_feature_regression, transfer_learn_feature_classification, transfer_learn_base
+from amplicon_gpt.model_utils import transfer_learn_feature_regression, transfer_learn_feature_classification, transfer_learn_base, compile_model
 
 # Allow using -h to show help information
 # https://click.palletsprojects.com/en/7.x/documentation/#help-parameter-customization
@@ -64,14 +64,16 @@ def regression(config_json, continue_training, output_model_summary):
         patience=10
 
     t_dataset = create_dataset(training_seq, training_age, groups=None, randomize=False, **config)
-    # mae_dataset = create_dataset(sequencing_data, age_data, groups=None, randomize=False, **config)
+    
+    # model.fit(X_train, Y_train, callbacks=[reduce_lr])
+
     model.fit(
         training_dataset, validation_data=validation_dataset,
          epochs=config['epochs'], initial_epoch=0, batch_size=config['batch_size'],
          callbacks=[
                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', start_from_epoch=0, patience=patience, mode='min'),
-                    MAE_Scatter(**config, title='training', dataset=t_dataset),
-                    MAE_Scatter(**config, title='validation', dataset=validation_dataset)]
+                    MAE_Scatter(title='training', dataset=t_dataset, **config),
+                    MAE_Scatter(title='validation', dataset=validation_dataset, **config)]
     )
     model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')
 
@@ -98,7 +100,7 @@ def unifrac(config_json, continue_training, output_model_summary):
 
     seq_dataset = get_sequencing_dataset(**config)
     unifrac_dataset = get_unifrac_dataset(**config)
-    sequence_tokenizer = tf.keras.layers.TextVectorization(max_tokens=10, split='character', output_mode='int', output_sequence_length=100)
+    sequence_tokenizer = tf.keras.layers.TextVectorization(max_tokens=7, split='character', output_mode='int', output_sequence_length=100)
     sequence_tokenizer.adapt(seq_dataset.take(1))
     dataset = combine_seq_dist_dataset(seq_dataset, unifrac_dataset, **config)
 
@@ -114,6 +116,10 @@ def unifrac(config_json, continue_training, output_model_summary):
 
     model = transfer_learn_base(sequence_tokenizer=sequence_tokenizer, load_prev_path=False, **config)
     
+    model = compile_model(model)
+    for x, _ in training_dataset.take(1):
+        y = model(x)
+    
     if output_model_summary:
         model.summary()
     
@@ -122,6 +128,9 @@ def unifrac(config_json, continue_training, output_model_summary):
     else:
         patience=10
     config['repeat'] = 1
+    
+    # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
+    #                           patience=5, min_lr=0.001)
     
     model.fit(
         training_dataset, validation_data=validation_dataset,
@@ -160,7 +169,7 @@ def veg_classifier(ctx, config_json):
         training_dataset, validation_data=validation_dataset,
          epochs=epochs, initial_epoch=0, batch_size=batch_size,
          callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', start_from_epoch=0, patience=patience, mode='max'),
-                    Accuracy(**config, dataset=acc_dataset)]
+                    Accuracy(dataset=acc_dataset, **config)]
     )
     model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')
 
@@ -175,8 +184,7 @@ def veg_auc(ctx, config_json):
     model = transfer_learn_feature_classification(**config)
     model.summary()
     acc_dataset = create_veg_dataset(sequencing_data, categories, randomize=False, limit_size=acc_percent, **config)
-    fname=os.path.join('agp/veg-cat', 
-                                f'auc.png')
+    fname=os.path.join('agp/veg-cat', 'auc.png')
     import sklearn
     import matplotlib.pyplot as plt
     def plot_prc(name, labels, predictions, **kwargs):
@@ -201,8 +209,7 @@ def veg_auc(ctx, config_json):
         plt.grid(True)
         ax = plt.gca()
         ax.set_aspect('equal')
-        fname=os.path.join('agp/veg-cat', 
-                                f'roc.png')
+        fname=os.path.join('agp/veg-cat', 'roc.png')
         plt.savefig(fname)
 
 

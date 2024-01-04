@@ -4,18 +4,18 @@ import tensorflow as tf
 import keras_nlp
 from amplicon_gpt.initializers import UnitUniform
 
-nucleotide_embedding_dim=256
-nuc_norm_epsilon=1e-5
-d_model = 128
-dff = 512
-num_heads = 6
-num_enc_layers = 4
-lstm_nuc_out = 128
-lstm_seq_out = 128
-emb_vec = 32
-norm_first = False
-conv_1_filter = 256
-conv_2_filter = 64
+# nucleotide_embedding_dim=256
+# nuc_norm_epsilon=1e-5
+# d_model = 128
+# dff = 512
+# num_heads = 6
+# num_enc_layers = 4
+# lstm_nuc_out = 128
+# lstm_seq_out = 128
+# emb_vec = 32
+# norm_first = False
+# conv_1_filter = 256
+# conv_2_filter = 64
 
 # @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="HyenaProjection")
 # class HyenaProjection(tf.keras.layers.Layer):
@@ -55,17 +55,15 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         super().__init__(name="nucleotide_sequence_embedding", **kwargs)
         self.embedding_dim = embedding_dim
         self.dropout = dropout
-        self.embedding = tf.keras.layers.Embedding(5, embedding_dim, input_length=100, mask_zero=False, embeddings_initializer="glorot_normal")
         self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
         self.dense = tf.keras.layers.TimeDistributed(tf.keras.Sequential([
             tf.keras.layers.Dense(1, activation='relu'),
             tf.keras.layers.Flatten()
-        ]))
-        self.supports_masking = True
+        ]))        
 
-    def call(self, input, mask=None, training=False):
-        output = self.embedding(input, training=training)
-        output = self.lstm(output, training=training)
+        
+    def call(self, input, mask=None, training=None):
+        output = self.lstm(input)
         output = tf.transpose(output, perm=[0,1,3,2])
         output = self.dense(output)
         return output
@@ -81,7 +79,7 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="PositionEncoder")
 class SampleEncoder(tf.keras.layers.Layer):
     def __init__(self, nucleotide_embedding_dim, dropout, num_enc_layers, num_heads, dff, norm_first, **kwargs):
-        super().__init__(name="asv_sequence_embedding", **kwargs)
+        super().__init__(name="sample_encoder", **kwargs)
         self.nucleotide_embedding_dim = nucleotide_embedding_dim
         self.dropout = dropout
         self.asv_pos_emb = keras_nlp.layers.PositionEmbedding(sequence_length=1600)
@@ -90,15 +88,14 @@ class SampleEncoder(tf.keras.layers.Layer):
                     activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
                     name=f'base_encoder_block_{i}')
             for i in range(num_enc_layers)]
-        self.supports_masking =True
-
-    def call(self, input, mask=None, training=False):
-        output = input
-        microbime_pos = self.asv_pos_emb(output)
-        output += microbime_pos
-
-        for block in self.encoding_blocks:
-            output = block(output, padding_mask=mask, training=training)
+    
+    def call(self, input, mask=None, training=None):
+        padding_mask=tf.cast(mask, dtype=tf.float32)
+        microbime_pos = self.asv_pos_emb(input)
+        output = tf.math.add(input, microbime_pos)
+        
+        for layer in self.encoding_blocks:
+            output = layer(output, padding_mask=padding_mask)
         return output
             
     def get_config(self):
@@ -107,7 +104,26 @@ class SampleEncoder(tf.keras.layers.Layer):
                 "dropout": self.dropout
         })
         return config
-
+    
+@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="UniFracEncoder")
+class UniFracEncoder(tf.keras.layers.Layer):
+    def __init__(self, dff, **kwargs):
+        super().__init__(name="unifrac_embedding", **kwargs)
+        self.norm = tf.keras.layers.LayerNormalization()
+        self.ff = tf.keras.layers.Dense(dff, activation='gelu')
+        self.dense = tf.keras.layers.Dense(32)
+    
+    def call(self, input, training=None):
+        output = tf.math.reduce_sum(input, axis=1)
+        output = self.ff(output)
+        output = self.norm(output)
+        output = self.dense(output)
+        return output
+            
+        # for layer in self.enc_layers:
+        #     output = layer(output)
+        # return _call(input)
+            
 # @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="Memory")
 # class Memory(tf.keras.layers.Layer):
 #     def __init__(self, num_heads, mem_rows, mem_vec_size, **kwargs):
