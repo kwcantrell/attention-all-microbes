@@ -56,6 +56,9 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         self.dropout = dropout
         self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
         self.dense = tf.keras.Sequential([
+            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Dense(1, activation='relu'),
             tf.keras.layers.Flatten()
         ])
@@ -71,7 +74,7 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
             input_signature=[tf.TensorSpec((dense_shape), dtype=tf.float32)],
             jit_compile=True
         )
-
+    
     def call(self, input, mask=None, training=None):
         output = self.lstm(input)
         output = tf.transpose(output, perm=[1,0,2,3])
@@ -121,15 +124,26 @@ class UniFracEncoder(tf.keras.layers.Layer):
     def __init__(self, dff, **kwargs):
         super().__init__(name="unifrac_embedding", **kwargs)
         self.norm = tf.keras.layers.LayerNormalization()
-        self.ff = tf.keras.layers.Dense(dff, activation='gelu')
+        self.ff = tf.keras.layers.Dense(64, activation='gelu')
         self.dense = tf.keras.layers.Dense(32)
     
+    def build(self, input_shape):
+        # dense_shape = [1] + input_shape[2]
+        def vec_layer(input):
+            output = self.ff(input)
+            output = self.norm(output)
+            output = self.dense(output)
+            return tf.squeeze(output)
+        
+        self.vectorize_layer = tf.function(
+            vec_layer,
+            input_signature=[tf.TensorSpec((1, input_shape[2]), dtype=tf.float32)],
+            jit_compile=True
+        )
     def call(self, input, training=None):
         output = tf.math.reduce_sum(input, axis=1)
-        output = self.ff(output)
-        output = self.norm(output)
-        output = self.dense(output)
-        return output
+        output = tf.expand_dims(output, axis=1)
+        return tf.vectorized_map(self.vectorize_layer, output, fallback_to_while_loop=False)
             
         # for layer in self.enc_layers:
         #     output = layer(output)

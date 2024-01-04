@@ -56,30 +56,35 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
             self.num_enc_layers = num_enc_layers
             
             self.seq_token = sequence_tokenizer
+            self.inputs = tf.keras.layers.Input(shape=(None, 1), batch_size=batch_size, dtype=tf.string, ragged=True)
             self.embedding = tf.keras.layers.Embedding(5, d_model, input_length=100)
             self.nuc = NucleotideSequenceEmbedding(d_model, dropout)
             self.samp = SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)
             self.lstm = tf.keras.layers.LSTM(d_model, dropout=dropout, return_sequences=True)
             self.unif = UniFracEncoder(dff)
 
-        @tf.function(
-            reduce_retracing=True,
-            jit_compile=False
-        )
+        
         def call(self, inputs, training=None):
-            output = inputs.to_tensor()
-            
-            output = self.seq_token(output)
-            mask = tf.reduce_any(
-                tf.math.equal(output, tf.constant(0, dtype=tf.int64)),
-                axis=2
-            )
-             
-            output = self.embedding(output)
-            output = self.nuc(output)
-            output = self.samp(output, mask=mask)
-            output = self.lstm(output)
-            return self.unif(output)
+            @tf.function(
+                input_signature=[tf.RaggedTensorSpec(
+                    tf.TensorShape([batch_size, None, 1]), dtype=tf.string, ragged_rank=1)],
+                reduce_retracing=True,
+                jit_compile=False
+            ) 
+            def _call(input):   
+                output = input.to_tensor()
+                output = self.seq_token(output)
+                mask = tf.reduce_any(
+                    tf.math.equal(output, tf.constant(0, dtype=tf.int64)),
+                    axis=2
+                )
+                
+                output = self.embedding(output)
+                output = self.nuc(output)
+                output = self.samp(output, mask=mask)
+                output = self.lstm(output)
+                return self.unif(output)
+            return _call(inputs)
     return UniFrac(d_model, dff, num_heads, num_enc_layers)
     
     

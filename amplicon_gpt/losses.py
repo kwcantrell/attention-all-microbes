@@ -54,9 +54,9 @@ def unifrac_loss_var(y_true, y_pred):
     y_pred_dist = _pairwise_distances(y_pred)
     difference = y_pred_dist - y_true
     square_dist = tf.square(difference) / 2.0
-    var_dist = tf.math.reduce_mean(square_dist, axis=0)
+    # var_dist = tf.math.reduce_mean(square_dist, axis=0)
+    var_dist = tf.math.reduce_max(square_dist, axis=0)
     return tf.reduce_sum(var_dist)
-    return u_loss(y_true, y_pred)
 
 @tf.keras.saving.register_keras_serializable(package="Scale16s", name="regression_loss_variance")
 def regression_loss_variance(y_true, y_pred):
