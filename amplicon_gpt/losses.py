@@ -46,17 +46,13 @@ def _pairwise_distances(embeddings, squared=False):
     jit_compile=True
 )
 def unifrac_loss_var(y_true, y_pred):
-    # y_pred_dist = _pairwise_distances(y_pred)
-    # difference = y_pred_dist - y_true
-    # square_dist = tf.square(difference)
-    # var_dist = tf.math.reduce_variance(square_dist, axis=1)
-    # return tf.reduce_sum(var_dist)
     y_pred_dist = _pairwise_distances(y_pred)
-    difference = y_pred_dist - y_true
-    square_dist = tf.square(difference) / 2.0
-    # var_dist = tf.math.reduce_mean(square_dist, axis=0)
-    var_dist = tf.math.reduce_max(square_dist, axis=0)
-    return tf.reduce_sum(var_dist)
+    difference = tf.square(y_true - y_pred_dist) / 2.0
+    difference =  difference * tf.linalg.band_part(
+        tf.ones_like(difference, dtype=tf.float32), 0, -1
+    )
+    difference = tf.reduce_sum(difference, axis=0)
+    return tf.math.reduce_sum(difference)
 
 @tf.keras.saving.register_keras_serializable(package="Scale16s", name="regression_loss_variance")
 def regression_loss_variance(y_true, y_pred):

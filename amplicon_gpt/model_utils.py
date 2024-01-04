@@ -26,11 +26,7 @@ def append_config_num(config, num):
 
 """
 
-def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_per_seq, dropout, root_path, load_prev_path=False, **kwargs):
-    # if load_prev_path:
-    #     model = tf.keras.models.load_model(os.path.join(root_path, 'encoder.keras'))
-    #     return model
-    
+def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_per_seq, dropout, root_path, load_prev_path=False, **kwargs):   
     d_model = 64
     dff = 512
     num_heads = 6
@@ -49,6 +45,11 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
             name="unifrac",
             **kwargs
         ):
+            """
+            need sequence tokenizer
+                 batch_size
+                 dropout
+            """
             super().__init__(name=name, **kwargs)
             self.d_model = d_model
             self.dff = dff
@@ -85,6 +86,11 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
                 output = self.lstm(output)
                 return self.unif(output)
             return _call(inputs)
+        
+    if load_prev_path:
+        model = tf.keras.models.load_model(os.path.join(root_path, 'encoder.keras'))
+        return model
+        
     return UniFrac(d_model, dff, num_heads, num_enc_layers)
     
     
@@ -119,7 +125,7 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
         
 def compile_model(model):
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=100000, decay_rate=0.9, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=150000, decay_rate=0.9, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=unifrac_loss_var, metrics=[MAE()])
     return model
