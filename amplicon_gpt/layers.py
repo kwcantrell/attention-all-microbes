@@ -204,5 +204,3 @@ class ReadHead(tf.keras.layers.Layer):
         output = self.norm(output)
         output = self.dense(output)
         return self.dense2(output)
-    
-            
