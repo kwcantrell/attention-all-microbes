@@ -1,6 +1,7 @@
 data/*
 agp-data/*
 base-model/*
+base-model-*/*
 data/*
 paper/*
 pcoa/*
