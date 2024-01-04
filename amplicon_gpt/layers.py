@@ -48,11 +48,6 @@ from amplicon_gpt.initializers import UnitUniform
 #         z = tf.unstack(z, axis=1)
 #         return z
 
-# @tf.function(
-
-#     jit_compile=True
-# )        
-
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceEmbedding")
 class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
     def __init__(self, embedding_dim, dropout, **kwargs):
@@ -66,16 +61,20 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         ])
 
     def build(self, input_shape):
-        dense_shape = input_shape[0], input_shape[3], input_shape[2]
+        dense_shape = input_shape[0], input_shape[2], input_shape[3]
+        def vec_layer(input):
+            output = tf.transpose(input, perm=[0,2,1])
+            return self.dense(output)
+        
         self.vectorize_layer = tf.function(
-            lambda x: self.dense(x),
+            vec_layer,
             input_signature=[tf.TensorSpec((dense_shape), dtype=tf.float32)],
             jit_compile=True
         )
 
     def call(self, input, mask=None, training=None):
         output = self.lstm(input)
-        output = tf.transpose(output, perm=[1,0,3,2])
+        output = tf.transpose(output, perm=[1,0,2,3])
         output = tf.vectorized_map(self.vectorize_layer, output, fallback_to_while_loop=False)
         output = tf.transpose(output, perm=[1,0,2])
         return output
