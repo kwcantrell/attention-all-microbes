@@ -11,3 +11,4 @@ hazel/*
 .Trash-0
 amplicon_gpt/__pycache__/*
 amplicon_gpt/.ipynb_checkpoints/*
+shu-aging/*

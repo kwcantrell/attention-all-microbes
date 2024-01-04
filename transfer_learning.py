@@ -60,6 +60,10 @@ def unifrac(config_json, continue_training, output_model_summary):
     for x, _ in training_dataset.take(1):
         y = model(x)
     
+    model = compile_model(model)
+    for x, _ in training_dataset.take(1):
+        y = model(x)
+    
     if output_model_summary:
         model.summary()
     
