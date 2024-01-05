@@ -64,7 +64,6 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
             self.lstm = tf.keras.layers.LSTM(d_model, dropout=dropout, return_sequences=True)
             self.unif = UniFracEncoder(dff)
 
-        
         def call(self, inputs, training=None):
             @tf.function(
                 input_signature=[tf.RaggedTensorSpec(
@@ -75,14 +74,9 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
             def _call(input):   
                 output = input.to_tensor()
                 output = self.seq_token(output)
-                mask = tf.reduce_any(
-                    tf.math.equal(output, tf.constant(0, dtype=tf.int64)),
-                    axis=2
-                )
-                
                 output = self.embedding(output)
                 output = self.nuc(output)
-                output = self.samp(output, mask=mask)
+                output = self.samp(output)
                 output = self.lstm(output)
                 return self.unif(output)
             return _call(inputs)
@@ -125,7 +119,7 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
         
 def compile_model(model):
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=150000, decay_rate=0.9, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=150000, decay_rate=0.9, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=unifrac_loss_var, metrics=[MAE()])
     return model

@@ -4,6 +4,28 @@ import tensorflow as tf
 import keras_nlp
 from amplicon_gpt.initializers import UnitUniform
 
+def create_tf_func(func, *args, jit_compile=True, **kwargs):
+    return tf.function(
+        lambda x: func(x, *args),
+        jit_compile=jit_compile,
+    )
+
+def create_concrete_tf_func(func, *args, tensor_spec=None, **kwargs):
+    return create_tf_func(func, *args).get_concrete_function(tensor_spec)
+
+def create_tf_with_training_flag(func, tensor_spec, **kwargs):
+    return {
+        True: create_concrete_tf_func(func, tensor_spec=tensor_spec, training=True, **kwargs),
+        False: create_concrete_tf_func(func, tensor_spec=tensor_spec, training=False, **kwargs)
+    }
+
+def get_tf_training_flag_version(dict, training):
+    return dict[training]
+
+def run_tf_with_training_flag_dict(dict, input, training):
+    return get_tf_training_flag_version(dict, training)(input)
+
+
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceEmbedding")
 class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
     def __init__(self, embedding_dim, dropout, **kwargs):
@@ -20,21 +42,18 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         dense_shape = input_shape[0], input_shape[2], input_shape[3]
-        def vec_layer(input):
+        vec_layer_spec = tf.TensorSpec((dense_shape), dtype=tf.float32)
+        def _vectorize_dense(input):
             output = tf.transpose(input, perm=[0,2,1])
             return self.dense(output)
-        
-        self.vectorize_layer = tf.function(
-            vec_layer,
-            input_signature=[tf.TensorSpec((dense_shape), dtype=tf.float32)],
-            jit_compile=True
-        )
-    
-    def call(self, input, mask=None, training=None):
+        self.vec_layer_dict = create_tf_with_training_flag(_vectorize_dense, vec_layer_spec)
+
+    def call(self, input, training=False):
         output = self.lstm(input)
-        output = self.dropout(output)
+        output = self.dropout(output, training)
         output = tf.transpose(output, perm=[1,0,2,3])
-        output = tf.vectorized_map(self.vectorize_layer, output, fallback_to_while_loop=False)
+        tf_vec_func = get_tf_training_flag_version(self.vec_layer_dict, training)
+        output = tf.vectorized_map(tf_vec_func, output, fallback_to_while_loop=False)
         output = tf.transpose(output, perm=[1,0,2])
         return output
     
@@ -54,41 +73,29 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.asv_pos_emb = tf.keras.layers.LSTM(nucleotide_embedding_dim, dropout=dropout, return_sequences=True)
         self.dropout = tf.keras.layers.Dropout(dropout)
 
-        self.encoding_blocks = [
+        self.encoding_blocks = tf.keras.Sequential([
             keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
                     activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
                     name=f'base_encoder_block_{i}')
-            for i in range(num_enc_layers)]
+            for i in range(num_enc_layers)])
     
     def build(self, input_shape):
-        @tf.function(
-                jit_compile=True
-        )
         def pad(x):
             padddings = tf.constant([[0, 128], [0,0]])
             output = tf.pad(x, padddings)
             output = tf.strided_slice(output, begin=[0,0], end=[128, input_shape[2]])
             return output
-        self.pad = pad.get_concrete_function(tf.TensorSpec(shape=input_shape[1:], dtype=tf.float32))
+        pad_spec = tf.TensorSpec(shape=input_shape[1:], dtype=tf.float32)
+        self.pad = create_concrete_tf_func(pad, tensor_spec=pad_spec)
+        
+        encoding_spec = tf.TensorSpec(shape=[input_shape[0], 128, input_shape[2]], dtype=tf.float32)
+        self.encoding_block_dict = create_tf_with_training_flag(self.encoding_blocks, encoding_spec)
 
-        @tf.function(
-                jit_compile=True
-        )
-        def run_layer(x):
-            for layer in self.encoding_blocks:
-                x = layer(x)
-            return x
-        self.run_layer = run_layer.get_concrete_function(
-                tf.TensorSpec(shape=[input_shape[0], 128, input_shape[2]], dtype=tf.float32)
-        )        
-
-
-    def call(self, input, mask=None, training=None):
+    def call(self, input, training=False):
         output = self.asv_pos_emb(input)
-        output = self.dropout(output)
+        output = self.dropout(output, training=training)
         output = tf.vectorized_map(self.pad, output, fallback_to_while_loop=False)
-        output = self.run_layer(output)
-        return output
+        return run_tf_with_training_flag_dict(self.encoding_block_dict, output, training)
             
     def get_config(self):
         config = super().get_config()
@@ -101,27 +108,24 @@ class SampleEncoder(tf.keras.layers.Layer):
 class UniFracEncoder(tf.keras.layers.Layer):
     def __init__(self, dff, **kwargs):
         super().__init__(name="unifrac_embedding", **kwargs)
-        # self.norm = tf.keras.layers.LayerNormalization()
-        # self.ff = tf.keras.layers.Dense(64, activation='gelu')
-        # self.dropout = tf.keras.layers.Dropout(0.05)
+        self.ff = tf.keras.layers.Dense(64, activation='gelu')
+        self.norm = tf.keras.layers.LayerNormalization()
+        self.dropout = tf.keras.layers.Dropout(0.2)
         self.dense = tf.keras.layers.Dense(1)
     
     def build(self, input_shape):
-        def vec_layer(input):
+
+        def vec_layer(input, training=None):
             output = self.ff(input)
             output = self.norm(output)
-            return tf.squeeze(output)
-        
-        self.vectorize_layer = tf.function(
-            vec_layer,
-            input_signature=[tf.TensorSpec((1, input_shape[2]), dtype=tf.float32)],
-            jit_compile=True
-        )
-    def call(self, input, training=None):
-        # output = tf.math.reduce_sum(input, axis=1)
-        # output = tf.expand_dims(output, axis=1)
-        # output = tf.vectorized_map(self.vectorize_layer, output, fallback_to_while_loop=False)
-        # output = self.dropout(output)
-        return tf.squeeze(self.dense(input))
+            output = self.dropout(output, training=training)
+            return output
+        tensor_spec = tf.TensorSpec(shape=input_shape[1:], dtype=tf.float32)
+        self.vectorize_tf_dict = create_tf_with_training_flag(vec_layer, tensor_spec=tensor_spec)
+
+    def call(self, input, training=False):
+        tf_vec_func = get_tf_training_flag_version(self.vectorize_tf_dict, training)
+        output = tf.vectorized_map(tf_vec_func, input, fallback_to_while_loop=False)
+        return tf.squeeze(self.dense(output))
 
             
