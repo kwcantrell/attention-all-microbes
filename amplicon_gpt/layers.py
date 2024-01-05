@@ -33,6 +33,7 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         self.embedding_dim = embedding_dim
         self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
         self.dropout = tf.keras.layers.Dropout(dropout)
+        self.norm = tf.keras.layers.LayerNormalization()
         self.dense = tf.keras.Sequential([
             tf.keras.layers.Dense(512, activation='gelu'),
             tf.keras.layers.LayerNormalization(),
@@ -55,6 +56,7 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         tf_vec_func = get_tf_training_flag_version(self.vec_layer_dict, training)
         output = tf.vectorized_map(tf_vec_func, output, fallback_to_while_loop=False)
         output = tf.transpose(output, perm=[1,0,2])
+        output = self.norm(output)
         return output
     
     def get_config(self):
@@ -72,6 +74,7 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.nucleotide_embedding_dim = nucleotide_embedding_dim
         self.asv_pos_emb = tf.keras.layers.LSTM(nucleotide_embedding_dim, dropout=dropout, return_sequences=True)
         self.dropout = tf.keras.layers.Dropout(dropout)
+        self.norm = tf.keras.layers.LayerNormalization()
 
         self.encoding_blocks = tf.keras.Sequential([
             keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
@@ -95,6 +98,8 @@ class SampleEncoder(tf.keras.layers.Layer):
         output = self.asv_pos_emb(input)
         output = self.dropout(output, training=training)
         output = tf.vectorized_map(self.pad, output, fallback_to_while_loop=False)
+        output = self.norm(output)
+        
         return run_tf_with_training_flag_dict(self.encoding_block_dict, output, training)
             
     def get_config(self):
