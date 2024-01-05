@@ -33,12 +33,13 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
         self.embedding_dim = embedding_dim
         self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
         self.dropout = tf.keras.layers.Dropout(dropout)
+        self.dropout2 = tf.keras.layers.Dropout(dropout)
         self.norm = tf.keras.layers.LayerNormalization()
+        self.norm2 = tf.keras.layers.LayerNormalization()
         self.dense = tf.keras.Sequential([
-            tf.keras.layers.Dense(512, activation='gelu'),
-            tf.keras.layers.LayerNormalization(),
-            tf.keras.layers.Dense(1, activation='gelu'),
-            tf.keras.layers.Flatten()
+            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(1, activation='relu'),
+            tf.keras.layers.Flatten(),
         ])
 
     def build(self, input_shape):
@@ -51,12 +52,15 @@ class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
 
     def call(self, input, training=False):
         output = self.lstm(input)
+        output = self.norm(output)
         output = self.dropout(output, training)
+
         output = tf.transpose(output, perm=[1,0,2,3])
         tf_vec_func = get_tf_training_flag_version(self.vec_layer_dict, training)
         output = tf.vectorized_map(tf_vec_func, output, fallback_to_while_loop=False)
         output = tf.transpose(output, perm=[1,0,2])
-        output = self.norm(output)
+        output = self.norm2(output)
+        self.dropout2(output, training)
         return output
     
     def get_config(self):
@@ -74,7 +78,10 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.nucleotide_embedding_dim = nucleotide_embedding_dim
         self.asv_pos_emb = tf.keras.layers.LSTM(nucleotide_embedding_dim, dropout=dropout, return_sequences=True)
         self.dropout = tf.keras.layers.Dropout(dropout)
+        self.dropout2 = tf.keras.layers.Dropout(dropout)
+
         self.norm = tf.keras.layers.LayerNormalization()
+        self.norm2 = tf.keras.layers.LayerNormalization()
 
         self.encoding_blocks = tf.keras.Sequential([
             keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
@@ -96,9 +103,12 @@ class SampleEncoder(tf.keras.layers.Layer):
 
     def call(self, input, training=False):
         output = self.asv_pos_emb(input)
-        output = self.dropout(output, training=training)
-        output = tf.vectorized_map(self.pad, output, fallback_to_while_loop=False)
         output = self.norm(output)
+        output = self.dropout(output, training=training)
+
+        output = tf.vectorized_map(self.pad, output, fallback_to_while_loop=False)
+        output = self.norm2(output)
+        output = self.dropout2(output, training=training)
         
         return run_tf_with_training_flag_dict(self.encoding_block_dict, output, training)
             
@@ -113,16 +123,14 @@ class SampleEncoder(tf.keras.layers.Layer):
 class UniFracEncoder(tf.keras.layers.Layer):
     def __init__(self, dff, **kwargs):
         super().__init__(name="unifrac_embedding", **kwargs)
-        self.ff = tf.keras.layers.Dense(64, activation='gelu')
-        self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(0.2)
+        self.ff = tf.keras.layers.Dense(128, activation='relu')
+        self.dropout = tf.keras.layers.Dropout(0.5)
         self.dense = tf.keras.layers.Dense(1)
     
     def build(self, input_shape):
 
         def vec_layer(input, training=None):
             output = self.ff(input)
-            output = self.norm(output)
             output = self.dropout(output, training=training)
             return output
         tensor_spec = tf.TensorSpec(shape=input_shape[1:], dtype=tf.float32)

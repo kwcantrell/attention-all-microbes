@@ -119,7 +119,7 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
         
 def compile_model(model):
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=150000, decay_rate=0.9, staircase=True)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=150000, decay_rate=0.9, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=unifrac_loss_var, metrics=[MAE()])
     return model

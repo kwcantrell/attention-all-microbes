@@ -48,7 +48,7 @@ def _pairwise_distances(embeddings, squared=False):
 def unifrac_loss_var(y_true, y_pred):
     y_pred_dist = _pairwise_distances(y_pred)
     difference = tf.square(y_true - y_pred_dist)
-    difference = tf.math.reduce_sum(difference, axis=0) / 2.0
+    difference = tf.math.reduce_sum(difference, axis=0) / 8.0 / 2.0
     return tf.math.reduce_sum(difference) / 8.0
 
 @tf.keras.saving.register_keras_serializable(package="Scale16s", name="regression_loss_variance")
