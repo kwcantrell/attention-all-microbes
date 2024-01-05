@@ -57,8 +57,8 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
             self.num_enc_layers = num_enc_layers
             
             self.seq_token = sequence_tokenizer
-            self.inputs = tf.keras.layers.Input(shape=(None, 1), batch_size=batch_size, dtype=tf.string, ragged=True)
-            self.embedding = tf.keras.layers.Embedding(5, d_model, input_length=100)
+            self.embedding = tf.keras.layers.Embedding(5, d_model, input_length=100,
+                                                       input_shape=[batch_size, None, 100])
             self.nuc = NucleotideSequenceEmbedding(d_model, dropout)
             self.samp = SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)
             self.lstm = tf.keras.layers.LSTM(d_model, dropout=dropout, return_sequences=True)
