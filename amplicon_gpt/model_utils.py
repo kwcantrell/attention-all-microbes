@@ -56,36 +56,40 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
             self.num_heads = num_heads
             self.num_enc_layers = num_enc_layers
             
-            self.seq_token = sequence_tokenizer
-            self.embedding = tf.keras.layers.Embedding(5, d_model, input_length=100,
-                                                       input_shape=[batch_size, None, 100])
             self.nuc = NucleotideSequenceEmbedding(d_model, dropout)
             self.samp = SampleEncoder(d_model, dropout, num_enc_layers, num_heads, dff, norm_first)
             self.lstm = tf.keras.layers.LSTM(d_model, dropout=dropout, return_sequences=True)
             self.unif = UniFracEncoder(dff)
+        
+        @tf.function(
+        input_signature=(tf.TensorSpec(
+                tf.TensorShape([8, 128, 64]), dtype=tf.float32),),
+            jit_compile=False
+        ) 
+        def call_statefull(self, input):
+            return tf.stack(self.lstm(input))
 
         def call(self, inputs, training=None):
             @tf.function(
-                input_signature=[tf.RaggedTensorSpec(
-                    tf.TensorShape([batch_size, None, 1]), dtype=tf.string, ragged_rank=1)],
-                reduce_retracing=True,
+                input_signature=(tf.TensorSpec(
+                    tf.TensorShape([batch_size, None, 100, 64]), dtype=tf.float32),),
                 jit_compile=False
             ) 
             def _call(input):   
-                output = input.to_tensor()
-                output = self.seq_token(output)
-                output = self.embedding(output)
-                output = self.nuc(output)
-                output = self.samp(output)
-                output = self.lstm(output)
-                return self.unif(output)
+                output = self.nuc(input, training=training)
+                output = self.samp(output, training=training)
+                output = self.call_statefull(output)
+                return self.unif(output, training=training)
             return _call(inputs)
         
-    if load_prev_path:
-        model = tf.keras.models.load_model(os.path.join(root_path, 'encoder.keras'))
-        return model
+    input = tf.keras.Input(shape=[None,1], batch_size=batch_size, dtype=tf.string)
+    model_input = sequence_tokenizer(input)
+    model_input = tf.keras.layers.Embedding(5, d_model, input_length=100,
+                                                       input_shape=[batch_size, None, 100])(model_input)
+    output = UniFrac(d_model, dff, num_heads, num_enc_layers)(model_input)
+    model = tf.keras.Model(inputs=input, outputs=output)
         
-    return UniFrac(d_model, dff, num_heads, num_enc_layers)
+    return model
     
     
 #     input = tf.keras.Input(shape=(None,1), batch_size=batch_size,  name='model_input',
@@ -119,7 +123,7 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
         
 def compile_model(model):
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=150000, decay_rate=0.9, staircase=True)
+    lr = 0.0001#tf.keras.optimizers.schedules.ExponentialDecay(0.0001, decay_steps=150000, decay_rate=0.9, staircase=True)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
     model.compile(optimizer=optimizer,loss=unifrac_loss_var, metrics=[MAE()])
     return model
