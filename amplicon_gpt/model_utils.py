@@ -47,10 +47,13 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
     
 def compile_model(model):
-    lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
-        [5000, 10000], [3e-4, 3e-4*0.1, 3e-4*0.9], name='lr_piece'
-    )
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, epsilon=1e-7)
+    initial_learning_rate = 1.5e-3
+    decay_steps = 10400.0
+    decay_rate = 0.7
+    lr = tf.keras.optimizers.schedules.InverseTimeDecay(
+    initial_learning_rate, decay_steps, decay_rate)
+
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.98, epsilon=1e-7)
     model.compile(
         optimizer=optimizer,
         loss=unifrac_loss_var, metrics=[MAE()],

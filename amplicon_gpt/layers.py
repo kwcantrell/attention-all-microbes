@@ -4,15 +4,6 @@ import tensorflow as tf
 from amplicon_gpt.initializers import UnitUniform
 import tensorflow_models as tfm
 
-def add_tf_function(obj, input_signature=None, jit_compile=True, reduce_retracing=False):
-    def decorator(func):
-        @tf.function(input_signature=input_signature, jit_compile=jit_compile, reduce_retracing=reduce_retracing)
-        def wrapper(*args):
-            return func(*args)
-        setattr(obj, func.__name__, func)
-        return wrapper
-    return decorator
-
 @tf.keras.saving.register_keras_serializable(
     package="amplicon_gpt.layers"
 )
