@@ -198,12 +198,20 @@ def get_unifrac_dataset(table_path, tree_path, **kwargs):
     )
 
 def combine_seq_dist_dataset(seq_dataset, dist_dataset, batch_size, **kwargs):
+    sequence_tokenizer = tf.keras.layers.TextVectorization(
+        max_tokens=7,
+        split='character',
+        output_mode='int',
+        output_sequence_length=100)
+    sequence_tokenizer.adapt(seq_dataset.take(1))
+
+    seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
     dataset_size = seq_dataset.cardinality()
     return (tf.data.Dataset
             .zip(tf.data.Dataset.range(dataset_size), seq_dataset, dist_dataset)
             .shuffle(dataset_size, reshuffle_each_iteration=False)
             .prefetch(tf.data.AUTOTUNE)
-    )
+    ), seq_dataset
 def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=None, **kwargs):
     dataset = dataset.cache()
     size = dataset.cardinality()
@@ -215,8 +223,11 @@ def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=None, **kwargs
         return (seq, tf.gather(dist, ind, axis=1, batch_dims=0))
     
     dataset = (dataset
-        .padded_batch(batch_size, padded_shapes=([], [None,1], [None]), drop_remainder=True)#, padding_values=(
+        # .padded_batch(batch_size, padded_shapes=([], [None,1], [None]), drop_remainder=True)#, padding_values=(
+        .padded_batch(batch_size, padded_shapes=([], [None,100], [None]), drop_remainder=True)#, padding_values=(
+        .prefetch(tf.data.AUTOTUNE)
         .map(get_pairwise_dist)
+        .prefetch(tf.data.AUTOTUNE)
     )
 
     if not shuffle:

@@ -11,7 +11,8 @@ from amplicon_gpt.data_utils import (
     create_sequencing_data, create_dataset, create_veg_sequencing_data, create_veg_dataset, create_unifrac_sequencing_data,
     get_sequencing_dataset, get_unifrac_dataset, combine_seq_dist_dataset, batch_dist_dataset
 )
-from amplicon_gpt.model_utils import transfer_learn_feature_regression, transfer_learn_feature_classification, transfer_learn_base, compile_model
+from amplicon_gpt.model_utils import transfer_learn_base, compile_model
+from datetime import datetime
 
 # Allow using -h to show help information
 # https://click.palletsprojects.com/en/7.x/documentation/#help-parameter-customization
@@ -102,7 +103,7 @@ def unifrac(config_json, continue_training, output_model_summary):
     unifrac_dataset = get_unifrac_dataset(**config)
     sequence_tokenizer = tf.keras.layers.TextVectorization(max_tokens=7, split='character', output_mode='int', output_sequence_length=100)
     sequence_tokenizer.adapt(seq_dataset.take(1))
-    dataset = combine_seq_dist_dataset(seq_dataset, unifrac_dataset, **config)
+    dataset, proj_dataset = combine_seq_dist_dataset(seq_dataset, unifrac_dataset, **config)
 
     size = seq_dataset.cardinality().numpy()
     batch_size = config['batch_size']
@@ -115,7 +116,6 @@ def unifrac(config_json, continue_training, output_model_summary):
     validation_dataset = batch_dist_dataset(val_data, **config)
 
     model = transfer_learn_base(sequence_tokenizer=sequence_tokenizer, load_prev_path=False, **config)
-    
     model = compile_model(model)
     for x, _ in training_dataset.take(1):
         y = model(x)
@@ -131,16 +131,20 @@ def unifrac(config_json, continue_training, output_model_summary):
     
     # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
     #                           patience=5, min_lr=0.001)
-    
+    # Define the Keras TensorBoard callback.
+    logdir="base-model/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir, write_graph=False)
+
     model.fit(
         training_dataset, validation_data=validation_dataset,
         epochs=config['epochs'], initial_epoch=0, batch_size=config['batch_size'],
         callbacks=[
                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', start_from_epoch=0, patience=patience, mode='min'),
-                    ProjectEncoder(seq_dataset.padded_batch(config['batch_size']),**config)
+                    ProjectEncoder(proj_dataset.padded_batch(config['batch_size']),**config),
+                    tensorboard_callback
         ]
     )
-    model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')
+    # model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')
 
 @transfer_learning.command('veg_classifier')
 @click.pass_context

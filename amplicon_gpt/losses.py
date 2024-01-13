@@ -1,8 +1,7 @@
 import tensorflow as tf
 
-@tf.function(
-    jit_compile=True
-)
+BATCH_SIZE=2
+
 def _pairwise_distances(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
     Args:
@@ -42,14 +41,11 @@ def _pairwise_distances(embeddings, squared=False):
 
     return distances
 
-@tf.function(
-    jit_compile=True
-)
 def unifrac_loss_var(y_true, y_pred):
     y_pred_dist = _pairwise_distances(y_pred)
     difference = tf.square(y_true - y_pred_dist)
-    difference = tf.math.reduce_sum(difference, axis=0) / 8.0 / 2.0
-    return tf.math.reduce_sum(difference) / 8.0
+    difference = tf.math.reduce_sum(difference, axis=0)
+    return tf.math.reduce_sum(difference) / ((BATCH_SIZE*BATCH_SIZE)-BATCH_SIZE) / 2.0
 
 @tf.keras.saving.register_keras_serializable(package="Scale16s", name="regression_loss_variance")
 def regression_loss_variance(y_true, y_pred):

@@ -1,145 +1,209 @@
 import os
 from collections import namedtuple
 import tensorflow as tf
-import keras_nlp
 from amplicon_gpt.initializers import UnitUniform
+import tensorflow_models as tfm
 
-def create_tf_func(func, *args, jit_compile=True, **kwargs):
-    return tf.function(
-        lambda x: func(x, *args),
-        jit_compile=jit_compile,
-    )
+def add_tf_function(obj, input_signature=None, jit_compile=True, reduce_retracing=False):
+    def decorator(func):
+        @tf.function(input_signature=input_signature, jit_compile=jit_compile, reduce_retracing=reduce_retracing)
+        def wrapper(*args):
+            return func(*args)
+        setattr(obj, func.__name__, func)
+        return wrapper
+    return decorator
 
-def create_concrete_tf_func(func, *args, tensor_spec=None, **kwargs):
-    return create_tf_func(func, *args).get_concrete_function(tensor_spec)
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.layers"
+)
+class NucleotideEinsum(tf.keras.layers.Layer):
+    """A layer that encodes an arbitrary tensor of nucleotide embeddings
+    of size (..., N, E) and encodes it as a fixed size tensor of size
+    (..., E, E*). Dimension N represents the total number of nucleotides,
+    dimension E represents the embedding dimension of the nucleotides, and
+    E* is an the intermediate dimension.
 
-def create_tf_with_training_flag(func, tensor_spec, **kwargs):
-    return {
-        True: create_concrete_tf_func(func, tensor_spec=tensor_spec, training=True, **kwargs),
-        False: create_concrete_tf_func(func, tensor_spec=tensor_spec, training=False, **kwargs)
-    }
+    Args:
+      dff: The hidden dimension of the intermediate pointwise project
 
-def get_tf_training_flag_version(dict, training):
-    return dict[training]
+    Examples:
+    >>> embeddings = tf.reshape(tf.range(0,2*6, dtype=tf.float32),(1,2,3,2))
+    >>> embedding
+    <tf.Tensor: shape=(1, 2, 3, 2), dtype=float32, numpy=
+    array([[[[ 0.,  1.],
+            [ 2.,  3.],
+            [ 4.,  5.]],
 
-def run_tf_with_training_flag_dict(dict, input, training):
-    return get_tf_training_flag_version(dict, training)(input)
+            [[ 6.,  7.],
+            [ 8.,  9.],
+            [10., 11.]]]], dtype=float32)>
 
-
-@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="NucleotideSequenceEmbedding")
-class NucleotideSequenceEmbedding(tf.keras.layers.Layer):
-    def __init__(self, embedding_dim, dropout, **kwargs):
-        super().__init__(name="nucleotide_sequence_embedding", **kwargs)
-        self.embedding_dim = embedding_dim
-        self.lstm = tf.keras.layers.TimeDistributed(tf.keras.layers.LSTM(embedding_dim, dropout=dropout, return_sequences=True))
-        self.dropout = tf.keras.layers.Dropout(dropout)
+    >>> einsum_dense = NucleotideEinsum(dff=8, kernel_initializer="ones")
+    >>> einsum_dense(embeddings)
+    <tf.Tensor: shape=(1, 2, 2), dtype=float32, numpy=
+    array([[[ 48.,  72.],
+            [192., 216.]]], dtype=float32)>
+    """
+    def __init__(
+        self,
+        dff,
+        reduce_tensor=True,
+        kernel_initializer="glorot_uniform",
+        use_pos_emb=None,
+        max_length=150,
+        seq_axis=2,
+        **kwargs
+    ):
+        super().__init__(name='nucleotide_einsum', **kwargs)
+        self.dff = dff
+        self.reduce_tensor = reduce_tensor
+        self.kernel_initializer=kernel_initializer
+        self.use_pos_emb = use_pos_emb
+        self.seq_axis = seq_axis
+        self.max_length = max_length
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(max_length=max_length, seq_axis=seq_axis)
         self.norm = tf.keras.layers.LayerNormalization()
-        self.dense = tf.keras.Sequential([
-            tf.keras.layers.Dense(512, activation='relu'),
-            tf.keras.layers.LayerNormalization(),
-            tf.keras.layers.Dropout(dropout),
-            tf.keras.layers.Dense(1, activation='relu'),
-            tf.keras.layers.Flatten(),
-        ])
+        self.dropout = tf.keras.layers.Dropout(.50)
 
+        self.norm2 = tf.keras.layers.LayerNormalization()
+        self.dropout2 = tf.keras.layers.Dropout(.50)
+    
     def build(self, input_shape):
-        dense_shape = input_shape[0], input_shape[2], input_shape[3]
-        vec_layer_spec = tf.TensorSpec((dense_shape), dtype=tf.float32)
-        def _vectorize_dense(input):
-            output = tf.transpose(input, perm=[0,2,1])
-            return self.dense(output)
-        self.vec_layer_dict = create_tf_with_training_flag(_vectorize_dense, vec_layer_spec)
+        self.kernel_dff = self.add_weight(
+            "kernel_dff",
+            shape=(input_shape[-1], self.dff),
+            initializer=tf.keras.initializers.get(self.kernel_initializer)
+        )
+        if self.reduce_tensor:
+            self.kernel_emb = self.add_weight(
+                "kernel_emb",
+                shape=(input_shape[-1], self.dff),
+                initializer=tf.keras.initializers.get(self.kernel_initializer)
+            )
 
-    def call(self, input, training=False):
-        output = self.lstm(input)
-        output = self.norm(output)
-        output = self.dropout(output, training)
+    def get_config(self):
+        config = {
+            "dff": self.dff,
+            "reduce_tensor": self.reduce_tensor,
+            "kernel_initializer": self.kernel_initializer,
+            "use_pos_emb":self.use_pos_emb,
+            "max_length":self.max_length,
+            "seq_axis":self.seq_axis
+        }
+        return config
+    
+    def call(self, inputs):
+        if self.use_pos_emb:
+            inputs += self.pos_emb(inputs)
 
-        output = tf.transpose(output, perm=[1,0,2,3])
-        tf_vec_func = get_tf_training_flag_version(self.vec_layer_dict, training)
-        output = tf.vectorized_map(tf_vec_func, output, fallback_to_while_loop=False)
-        output = tf.transpose(output, perm=[1,0,2])
+        output = self.norm(inputs)
+        output = self.dropout(output)
+        output = tf.keras.activations.relu(tf.einsum("...ij,jk->...jk", output, self.kernel_dff))
+
+        if self.reduce_tensor:
+            output = self.norm2(output)
+            output = self.dropout2(output)
+            output = tf.keras.activations.relu(tf.einsum("...ij,ij->...i", output, self.kernel_emb))
+        
         return output
     
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-                "embedding_dim": self.embedding_dim,
-                "dropout": self.dropout
-        })
-        return config
-        
-@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="PositionEncoder")
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.layers")
 class SampleEncoder(tf.keras.layers.Layer):
-    def __init__(self, nucleotide_embedding_dim, dropout, num_enc_layers, num_heads, dff, norm_first, **kwargs):
+    def __init__(
+            self,
+            dropout,
+            num_enc_layers,
+            num_heads,
+            dff,
+            norm_first,
+            **kwargs
+    ):
         super().__init__(name="sample_encoder", **kwargs)
-        self.nucleotide_embedding_dim = nucleotide_embedding_dim
-        self.asv_pos_emb = tf.keras.layers.LSTM(nucleotide_embedding_dim, dropout=dropout, return_sequences=True)
-        self.dropout = tf.keras.layers.Dropout(dropout)
-        self.dropout2 = tf.keras.layers.Dropout(dropout)
-
+        self.dropout = dropout
+        self.num_enc_layers = num_enc_layers
+        self.num_heads = num_heads
+        self.dff = dff
+        self.norm_first = norm_first
+        self.asv_pos_emb = NucleotideEinsum(
+            128,
+            reduce_tensor=False,
+            use_pos_emb=False)
+        self.asv_pos_emb2 = NucleotideEinsum(
+            64,
+            reduce_tensor=False,
+            use_pos_emb=False)
         self.norm = tf.keras.layers.LayerNormalization()
+        self.dropout = tf.keras.layers.Dropout(.50)
         self.norm2 = tf.keras.layers.LayerNormalization()
+        self.dropout2 = tf.keras.layers.Dropout(.50)
 
-        self.encoding_blocks = tf.keras.Sequential([
-            keras_nlp.layers.TransformerEncoder(num_heads=num_heads, dropout=dropout,
-                    activation='gelu', intermediate_dim=dff, normalize_first=norm_first,
-                    name=f'base_encoder_block_{i}')
-            for i in range(num_enc_layers)] + [tf.keras.layers.LayerNormalization()])
+        self.encoding_blocks = tfm.nlp.models.TransformerEncoder(
+            num_layers=num_enc_layers,
+            num_attention_heads=8,
+            intermediate_size=2048,
+            dropout_rate=dropout,
+            norm_first=True,
+            activation='gelu',
+        )
+
+    def get_config(self):
+        config = {
+            "dropout": self.dropout,
+            "num_enc_layers": self.num_enc_layers,
+            "num_heads": self.num_heads,
+            "dff": self.dff,
+            "norm_first": self.norm_first,
+        }
+        return config
     
-    def build(self, input_shape):
-        def pad(x):
-            padddings = tf.constant([[128, 0], [0,0]])
-            output = tf.pad(x, padddings)
-            output = tf.stack(tf.strided_slice(output, begin=[-129,0], end=[-1, input_shape[2]], strides=[1,1]))
-            return output
-        pad_spec = tf.TensorSpec(shape=input_shape[1:], dtype=tf.float32)
-        self.pad = create_concrete_tf_func(pad, tensor_spec=pad_spec)
-        
-        encoding_spec = tf.TensorSpec(shape=[input_shape[0], 128, input_shape[2]], dtype=tf.float32)
-        self.encoding_block_dict = create_tf_with_training_flag(self.encoding_blocks, encoding_spec)
-
     def call(self, input, training=False):
         print(training)
-        output = self.asv_pos_emb(input)
-        output = self.norm(output)
-        output = self.dropout(output, training=training)
+        output = self.norm(input)
+        output = self.dropout(output)
+        output = self.asv_pos_emb(output)
 
-        output = tf.vectorized_map(self.pad, output, fallback_to_while_loop=False)
         output = self.norm2(output)
-        output = self.dropout2(output, training=training)
-        
-        return run_tf_with_training_flag_dict(self.encoding_block_dict, output, training)
-            
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-                "dropout": self.dropout
-        })
-        return config
+        output = self.dropout2(output)
+        output = self.asv_pos_emb2(output)
+
+        return self.encoding_blocks(output)
     
-@tf.keras.saving.register_keras_serializable(package="amplicon_gpt", name="UniFracEncoder")
-class UniFracEncoder(tf.keras.layers.Layer):
-    def __init__(self, dff, **kwargs):
-        super().__init__(name="unifrac_embedding", **kwargs)
-        self.ff = tf.keras.layers.Dense(128, activation='relu')
+
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.layers"
+)
+class ReadHead(tf.keras.layers.Layer):
+    def __init__(
+            self,
+            dff,
+            kernel_initializer="glorot_uniform",
+            **kwargs
+        ):
+        super().__init__(name='read_head', **kwargs)
+        self.dff = dff
+        self.kernel_initializer=kernel_initializer
         self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense = tf.keras.layers.Dense(1)
+        self.dropout = tf.keras.layers.Dropout(.50)
     
     def build(self, input_shape):
+        self.kernel_dff = self.add_weight(
+            "kernel_dff",
+            shape=(input_shape[1], self.dff),
+            initializer=tf.keras.initializers.get(self.kernel_initializer)
+        )
 
-        def vec_layer(input, training=None):
-            output = self.ff(input)
-            output = self.norm(output)
-            output = self.dropout(output, training=training)
-            return output
-        tensor_spec = tf.TensorSpec(shape=input_shape[1:], dtype=tf.float32)
-        self.vectorize_tf_dict = create_tf_with_training_flag(vec_layer, tensor_spec=tensor_spec)
-
-    def call(self, input, training=False):
-        tf_vec_func = get_tf_training_flag_version(self.vectorize_tf_dict, training)
-        output = tf.vectorized_map(tf_vec_func, input, fallback_to_while_loop=False)
-        return tf.squeeze(self.dense(output))
-
+    def get_config(self):
+        config = {
+            "dff": self.dff,
+            "kernel_initializer": self.kernel_initializer,
+        }
+        return config
+    
+    def call(self, inputs):
+        output = self.norm(inputs)
+        output = self.dropout(output)
+        output = tf.keras.activations.relu(tf.einsum("...ij,ij->...j", output, self.kernel_dff))
+        return output
+    
             
