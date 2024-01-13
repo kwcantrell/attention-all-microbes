@@ -10,7 +10,7 @@ from amplicon_gpt.losses import regression_loss_variance, regression_loss_differ
 from amplicon_gpt.layers import SampleEncoder,  NucleotideEinsum, ReadHead
 
 MAX_SEQ = 1600
-BATCH_SIZE=2
+BATCH_SIZE=8
 
 def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_per_seq, dropout, root_path, load_prev_path=False, **kwargs):   
     d_model = 64
@@ -23,6 +23,7 @@ def transfer_learn_base(sequence_tokenizer, lstm_seq_out, batch_size, max_num_pe
     model_input = tf.keras.layers.Embedding(
         5,
         d_model,
+        embeddings_initializer="glorot_uniform",
         input_length=100,
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
@@ -47,13 +48,13 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
     
 def compile_model(model):
-    initial_learning_rate = 1.5e-3
-    decay_steps = 10400.0
-    decay_rate = 0.7
-    lr = tf.keras.optimizers.schedules.InverseTimeDecay(
-    initial_learning_rate, decay_steps, decay_rate)
+    initial_learning_rate = 0.0001
+    decay_steps = 104000.0
+    decay_rate = 0.1
+    lr = 0.0001#tf.keras.optimizers.schedules.InverseTimeDecay(
+    # initial_learning_rate, decay_steps, decay_rate, staircase=True)
 
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.98, epsilon=1e-7)
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999, epsilon=1e-7)
     model.compile(
         optimizer=optimizer,
         loss=unifrac_loss_var, metrics=[MAE()],

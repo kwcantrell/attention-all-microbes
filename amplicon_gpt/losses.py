@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-BATCH_SIZE=2
+BATCH_SIZE=8
 
 def _pairwise_distances(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
