@@ -1,7 +1,4 @@
-import os
-from collections import namedtuple
 import tensorflow as tf
-from amplicon_gpt.initializers import UnitUniform
 import tensorflow_models as tfm
 
 @tf.keras.saving.register_keras_serializable(
@@ -38,25 +35,29 @@ class NucleotideEinsum(tf.keras.layers.Layer):
     def __init__(
         self,
         dff,
-        reduce_tensor=True,
+        reduce_tensor=False,
         kernel_initializer="glorot_uniform",
-        use_pos_emb=None,
-        max_length=150,
+        input_max_length=None,
         seq_axis=2,
+        normalize_output=False,
         **kwargs
     ):
-        super().__init__(name='nucleotide_einsum', **kwargs)
+        super().__init__(**kwargs)
         self.dff = dff
         self.reduce_tensor = reduce_tensor
         self.kernel_initializer=kernel_initializer
-        self.use_pos_emb = use_pos_emb
         self.seq_axis = seq_axis
-        self.max_length = max_length
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(max_length=max_length, seq_axis=seq_axis)
-        
-        
-    
+        self.input_max_length = input_max_length
+        self.normalize_output = normalize_output
+
     def build(self, input_shape):
+        seq_axis = len(input_shape) - 2
+        if self.input_max_length:
+            self.pos_emb_input = tfm.nlp.layers.PositionEmbedding(
+                max_length=self.input_max_length,
+                seq_axis=seq_axis
+            )
+
         self.kernel_dff = self.add_weight(
             "kernel_dff",
             shape=(input_shape[-1], self.dff),
@@ -64,44 +65,32 @@ class NucleotideEinsum(tf.keras.layers.Layer):
         )
         self.norm = tf.keras.layers.LayerNormalization()
         self.dropout = tf.keras.layers.Dropout(.50)
-
-        # self.norm2 = tf.keras.layers.LayerNormalization()
-        # self.dropout2 = tf.keras.layers.Dropout(.50)
-
-        if self.reduce_tensor:
-            self.kernel_emb = self.add_weight(
-                "kernel_emb",
-                shape=(input_shape[-1], self.dff),
-                initializer=tf.keras.initializers.get(self.kernel_initializer)
-            )
         
+        self.pos_emb_red = tfm.nlp.layers.PositionEmbedding(max_length=self.dff, seq_axis=seq_axis)
 
     def get_config(self):
         config = {
             "dff": self.dff,
             "reduce_tensor": self.reduce_tensor,
             "kernel_initializer": self.kernel_initializer,
-            "use_pos_emb":self.use_pos_emb,
-            "max_length":self.max_length,
-            "seq_axis":self.seq_axis
+            "input_max_length":self.input_max_length,
+            "seq_axis":self.seq_axis,
+            "normalize_out": self.normalize_output,
         }
         return config
     
     def call(self, inputs):
-        if self.use_pos_emb:
-            inputs += self.pos_emb(inputs)
+        if self.input_max_length:
+            inputs += self.pos_emb_input(inputs)
+        output = tf.keras.activations.relu(tf.einsum("...ij,jk->...kj", inputs, self.kernel_dff))
 
-        output = self.norm(inputs)
-        output = self.dropout(output)  
-        output = tf.keras.activations.gelu(tf.einsum("...ij,jk->...jk", output, self.kernel_dff))
-              
+        if self.normalize_output:
+            output = self.norm(output)
+        output += self.pos_emb_red(output)
 
         if self.reduce_tensor:
-            # output = self.norm2(output)
-            # output = self.dropout2(output)
-            output = tf.keras.activations.gelu(tf.einsum("...ij,ij->...i", output, self.kernel_emb))
-                    
-
+            output = tf.reduce_sum(output, axis=2)
+        
         return output
     
 @tf.keras.saving.register_keras_serializable(
@@ -122,24 +111,35 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.dff = dff
         self.norm_first = norm_first
+        self.norm = tf.keras.layers.LayerNormalization()
+        self.dropout = tf.keras.layers.Dropout(.50)
         self.asv_pos_emb = NucleotideEinsum(
-            128,
+            64,
             reduce_tensor=False,
-            use_pos_emb=False)
+        )
         self.asv_pos_emb2 = NucleotideEinsum(
             64,
             reduce_tensor=False,
-            use_pos_emb=False)
-        self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(.50)
+            input_max_length=64,
+            seq_axis=1,
+            normalize_output=True,
+        )
+        self.asv_pos_emb3 = NucleotideEinsum(
+            64,
+            reduce_tensor=False,
+            input_max_length=64,
+            seq_axis=1,
+            normalize_output=True,
+        )
         self.norm2 = tf.keras.layers.LayerNormalization()
         self.dropout2 = tf.keras.layers.Dropout(.50)
+        
 
         self.encoding_blocks = tfm.nlp.models.TransformerEncoder(
             num_layers=num_enc_layers,
             num_attention_heads=8,
             intermediate_size=2048,
-            dropout_rate=dropout,
+            # dropout_rate=dropout,
             norm_first=True,
             activation='gelu',
         )
@@ -156,14 +156,9 @@ class SampleEncoder(tf.keras.layers.Layer):
     
     def call(self, input, training=False):
         print(training)
-        output = self.norm(input)
-        output = self.dropout(output)
-        output = self.asv_pos_emb(output)
-
-        # output = self.norm2(output)
-        # output = self.dropout2(output)
+        output = self.asv_pos_emb(input)
         output = self.asv_pos_emb2(output)
-
+        output = self.asv_pos_emb3(output)
         return self.encoding_blocks(output)
     
 
@@ -174,34 +169,40 @@ class ReadHead(tf.keras.layers.Layer):
     def __init__(
             self,
             dff,
-            kernel_initializer="glorot_uniform",
             **kwargs
         ):
         super().__init__(name='read_head', **kwargs)
         self.dff = dff
-        self.kernel_initializer=kernel_initializer
         self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(.50)
-        self.dense = tf.keras.layers.Dense(32)
-    def build(self, input_shape):
-        self.kernel_dff = self.add_weight(
-            "kernel_dff",
-            shape=(input_shape[1], self.dff),
-            initializer=tf.keras.initializers.get(self.kernel_initializer)
+        self.dense = tf.keras.layers.Dense(128, activation='gelu')
+        self.dense2 = tf.keras.layers.Dense(32)
+        self.asv_pos_emb = NucleotideEinsum(
+            64,
+            reduce_tensor=False,
+            input_max_length=64,
+            seq_axis=1,
+            normalize_output=True,
+        )
+        self.asv_pos_emb2 = NucleotideEinsum(
+            64,
+            reduce_tensor=False,
+            input_max_length=64,
+            seq_axis=1,
+            normalize_output=True,
         )
 
     def get_config(self):
         config = {
             "dff": self.dff,
-            "kernel_initializer": self.kernel_initializer,
         }
         return config
     
     def call(self, inputs):
-        output = self.norm(inputs)
-        output = self.dropout(output)
-        output = tf.keras.activations.gelu(tf.einsum("...ij,ij->...j", output, self.kernel_dff))
-       
-        return self.dense(output)
+        output = self.asv_pos_emb(inputs)
+        output = self.asv_pos_emb2(output)
+        output = tf.reduce_sum(output, axis=1)
+        output = self.norm(output)
+        output = self.dense(output)
+        return self.dense2(output)
     
             
