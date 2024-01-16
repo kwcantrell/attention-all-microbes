@@ -116,6 +116,7 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.asv_pos_emb = NucleotideEinsum(
             64,
             reduce_tensor=False,
+            normalize_output=True
         )
         self.asv_pos_emb2 = NucleotideEinsum(
             64,
