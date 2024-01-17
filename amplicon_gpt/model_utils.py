@@ -6,8 +6,8 @@ MAX_SEQ = 1600
 BATCH_SIZE=8
 
 def transfer_learn_base(batch_size: int, dropout: float):   
-    d_model = 64
-    dff = 64
+    d_model = 256
+    dff = 128
     num_heads = 6
     num_enc_layers = 4
     norm_first = False
@@ -20,11 +20,16 @@ def transfer_learn_base(batch_size: int, dropout: float):
         input_length=100,
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
-    model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True)(model_input)
-    model_input = NucleotideEinsum(64,
-                                   input_max_length=dff,
+    model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True,  activation='relu')(model_input)
+    model_input = NucleotideEinsum(128,
+                               input_max_length=dff,
+                               normalize_output=True,
+                               activation='relu')(model_input)
+    model_input = NucleotideEinsum(128,
+                                   input_max_length=128,
                                    reduce_tensor=True,
-                                   normalize_output=True)(model_input)
+                                   normalize_output=True,
+                                   activation='relu')(model_input)
     model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
     output = ReadHead(d_model)(model_input)
     model = tf.keras.Model(inputs=input, outputs=output)
@@ -45,7 +50,12 @@ class MAE(tf.keras.metrics.Metric):
         return self.loss / self.i
     
 def compile_model(model):
-    lr = 0.0001
+    # lr = 0.0001
+    boundaries = [4400]
+    values = [0.0001, 0.00001]
+    lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
+        boundaries, values)
+
     # model.load_weights('base-model/encoder.keras')
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999, epsilon=1e-7)
     model.compile(
