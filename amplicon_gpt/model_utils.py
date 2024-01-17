@@ -21,8 +21,12 @@ def transfer_learn_base(batch_size: int, dropout: float):
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
     model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True)(model_input)
+    model_input = NucleotideEinsum(128,
+                               input_max_length=dff,
+                               normalize_output=True,
+                               activation='relu')(model_input)
     model_input = NucleotideEinsum(64,
-                                   input_max_length=dff,
+                                   input_max_length=64,
                                    reduce_tensor=True,
                                    normalize_output=True)(model_input)
     model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
