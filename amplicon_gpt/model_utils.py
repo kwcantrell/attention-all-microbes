@@ -6,7 +6,7 @@ MAX_SEQ = 1600
 BATCH_SIZE=8
 
 def transfer_learn_base(batch_size: int, dropout: float):   
-    d_model = 256
+    d_model = 128
     dff = 128
     num_heads = 6
     num_enc_layers = 4
@@ -20,6 +20,7 @@ def transfer_learn_base(batch_size: int, dropout: float):
         input_length=100,
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
+    model_input = tf.keras.layers.LayerNormalization()(model_input)
     model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True,  activation='relu')(model_input)
     model_input = NucleotideEinsum(128,
                                input_max_length=dff,
@@ -34,7 +35,7 @@ def transfer_learn_base(batch_size: int, dropout: float):
     output = ReadHead(d_model)(model_input)
     model = tf.keras.Model(inputs=input, outputs=output)
     return model
-    
+
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt.metrics")
 class MAE(tf.keras.metrics.Metric):
     def __init__(self, name='mae_loss', dtype=tf.float32):
@@ -51,8 +52,8 @@ class MAE(tf.keras.metrics.Metric):
     
 def compile_model(model):
     # lr = 0.0001
-    boundaries = [4400]
-    values = [0.0001, 0.00001]
+    boundaries = [4400*4, 8800*4]
+    values = [0.0001, 0.00005, 0.00001]
     lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
         boundaries, values)
 
