@@ -1,6 +1,7 @@
 import tensorflow as tf
 
-BATCH_SIZE=8
+BATCH_SIZE = 8
+
 
 def _pairwise_distances(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
@@ -41,8 +42,9 @@ def _pairwise_distances(embeddings, squared=False):
 
     return distances
 
+
 def unifrac_loss_var(y_true, y_pred):
     y_pred_dist = _pairwise_distances(y_pred)
     difference = tf.square(y_true - y_pred_dist)
     difference = tf.math.reduce_sum(difference, axis=0)
-    return tf.math.reduce_sum(difference) / ((BATCH_SIZE*BATCH_SIZE)-BATCH_SIZE) / 2.0
+    return tf.math.reduce_sum(difference) / ((BATCH_SIZE * BATCH_SIZE) - BATCH_SIZE) / 2.0

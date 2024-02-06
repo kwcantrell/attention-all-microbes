@@ -2,7 +2,7 @@ REGRESSION = (
     'Apply transfer learning to train a regression model.'
 )
 
-CONFIG_JSON =(
+CONFIG_JSON = (
     'The configuration file used to setup/train the model'
 )
 
@@ -16,3 +16,4 @@ CONTINUE_TRAINING = (
 OUTPUT_MODEL_SUMMARY = (
     'Prints the model summary to console.'
 )
+
