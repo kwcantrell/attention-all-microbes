@@ -1,12 +1,12 @@
 import click
 import json
-import os
 import tensorflow as tf
 import amplicon_gpt._parameter_descriptions as desc
 from amplicon_gpt.callbacks import ProjectEncoder
 from amplicon_gpt.data_utils import (
-    get_sequencing_dataset, get_unifrac_dataset, combine_seq_dist_dataset, batch_dist_dataset
-)
+    get_sequencing_dataset, get_unifrac_dataset,
+    combine_seq_dist_dataset, batch_dist_dataset
+    )
 from amplicon_gpt.model_utils import transfer_learn_base, compile_model
 from datetime import datetime
 
@@ -14,9 +14,11 @@ from datetime import datetime
 # https://click.palletsprojects.com/en/7.x/documentation/#help-parameter-customization
 CTXSETS = {"help_option_names": ["-h", "--help"]}
 
+
 @click.group()
 def transfer_learning():
     pass
+
 
 @transfer_learning.command('unifrac')
 @click.option(
@@ -28,7 +30,7 @@ def transfer_learning():
 @click.option(
     '-c', '--continue-training',
     required=False, default=False, is_flag=True,
-    help=desc.CONTINUE_TRAINING, 
+    help=desc.CONTINUE_TRAINING,
 )
 @click.option(
     '--output-model-summary',
@@ -51,7 +53,7 @@ def unifrac(config_json, continue_training, output_model_summary):
 
     training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
     training_dataset = batch_dist_dataset(training_dataset, shuffle=True, **config)
-    
+
     val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
     validation_dataset = batch_dist_dataset(val_data, **config)
 
@@ -59,20 +61,20 @@ def unifrac(config_json, continue_training, output_model_summary):
     model = compile_model(model)
     for x, _ in training_dataset.take(1):
         y = model(x)
-    
+
     model = compile_model(model)
     for x, _ in training_dataset.take(1):
         y = model(x)
-    
+
     if output_model_summary:
         model.summary()
-    
+
     if 'patience' in config:
         patience=config['patience']
     else:
         patience=10
     config['repeat'] = 1
-    
+
     # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
     #                           patience=5, min_lr=0.001)
     # Define the Keras TensorBoard callback.

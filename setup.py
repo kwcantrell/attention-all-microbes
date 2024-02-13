@@ -4,7 +4,7 @@ __version__ = "0.1"
 __author__="Kalen Cantrell"
 __email__ = "kcantrel@ucsd.edu"
 
-required_packages=["biom-format", "numpy", "pandas", 
+required_packages=["biom-format", "numpy", "pandas",
                    "scikit-bio", "scikit-learn", "scipy", "unifrac"]
 
 classes = """
