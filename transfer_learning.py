@@ -66,8 +66,8 @@ def unifrac(config_json, continue_training, output_model_summary):
     model = transfer_learn_base(batch_size=batch_size,
                                 dropout=config['dropout'])
     model = compile_model(model)
-    for x, _ in training_dataset.take(1):
-        y = model(x)
+#    for x, _ in training_dataset.take(1):
+#        y = model(x)
 
 #    model = compile_model(model)
 #    for x, _ in training_dataset.take(1):
@@ -77,9 +77,9 @@ def unifrac(config_json, continue_training, output_model_summary):
         model.summary()
 
     if 'patience' in config:
-        patience=config['patience']
+        patience = config['patience']
     else:
-        patience=10
+        patience = 10
     config['repeat'] = 1
 
     # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
@@ -91,9 +91,9 @@ def unifrac(config_json, continue_training, output_model_summary):
 
     model.fit(
         training_dataset, validation_data=validation_dataset,
-        epochs = config['epochs'], initial_epoch=0,
-                        batch_size=config['batch_size'],
-        callbacks = [
+        epochs=config['epochs'], initial_epoch=0,
+                                   batch_size=config['batch_size'],
+        callbacks=[
                     tf.keras.callbacks.EarlyStopping(monitor='val_loss',
                                                      start_from_epoch=0,
                                                      patience=patience,
@@ -103,7 +103,8 @@ def unifrac(config_json, continue_training, output_model_summary):
                     tensorboard_callback
         ]
     )
-    # model.save(os.path.join(config['root_path'], 'model.keras'), save_format='keras')
+    # model.save(os.path.join(config['root_path'],
+    #                         'model.keras'), save_format='keras')
 
 
 def main():
