@@ -44,9 +44,9 @@ def unifrac(config_json, continue_training, output_model_summary):
     seq_dataset = get_sequencing_dataset(**config)
     unifrac_dataset = get_unifrac_dataset(**config)
     sequence_tokenizer = tf.keras.layers.TextVectorization(max_tokens=7,
-                                                           split='character',
-                                                           output_mode='int',
-                                                           output_sequence_length=100)
+                                                   split='character',
+                                                   output_mode='int',
+                                                   output_sequence_length=100)
     sequence_tokenizer.adapt(seq_dataset.take(1))
     dataset, proj_dataset = combine_seq_dist_dataset(seq_dataset,
                                                      unifrac_dataset,
@@ -69,9 +69,9 @@ def unifrac(config_json, continue_training, output_model_summary):
     for x, _ in training_dataset.take(1):
         y = model(x)
 
-    model = compile_model(model)
-    for x, _ in training_dataset.take(1):
-        y = model(x)
+#    model = compile_model(model)
+#    for x, _ in training_dataset.take(1):
+#        y = model(x)
 
     if output_model_summary:
         model.summary()
@@ -99,8 +99,7 @@ def unifrac(config_json, continue_training, output_model_summary):
                                                      patience=patience,
                                                      mode='min'),
                     ProjectEncoder(proj_dataset.padded_batch(
-                                                             config['batch_size']),
-                                                             **config),
+                                             config['batch_size']), **config),
                     tensorboard_callback
         ]
     )
