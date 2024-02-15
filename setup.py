@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages
 
 __version__ = "0.1"
-__author__="Kalen Cantrell"
+__author__ = "Kalen Cantrell"
 __email__ = "kcantrel@ucsd.edu"
 
-required_packages=["biom-format", "numpy", "pandas",
+required_packages = ["biom-format", "numpy", "pandas",
                    "scikit-bio", "scikit-learn", "scipy", "unifrac"]
 
 classes = """
@@ -14,7 +14,7 @@ classes = """
 classifiers = [s.strip() for s in classes.split('\n') if s]
 
 with open('README.md') as f:
-    long_description=f.read()
+    long_description = f.read()
 
 
 setup(

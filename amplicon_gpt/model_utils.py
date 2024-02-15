@@ -54,7 +54,7 @@ class MAE(tf.keras.metrics.Metric):
         self.loss.assign_add(tf.reduce_sum(tf.abs(_pairwise_distances(y_pred)
                                                   - y_true)))
         self.i.assign_add(tf.constant(((BATCH_SIZE * BATCH_SIZE) - BATCH_SIZE)
-                                        / 2.0, dtype=tf.float32))
+                          / 2.0, dtype=tf.float32))
 
     def result(self):
         return self.loss / self.i
