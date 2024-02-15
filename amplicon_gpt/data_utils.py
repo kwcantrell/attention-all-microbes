@@ -21,11 +21,13 @@ def get_sequencing_dataset(table_path, **kwargs):
                                         dense_shape=table.shape)
     table_data = tf.sparse.reorder(table_data)
     # get_asv_id = lambda x: tf.gather(o_ids, x.indices)
+
     def get_asv_id(x):
         return tf.gather(o_ids, x.indices)
+
     return (tf.data.Dataset.from_tensor_slices(table_data)
             .map(get_asv_id,
-                num_parallel_calls=tf.data.AUTOTUNE)
+                 num_parallel_calls=tf.data.AUTOTUNE)
             .prefetch(tf.data.AUTOTUNE)
             )
 
