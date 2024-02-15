@@ -45,17 +45,17 @@ def combine_seq_dist_dataset(seq_dataset, dist_dataset, batch_size, **kwargs):
             .shuffle(dataset_size, reshuffle_each_iteration=False)
             .prefetch(tf.data.AUTOTUNE)
     ), seq_dataset
-    
+
 def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=None, **kwargs):
     dataset = dataset.cache()
     size = dataset.cardinality()
-    
+
     if shuffle:
         dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
 
     def get_pairwise_dist(ind, seq, dist):
         return (seq, tf.gather(dist, ind, axis=1, batch_dims=0))
-    
+
     dataset = (dataset
         # .padded_batch(batch_size, padded_shapes=([], [None,1], [None]), drop_remainder=True)#, padding_values=(
         .padded_batch(batch_size, padded_shapes=([], [None,100], [None]), drop_remainder=True)#, padding_values=(
