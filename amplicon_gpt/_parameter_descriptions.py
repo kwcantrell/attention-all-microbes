@@ -16,4 +16,3 @@ CONTINUE_TRAINING = (
 OUTPUT_MODEL_SUMMARY = (
     'Prints the model summary to console.'
 )
-
