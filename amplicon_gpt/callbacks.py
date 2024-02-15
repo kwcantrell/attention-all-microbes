@@ -112,8 +112,8 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         tf.print('loggin data...')
         self.model.save(os.path.join(self.model_path, 'encoder.keras'),
                 save_format='keras')
-        total_samples = int(self.table.shape[1] / self.batch_size)
-                            * self.batch_size
+        total_samples = (int(self.table.shape[1] / self.batch_size)
+                         * self.batch_size)
 
         sample_indices = np.arange(total_samples)
         np.random.shuffle(sample_indices)
