@@ -2,7 +2,7 @@ import tensorflow as tf
 
 
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt",
-        name="MemoryHead")
+                                             name="MemoryHead")
 class UnitUniform(tf.keras.initializers.Initializer):
     def __init__(self, fan_out):
         super().__init__()
@@ -15,4 +15,3 @@ class UnitUniform(tf.keras.initializers.Initializer):
         return {
             "fan_out": self.fan_out
         }
-

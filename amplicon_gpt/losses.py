@@ -28,7 +28,7 @@ def _pairwise_distances(embeddings, squared=False):
     # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
     # shape (batch_size, batch_size)
     distances = (tf.expand_dims(square_norm, 1) - 2.0 * dot_product +
-            tf.expand_dims(square_norm, 0))
+                 tf.expand_dims(square_norm, 0))
 
     # Because of computation errors, some distances might be negative so we
     # put everything >= 0.0

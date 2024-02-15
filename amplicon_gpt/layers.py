@@ -89,7 +89,7 @@ class NucleotideEinsum(tf.keras.layers.Layer):
         if self.input_max_length:
             inputs += self.pos_emb_input(inputs)
         output = self.activation_function(tf.einsum("...ij,jk->...kj",
-            inputs, self.kernel_dff))
+                                          inputs, self.kernel_dff))
 
         if self.normalize_output:
             output = self.norm(output)
