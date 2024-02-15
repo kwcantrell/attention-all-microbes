@@ -44,7 +44,7 @@ def mean_absolute_error(dataset, model, fname, s_type):
     mae, h = '%.4g' % mae, '%.4g' % h
     plt.xlabel('Reported age')
     plt.ylabel('Predicted age')
-    plt.title(f"""{s_type} microbiota
+    plt.title(rf"""{s_type} microbiota
               MAE: ${mae} \pm {h}$""")
     plt.savefig(fname)
     plt.close()
@@ -197,7 +197,7 @@ class Accuracy(tf.keras.callbacks.Callback):
                 ax = plt.gca()
                 ax.set_aspect('equal')
                 fname = os.path.join(self.figure_path,
-                                   f'auc-{self.total_mae}.png')
+                                     f'auc-{self.total_mae}.png')
                 plt.savefig(fname)
                 plt.close('all')
 
