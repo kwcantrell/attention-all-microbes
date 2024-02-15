@@ -16,7 +16,9 @@ class NucleotideEinsum(tf.keras.layers.Layer):
         dff: The hidden dimension of the intermediate pointwise project
 
     Examples:
-        >>> embeddings = tf.reshape(tf.range(0, 2 * 6, dtype=tf.float32), (1, 2, 3, 2))
+        >>> embeddings = tf.reshape(
+                tf.range(0, 2 * 6, dtype=tf.float32),
+                (1, 2, 3, 2))
         >>> embedding
         <tf.Tensor: shape=(1, 2, 3, 2), dtype=float32, numpy=
         array([[[[ 0.,  1.],
@@ -69,7 +71,8 @@ class NucleotideEinsum(tf.keras.layers.Layer):
         self.norm = tf.keras.layers.LayerNormalization()
         self.dropout = tf.keras.layers.Dropout(0.50)
 
-        self.pos_emb_red = tfm.nlp.layers.PositionEmbedding(max_length=self.dff, seq_axis=seq_axis)
+        self.pos_emb_red = tfm.nlp.layers.PositionEmbedding(
+                max_length=self.dff, seq_axis=seq_axis)
 
     def get_config(self):
         config = {
@@ -85,7 +88,8 @@ class NucleotideEinsum(tf.keras.layers.Layer):
     def call(self, inputs):
         if self.input_max_length:
             inputs += self.pos_emb_input(inputs)
-        output = self.activation_function(tf.einsum("...ij,jk->...kj", inputs, self.kernel_dff))
+        output = self.activation_function(tf.einsum("...ij,jk->...kj",
+            inputs, self.kernel_dff))
 
         if self.normalize_output:
             output = self.norm(output)

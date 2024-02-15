@@ -5,7 +5,7 @@ __author__ = "Kalen Cantrell"
 __email__ = "kcantrel@ucsd.edu"
 
 required_packages = ["biom-format", "numpy", "pandas",
-                   "scikit-bio", "scikit-learn", "scipy", "unifrac"]
+                     "scikit-bio", "scikit-learn", "scipy", "unifrac"]
 
 classes = """
     Development Status :: 3 - Alpha
