@@ -1,5 +1,5 @@
-#import numpy as np
-#import pandas as pd
+# import numpy as np
+# import pandas as pd
 import tensorflow as tf
 from biom import load_table
 from unifrac import unweighted
@@ -20,11 +20,13 @@ def get_sequencing_dataset(table_path, **kwargs):
     table_data = tf.sparse.SparseTensor(indices=indices, values=values,
                                         dense_shape=table.shape)
     table_data = tf.sparse.reorder(table_data)
-    get_asv_id = lambda x: tf.gather(o_ids, x.indices)
+    # get_asv_id = lambda x: tf.gather(o_ids, x.indices)
+    def get_asv_id(x):
+        return tf.gather(o_ids, x.indices)
     return (tf.data.Dataset.from_tensor_slices(table_data)
-                           .map(get_asv_id,
-                                num_parallel_calls=tf.data.AUTOTUNE)
-                           .prefetch(tf.data.AUTOTUNE)
+            .map(get_asv_id,
+                num_parallel_calls=tf.data.AUTOTUNE)
+            .prefetch(tf.data.AUTOTUNE)
             )
 
 
