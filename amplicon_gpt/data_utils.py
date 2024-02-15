@@ -1,5 +1,5 @@
-import numpy as np
-import pandas as pd
+#import numpy as np
+#import pandas as pd
 import tensorflow as tf
 from biom import load_table
 from unifrac import unweighted
@@ -25,14 +25,15 @@ def get_sequencing_dataset(table_path, **kwargs):
                            .map(get_asv_id,
                                 num_parallel_calls=tf.data.AUTOTUNE)
                            .prefetch(tf.data.AUTOTUNE)
-           )
+            )
 
 
 def get_unifrac_dataset(table_path, tree_path, **kwargs):
     distance = unweighted(table_path, tree_path).data
     return (tf.data.Dataset.from_tensor_slices(distance)
             .prefetch(tf.data.AUTOTUNE)
-           )
+            )
+
 
 def combine_seq_dist_dataset(seq_dataset, dist_dataset, batch_size, **kwargs):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
@@ -49,7 +50,7 @@ def combine_seq_dist_dataset(seq_dataset, dist_dataset, batch_size, **kwargs):
                  dist_dataset)
             .shuffle(dataset_size, reshuffle_each_iteration=False)
             .prefetch(tf.data.AUTOTUNE)
-           ), seq_dataset
+            ), seq_dataset
 
 
 def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=None,
@@ -65,13 +66,13 @@ def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=None,
 
     dataset = (dataset
                .padded_batch(batch_size,
-                             padded_shapes=([], [None,100], [None]),
+                             padded_shapes=([], [None, 100], [None]),
                              drop_remainder=True)
                # padding_values can be added, if needed.
                .prefetch(tf.data.AUTOTUNE)
                .map(get_pairwise_dist)
                .prefetch(tf.data.AUTOTUNE)
-    )
+               )
 
     if not shuffle:
         dataset = dataset.cache()
