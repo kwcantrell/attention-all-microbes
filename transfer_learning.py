@@ -73,6 +73,8 @@ def unifrac(config_json, continue_training, output_model_summary):
 #    model = compile_model(model)
 #    for x, _ in training_dataset.take(1):
 #        y = model(x)
+#        print(x)
+#        print(y)
 
     if output_model_summary:
         model.summary()
