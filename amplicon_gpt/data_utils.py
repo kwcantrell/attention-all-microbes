@@ -6,7 +6,7 @@ from unifrac import unweighted
 
 
 def get_sequencing_dataset(table_path, **kwargs):
-    if type(table_path) is str:
+    if isinstance(table_path, str):
         table = load_table(table_path)
     else:
         table = table_path
