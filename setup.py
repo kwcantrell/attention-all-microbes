@@ -24,7 +24,6 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     author=__author__,
-    license="MIT",
     classifiers=classifiers,
     packages=find_packages(),
     install_requires=required_packages,
