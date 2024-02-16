@@ -6,9 +6,6 @@ jobs:
   flake8-lint:
     runs-on: ubuntu-latest
     name: Lint
-    runs:
-        using: 'node20'
-        main: 'main.js'
     steps:
       - name: Check out source repository
         uses: actions/checkout@v3
