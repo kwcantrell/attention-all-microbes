@@ -1,6 +1,6 @@
 import tensorflow as tf
 from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances 
-from amplicon_gpt.layers import SampleEncoder,  NucleotideEinsum, ReadHead
+from amplicon_gpt.layers import SampleEncoder,  NucleotideEinsum, ReadHead, FullNucleotideEinsum
 
 MAX_SEQ = 1600
 BATCH_SIZE=8
@@ -32,8 +32,99 @@ def transfer_learn_base(batch_size: int, dropout: float):
                                    normalize_output=True,
                                    activation='relu')(model_input)
     model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
-    output = ReadHead(d_model)(model_input)
+    output = ReadHead(d_model, output_dim=128)(model_input)
     model = tf.keras.Model(inputs=input, outputs=output)
+    return model
+
+def classification(batch_size: int, dropout: float):   
+    d_model = 128
+    dff = 128
+    num_heads = 6
+    num_enc_layers = 4
+    norm_first = False
+    
+    input = tf.keras.Input(shape=[None,100], batch_size=batch_size, dtype=tf.int64)
+    model_input = tf.keras.layers.Embedding(
+        5,
+        d_model,
+        embeddings_initializer="glorot_uniform",
+        input_length=100,
+        input_shape=[batch_size, None, 100],
+        name="embedding")(input)
+    model_input = tf.keras.layers.LayerNormalization()(model_input)
+    model_input = FullNucleotideEinsum(d_model,
+                                input_max_length=100,
+                                normalize_output=True,
+                                activation='relu')(model_input)
+    model_input = FullNucleotideEinsum(d_model,
+                                input_max_length=100,
+                                normalize_output=True,
+                                activation='relu')(model_input)
+    model_input = FullNucleotideEinsum(d_model,
+                                input_max_length=100,
+                                reduce_tensor=True,
+                                normalize_output=True,
+                                activation='relu',
+                                use_dropout=True)(model_input)
+    model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
+    output = ReadHead(d_model, output_dim=12)(model_input)
+    model = tf.keras.Model(inputs=input, outputs=output)
+    
+    # boundaries = [4400*4, 8800*4]
+    # values = [0.0001, 0.00005, 0.00001]
+    # lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
+    #     boundaries, values)
+
+    # model.load_weights('base-model/encoder.keras')
+    # optimizer = tf.keras.optimizers.AdamW(learning_rate=0.0005, beta_2=0.999, epsilon=1e-7)
+    # model.compile(
+    #     optimizer=optimizer,
+    #     loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'],
+    #     jit_compile=False)
+    return model
+
+def regression(batch_size: int):   
+    dropout=0.5
+    d_model = 128
+    dff = 128
+    num_heads = 6
+    num_enc_layers = 4
+    norm_first = False
+    
+    input = tf.keras.Input(shape=[None,100], batch_size=batch_size, dtype=tf.int64)
+    model_input = tf.keras.layers.Embedding(
+        5,
+        d_model,
+        embeddings_initializer="glorot_uniform",
+        input_length=100,
+        input_shape=[batch_size, None, 100],
+        name="embedding")(input)
+    model_input = tf.keras.layers.LayerNormalization()(model_input)
+    model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True,  activation='relu')(model_input)
+    model_input = NucleotideEinsum(128,
+                               input_max_length=dff,
+                               normalize_output=True,
+                               activation='relu')(model_input)
+    model_input = NucleotideEinsum(128,
+                                   input_max_length=128,
+                                   reduce_tensor=True,
+                                   normalize_output=True,
+                                   activation='relu')(model_input)
+    model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
+    output = ReadHead(d_model, output_dim=1)(model_input)
+    model = tf.keras.Model(inputs=input, outputs=output)
+    
+    boundaries = [1400]
+    values = [0.0001, 0.0001]
+    lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
+        boundaries, values)
+
+    # model.load_weights('base-model/encoder.keras')
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999, epsilon=1e-7)
+    model.compile(
+        optimizer=optimizer,
+        loss='mean_squared_error', metrics=['mae'],
+        jit_compile=False)
     return model
 
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt.metrics")
