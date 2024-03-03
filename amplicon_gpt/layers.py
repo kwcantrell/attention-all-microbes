@@ -30,14 +30,14 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
                     tf.constant(emb_shape - 1, dtype=tf.float32),
                     first_transp, second_transp)
         self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
-    
+
     def init_proj(reshape, emb_shape, first_transp, second_transp):
         @tf.function(reduce_retracing=True, jit_compile=True)
         def compute_proj(X, u):
             # create heads
             X = tf.reshape(X, shape=reshape)
             X = tf.transpose(X, perm=first_transp)
-            
+
             # compute pca projections
             X_h = tf.reduce_mean(X, axis=-1, keepdims=True)
             X = tf.subtract(X, X_h)
@@ -198,7 +198,7 @@ class SampleEncoder(tf.keras.layers.Layer):
     def call(self, input, training=False):
         print(training)
         return self.encoding_blocks(input)
-    
+
 
 @tf.keras.saving.register_keras_serializable(
     package="amplicon_gpt.layers"
@@ -230,4 +230,3 @@ class ReadHead(tf.keras.layers.Layer):
     def call(self, inputs):
         output = self.pca_proj(inputs)
         return output
-

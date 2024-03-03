@@ -12,7 +12,7 @@ def transfer_learn_base(batch_size: int, dropout: float):
     num_heads = 8
     num_enc_layers = 4
     norm_first = False
-    
+
     input = tf.keras.Input(shape=[None, 100],
                            batch_size=batch_size,
                            dtype=tf.int64)
