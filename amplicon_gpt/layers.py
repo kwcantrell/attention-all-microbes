@@ -6,8 +6,13 @@ import tensorflow_models as tfm
     package="amplicon_gpt.layer"
 )
 class MultiHeadPCAProjection(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 hidden_dim,
+                 dropout=0.,
+                 **kwargs):
         super().__init__(**kwargs)
+        self.hidden_dim = hidden_dim
+        self.dropout = dropout
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
@@ -19,24 +24,36 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         first_transp = first_transp[:-3] + [first_transp[-2],
                                             first_transp[-3],
                                             first_transp[-1]]
-        second_transp = reshape[:-3] + [emb_shape]
-
+        second_transp = [i for i in range(len(reshape))]
+        second_transp = second_transp[:-3] + [second_transp[-2],
+                                              second_transp[-3],
+                                              second_transp[-1]]
+        second_reshape = shape[:-2] + [emb_shape, self.hidden_dim]
         self.linear_transform = tf.keras.layers.Dense(emb_shape,
                                                       activation='relu')
 
-        self.activation_function = tf.keras.activations.get('relu')
-        self.dff = tf.keras.layers.Dense(128, activation='relu')
-        self.point = tf.keras.layers.Dense(1, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.5)
+        self.dff = tf.keras.layers.Dense(self.hidden_dim,
+                                         activation='relu',
+                                         use_bias=False)
+        self.point = tf.keras.layers.Dense(1,
+                                           activation='relu',
+                                           use_bias=False)
+        self.dropout = tf.keras.layers.Dropout(self.dropout)
         init_tup = (reshape,
                     first_transp,
                     second_transp,
+                    second_reshape,
                     self.dff,
                     self.point)
         self.second = second_transp
         self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
 
-    def init_proj(reshape, first_transp, second_transp, dff, point):
+    def init_proj(reshape,
+                  first_transp,
+                  second_transp,
+                  second_reshape,
+                  dff,
+                  point):
         @tf.function(reduce_retracing=True, jit_compile=True)
         def compute_proj(X):
             ONE = tf.constant(1)
@@ -47,19 +64,63 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             if not tf.is_symbolic_tensor(X):
                 cov /= tf.constant(reshape[-ONE] - ONE,
                                    dtype=tf.float32)
-            e, eig_vec = tf.linalg.eigh(cov)
-
-            proj = tf.einsum('...ijk->...ikj', eig_vec)
-            proj = dff(proj)
-            proj = tf.squeeze(point(proj))
-            proj = tf.reshape(proj, shape=second_transp)
+            _, eig_vec = tf.linalg.eigh(cov)
+            proj = dff(eig_vec)
+            proj = tf.transpose(proj, perm=second_transp)
+            proj = tf.reshape(proj, shape=second_reshape)
+            proj = tf.squeeze(point(proj), axis=-1)
             return proj
         return compute_proj
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training):
         output = self.linear_transform(inputs)
         output = self.compute_proj(output)
         return self.dropout(output, training=training)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "hidden_dim": self.hidden_dim,
+            "dropout": self.dropout
+        })
+        return config
+
+
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.layers"
+)
+class ReadHead(tf.keras.layers.Layer):
+    def __init__(
+            self,
+            hidden_dim,
+            output_dim,
+            dropout=0.,
+            **kwargs
+    ):
+        super().__init__(name='read_head', **kwargs)
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.dropout = dropout
+        self.pca_proj = MultiHeadPCAProjection(
+            hidden_dim=self.hidden_dim,
+            dropout=self.dropout,
+            name='read_head_project')
+        self.dense = tf.keras.layers.Dense(self.output_dim,
+                                           use_bias=False)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "hidden_dim": self.hidden_dim,
+            "output_dim": self.output_dim,
+            "dropout": self.dropout
+        })
+        return config
+
+    def call(self, inputs):
+        output = self.pca_proj(inputs)
+        output = self.dense(output)
+        return output
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -156,38 +217,4 @@ class NucleotideEinsum(tf.keras.layers.Layer):
         if self.reduce_tensor:
             output = tf.reduce_sum(output, axis=2)
 
-        return output
-
-
-@tf.keras.saving.register_keras_serializable(
-    package="amplicon_gpt.layers"
-)
-class ReadHead(tf.keras.layers.Layer):
-    def __init__(
-            self,
-            dff,
-            output_dim,
-            **kwargs
-    ):
-        super().__init__(name='read_head', **kwargs)
-        self.dff = dff
-        self.output_dim = output_dim
-        self.pca_proj = MultiHeadPCAProjection(name='read_head_project')
-        self.dense = tf.keras.layers.Dense(256, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(output_dim)
-        self.dropout = tf.keras.layers.Dropout(0.2)
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "dff": self.dff,
-            "output_dim": self.output_dim
-        })
-        return config
-
-    def call(self, inputs):
-        output = self.pca_proj(inputs)
-        output = self.dense(output)
-        output = self.dropout(output)
-        output = self.dense2(output)
         return output

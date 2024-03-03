@@ -6,7 +6,7 @@ from amplicon_gpt.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
 )
-from amplicon_gpt.model_utils import transfer_learn_base, compile_model
+from amplicon_gpt.model_utils import transfer_learn_base
 
 
 # Allow using -h to show help information
@@ -68,9 +68,6 @@ def unifrac(i_table,
     validation_dataset = batch_dataset(val_data, batch_size, is_pairwise=True)
 
     model = transfer_learn_base(batch_size)
-    # model = tf.keras.models.load_model('base-model/encoder.keras',
-    #                                    safe_mode=False)
-    model = compile_model(model, batch_size)
 
     model.summary()
 

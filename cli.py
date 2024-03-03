@@ -85,6 +85,12 @@ def fit_regressor(i_table,
                   repeat,
                   epochs,
                   output_dir):
+
+    """
+    TODO: Normalize regress var i.e. center with a std of 0.
+    TODO: Save params needed to normalize and convert back
+          for loss
+    """
     table, metdata = align_table_and_metadata(i_table,
                                               m_metadata_file,
                                               m_metadata_column)
