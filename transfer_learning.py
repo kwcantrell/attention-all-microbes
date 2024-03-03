@@ -4,11 +4,11 @@ import tensorflow as tf
 import amplicon_gpt._parameter_descriptions as desc
 from amplicon_gpt.callbacks import ProjectEncoder
 from amplicon_gpt.data_utils import (
-    get_sequencing_dataset, get_unifrac_dataset,
-    combine_seq_dist_dataset, batch_dist_dataset
-    )
+    get_sequencing_dataset, get_unifrac_dataset, combine_seq_dist_dataset,
+    batch_dist_dataset,
+)
 from amplicon_gpt.model_utils import transfer_learn_base, compile_model
-from datetime import datetime
+
 
 # Allow using -h to show help information
 # https://click.palletsprojects.com/en/7.x/documentation/#help-parameter-customization
@@ -66,15 +66,8 @@ def unifrac(config_json, continue_training, output_model_summary):
 
     model = transfer_learn_base(batch_size=batch_size,
                                 dropout=config['dropout'])
+    # model = tf.keras.models.load_model('base-model/encoder.keras')
     model = compile_model(model)
-#    for x, _ in training_dataset.take(1):
-#        y = model(x)
-
-#    model = compile_model(model)
-#    for x, _ in training_dataset.take(1):
-#        y = model(x)
-#        print(x)
-#        print(y)
 
     if output_model_summary:
         model.summary()
@@ -85,32 +78,27 @@ def unifrac(config_json, continue_training, output_model_summary):
         patience = 10
     config['repeat'] = 1
 
-    # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
-    #                           patience=5, min_lr=0.001)
     # Define the Keras TensorBoard callback.
-    logdir = "base-model/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir,
-                                                          write_graph=False)
-
-    model.fit(
-        training_dataset, validation_data=validation_dataset,
-        epochs=config['epochs'], initial_epoch=0,
-        batch_size=config['batch_size'],
-        callbacks=[
-                   tf.keras.callbacks.EarlyStopping(monitor='val_loss',
-                                                    start_from_epoch=0,
-                                                    patience=patience,
-                                                    mode='min'),
-                   ProjectEncoder(proj_dataset.padded_batch(
-                           config['batch_size']), **config),
-                   tensorboard_callback
-        ]
-    )
-    # model.save(os.path.join(config['root_path'],
-    #                         'model.keras'), save_format='keras')
+    # logdir="base-model/logs/"
+    # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir,
+    #                                               profile_batch='50, 75',
+    #   write_graph=False)
+    model.fit(training_dataset,
+              validation_data=validation_dataset,
+              epochs=config['epochs'],
+              initial_epoch=0,
+              batch_size=config['batch_size'],
+              callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss',
+                                                          start_from_epoch=0,
+                                                          patience=patience,
+                                                          mode='min'),
+                         # tensorboard_callback,
+                         ProjectEncoder(validation_dataset, **config)])
 
 
 def main():
+    gpus = tf.config.list_physical_devices('GPU')
+    tf.config.experimental.set_memory_growth(gpus[0], True)
     transfer_learning(prog_name='transfer_learning')
 
 

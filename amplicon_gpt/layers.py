@@ -3,6 +3,63 @@ import tensorflow_models as tfm
 
 
 @tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.layer"
+)
+class MultiHeadPCAProjection(tf.keras.layers.Layer):
+    def build(self, input_shape):
+        shape = [x if x is not None else -1 for x in input_shape]
+        num_heads = 8
+        emb_shape = shape[-1]
+        head_size = emb_shape // num_heads
+        reshape = shape[:-1] + [num_heads, head_size]
+
+        first_transp = [i for i in range(len(reshape))]
+        first_transp = first_transp[:-3] + [first_transp[-2],
+                                            first_transp[-3],
+                                            first_transp[-1]]
+        second_transp = reshape[:-3] + [emb_shape]
+
+        self.u_proj_vec = self.add_weight(
+            "u_proj_vec",
+            shape=[1, head_size],
+            initializer='glorot_uniform',
+            trainable=True
+        )
+        self.linear_transform = tf.keras.layers.Dense(emb_shape, 'relu')
+        init_tup = (reshape,
+                    tf.constant(emb_shape - 1, dtype=tf.float32),
+                    first_transp, second_transp)
+        self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
+
+    def init_proj(reshape, emb_shape, first_transp, second_transp):
+        @tf.function(reduce_retracing=True, jit_compile=True)
+        def compute_proj(X, u):
+            # create heads
+            X = tf.reshape(X, shape=reshape)
+            X = tf.transpose(X, perm=first_transp)
+
+            # compute pca projections
+            X_h = tf.reduce_mean(X, axis=-1, keepdims=True)
+            X = tf.subtract(X, X_h)
+            cov = tf.linalg.matmul(X, X, transpose_a=True)
+            if not tf.is_symbolic_tensor(X):
+                cov /= tf.constant(tf.shape(X)[-2] - 1, dtype=tf.float32)
+            _, eig_vec = tf.linalg.eigh(cov)
+            projs = tf.einsum('...ij,...j->...i', eig_vec, u)
+
+            # join heads
+            concat_projs = tf.einsum('...hi->...ih', projs)
+            output = tf.reshape(concat_projs, shape=second_transp)
+            return output
+        return compute_proj
+
+    def call(self, inputs):
+        output = self.linear_transform(inputs)
+        output = self.compute_proj(output, self.u_proj_vec)
+        return output
+
+
+@tf.keras.saving.register_keras_serializable(
     package="amplicon_gpt.layers"
 )
 class NucleotideEinsum(tf.keras.layers.Layer):
@@ -91,8 +148,6 @@ class NucleotideEinsum(tf.keras.layers.Layer):
         output = self.activation_function(tf.einsum("...ij,jk->...kj",
                                           inputs, self.kernel_dff))
 
-        if self.normalize_output:
-            output = self.norm(output)
         output += self.pos_emb_red(output)
 
         if self.reduce_tensor:
@@ -120,39 +175,14 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.dff = dff
         self.norm_first = norm_first
-        self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(0.50)
-        self.asv_pos_emb = NucleotideEinsum(
-            128,
-            reduce_tensor=False,
-            normalize_output=True,
-            activation='relu'
-        )
-        self.asv_pos_emb2 = NucleotideEinsum(
-            128,
-            reduce_tensor=False,
-            input_max_length=128,
-            seq_axis=1,
-            normalize_output=True,
-            activation='relu'
-        )
-        self.asv_pos_emb3 = NucleotideEinsum(
-            128,
-            reduce_tensor=False,
-            input_max_length=128,
-            seq_axis=1,
-            normalize_output=True,
-            activation='relu'
-        )
-        self.norm2 = tf.keras.layers.LayerNormalization()
-        self.dropout2 = tf.keras.layers.Dropout(0.50)
 
         self.encoding_blocks = tfm.nlp.models.TransformerEncoder(
             num_layers=num_enc_layers,
             num_attention_heads=8,
             intermediate_size=2048,
+            dropout_rate=0.5,
             norm_first=True,
-            activation='relu',
+            activation='gelu',
         )
 
     def get_config(self):
@@ -167,10 +197,7 @@ class SampleEncoder(tf.keras.layers.Layer):
 
     def call(self, input, training=False):
         print(training)
-        output = self.asv_pos_emb(input)
-        output = self.asv_pos_emb2(output)
-        output = self.asv_pos_emb3(output)
-        return self.encoding_blocks(output)
+        return self.encoding_blocks(input)
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -180,40 +207,26 @@ class ReadHead(tf.keras.layers.Layer):
     def __init__(
             self,
             dff,
+            output_dim,
             **kwargs
     ):
         super().__init__(name='read_head', **kwargs)
         self.dff = dff
-        self.norm = tf.keras.layers.LayerNormalization()
-        self.dense = tf.keras.layers.Dense(256, activation='gelu')
-        self.dense2 = tf.keras.layers.Dense(32)
-        self.asv_pos_emb = NucleotideEinsum(
-            128,
-            reduce_tensor=False,
-            input_max_length=128,
-            seq_axis=1,
-            normalize_output=True,
-            activation='relu'
-        )
-        self.asv_pos_emb2 = NucleotideEinsum(
-            128,
-            reduce_tensor=False,
-            input_max_length=128,
-            seq_axis=1,
-            normalize_output=True,
-            activation='relu'
-        )
+        self.output_dim = output_dim
+        self.dense = tf.keras.layers.Dense(256, activation='relu')
+        self.dense2 = tf.keras.layers.Dense(output_dim)
+        self.dropout = tf.keras.layers.Dropout(0.2)
+        self.pca_proj = MultiHeadPCAProjection()
+        self.linear_activation = tf.keras.layers.Activation('linear',
+                                                            dtype='float32')
 
     def get_config(self):
         config = {
             "dff": self.dff,
+            "output_dim": self.output_dim
         }
         return config
 
     def call(self, inputs):
-        output = self.asv_pos_emb(inputs)
-        output = self.asv_pos_emb2(output)
-        output = tf.reduce_sum(output, axis=1)
-        output = self.norm(output)
-        output = self.dense(output)
-        return self.dense2(output)
+        output = self.pca_proj(inputs)
+        return output
