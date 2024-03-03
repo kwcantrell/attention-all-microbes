@@ -1,18 +1,21 @@
 import tensorflow as tf
-from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances 
-from amplicon_gpt.layers import SampleEncoder,  NucleotideEinsum, ReadHead, MultiHeadPCAProjection
+from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances
+from amplicon_gpt.layers import SampleEncoder, ReadHead, MultiHeadPCAProjection
 
 MAX_SEQ = 1600
-BATCH_SIZE=8
+BATCH_SIZE = 8
 
-def transfer_learn_base(batch_size: int, dropout: float):   
+
+def transfer_learn_base(batch_size: int, dropout: float):
     d_model = 128
     dff = 128
     num_heads = 8
     num_enc_layers = 4
     norm_first = False
     
-    input = tf.keras.Input(shape=[None,100], batch_size=batch_size, dtype=tf.int64)
+    input = tf.keras.Input(shape=[None, 100],
+                           batch_size=batch_size,
+                           dtype=tf.int64)
     model_input = tf.keras.layers.Embedding(
         5,
         d_model,
@@ -21,106 +24,43 @@ def transfer_learn_base(batch_size: int, dropout: float):
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
     model_input = MultiHeadPCAProjection()(model_input)
-    model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
+    model_input = SampleEncoder(dropout,
+                                num_enc_layers,
+                                num_heads,
+                                dff,
+                                norm_first)(model_input)
     output = ReadHead(d_model, output_dim=d_model)(model_input)
     model = tf.keras.Model(inputs=input, outputs=output)
     return model
 
-def classification(batch_size: int, dropout: float):   
-    d_model = 128
-    dff = 128
-    num_heads = 6
-    num_enc_layers = 4
-    norm_first = False
-    
-    input = tf.keras.Input(shape=[None,100], batch_size=batch_size, dtype=tf.int64)
-    model_input = tf.keras.layers.Embedding(
-        5,
-        d_model,
-        embeddings_initializer="glorot_uniform",
-        input_length=100,
-        input_shape=[batch_size, None, 100],
-        name="embedding")(input)
-    model_input = tf.keras.layers.LayerNormalization()(model_input)
-    model_input = FullNucleotideEinsum(d_model,
-                                input_max_length=100,
-                                normalize_output=True,
-                                activation='relu')(model_input)
-    model_input = FullNucleotideEinsum(d_model,
-                                input_max_length=100,
-                                normalize_output=True,
-                                activation='relu')(model_input)
-    model_input = FullNucleotideEinsum(d_model,
-                                input_max_length=100,
-                                reduce_tensor=True,
-                                normalize_output=True,
-                                activation='relu',
-                                use_dropout=True)(model_input)
-    model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
-    output = ReadHead(d_model, output_dim=12)(model_input)
-    model = tf.keras.Model(inputs=input, outputs=output)
-    
-    # boundaries = [4400*4, 8800*4]
-    # values = [0.0001, 0.00005, 0.00001]
-    # lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
-    #     boundaries, values)
 
-    # model.load_weights('base-model/encoder.keras')
-    # optimizer = tf.keras.optimizers.AdamW(learning_rate=0.0005, beta_2=0.999, epsilon=1e-7)
-    # model.compile(
-    #     optimizer=optimizer,
-    #     loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'],
-    #     jit_compile=False)
-    return model
+def classification(batch_size: int, dropout: float):
+    pass
 
-def regression(batch_size: int):   
-    d_model = 128
-    dff = 128
-    num_heads = 8
-    num_enc_layers = 4
-    norm_first = False
-    
-    input = tf.keras.Input(shape=[None,100], batch_size=batch_size, dtype=tf.int64)
-    model_input = tf.keras.layers.Embedding(
-        5,
-        d_model,
-        embeddings_initializer="uniform",
-        input_length=100,
-        input_shape=[batch_size, None, 100],
-        name="embedding")(input)
-    model_input = MultiHeadPCAProjection()(model_input)
-    model_input = SampleEncoder(0.5, num_enc_layers, num_heads, dff, norm_first)(model_input)
-    output = ReadHead(d_model, output_dim=d_model)(model_input)
-    output = tf.keras.layers.Dense(1)
-    model = tf.keras.Model(inputs=input, outputs=output)
-    # lr = 0.0001
-    boundaries = [4400*4]
-    values = [0.0001, 0.0001]
-    lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
-        boundaries, values)
 
-    # model.load_weights('base-model/encoder.keras')
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999, epsilon=1e-7)
-    model.compile(
-        optimizer=optimizer,
-        loss='mse', metrics=[MAE()],
-        jit_compile=False)
-    return model
+def regression(batch_size: int):
+    pass
+
 
 @tf.keras.saving.register_keras_serializable(package="amplicon_gpt.metrics")
 class MAE(tf.keras.metrics.Metric):
     def __init__(self, name='mae_loss', dtype=tf.float32):
         super().__init__(name=name, dtype=dtype)
-        self.loss = self.add_weight(name='rl', initializer='zero', dtype=tf.float32)
-        self.i = self.add_weight(name='i', initializer='zero', dtype=tf.float32)
+        self.loss = self.add_weight(name='rl', initializer='zero',
+                                    dtype=tf.float32)
+        self.i = self.add_weight(name='i', initializer='zero',
+                                 dtype=tf.float32)
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        self.loss.assign_add(tf.reduce_sum(tf.abs(_pairwise_distances(y_pred)-y_true)))
-        self.i.assign_add(tf.constant(((BATCH_SIZE*BATCH_SIZE)-BATCH_SIZE) / 2.0, dtype=tf.float32))
+        self.loss.assign_add(tf.reduce_sum(tf.abs(_pairwise_distances(y_pred)
+                                                  - y_true)))
+        self.i.assign_add(tf.constant(((BATCH_SIZE * BATCH_SIZE) - BATCH_SIZE)
+                          / 2.0, dtype=tf.float32))
 
     def result(self):
         return self.loss / self.i
-    
+
+
 def compile_model(model):
     # lr = 0.0001
     boundaries = [4400*4]
@@ -129,7 +69,8 @@ def compile_model(model):
         boundaries, values)
 
     # model.load_weights('base-model/encoder.keras')
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999, epsilon=1e-7)
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999,
+                                          epsilon=1e-7)
     model.compile(
         optimizer=optimizer,
         loss=unifrac_loss_var, metrics=[MAE()],
