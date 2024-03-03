@@ -2,6 +2,9 @@ import tensorflow as tf
 
 BATCH_SIZE=8
 
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.losses"
+)
 def _pairwise_distances(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
     Args:
@@ -41,6 +44,9 @@ def _pairwise_distances(embeddings, squared=False):
 
     return distances
 
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.losses"
+)
 def unifrac_loss_var(y_true, y_pred):
     y_pred_dist = _pairwise_distances(y_pred)
     difference = tf.square(y_true - y_pred_dist)

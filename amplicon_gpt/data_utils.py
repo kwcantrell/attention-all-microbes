@@ -7,14 +7,13 @@ from unifrac import unweighted
 
 def _get_filtered_table_and_metadata(table_path, metadata_path, filter_col=None):
     metadata = pd.read_csv(metadata_path, sep='\t', index_col=0)
-    metadata = metadata[metadata.host_body_site.str.contains('skin')]
     metadata = metadata[pd.to_numeric(metadata[filter_col], errors='coerce').notnull()]
     metadata[filter_col] = metadata[filter_col].astype(np.float32)
     metadata = metadata[metadata[filter_col] > 15]
     table = load_table(table_path)
     return table.align_to_dataframe(metadata, axis='sample')
     
-def get_sequencing_dataset(table_path, **kwargs):
+def get_sequencing_dataset(table_path):
     if type(table_path) == str:
         table = load_table(table_path)
     else:
@@ -80,7 +79,7 @@ def batch_label_dataset(dataset, batch_size, shuffle=False, repeat=1):
         dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
 
     dataset = (dataset
-        .padded_batch(batch_size, padded_shapes=([None,100], []), drop_remainder=True)
+        .padded_batch(batch_size, padded_shapes=([None,128], []), drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
     )
 
@@ -99,12 +98,18 @@ def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
     if shuffle:
         dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
 
+    def step_pad(ind, seq, dist):
+        ASV_DIM = 0
+        shape = tf.shape(seq)[ASV_DIM]
+        pad = shape // 8 * 8 + 8 - shape
+        return (ind, tf.pad(seq, [[0,pad], [0,0]]), dist)
+
     def get_pairwise_dist(ind, seq, dist):
         return (seq, tf.gather(dist, ind, axis=1, batch_dims=0))
     
     dataset = (dataset
-        # .padded_batch(batch_size, padded_shapes=([], [None,1], [None]), drop_remainder=True)#, padding_values=(
-        .padded_batch(batch_size, padded_shapes=([], [None,100], [None]), drop_remainder=True)#, padding_values=(
+        .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
+        .padded_batch(batch_size, padded_shapes=([], [None,100], [None]), drop_remainder=True)
         .prefetch(tf.data.AUTOTUNE)
         .map(get_pairwise_dist)
         .prefetch(tf.data.AUTOTUNE)

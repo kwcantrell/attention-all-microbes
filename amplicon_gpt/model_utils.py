@@ -1,6 +1,6 @@
 import tensorflow as tf
 from amplicon_gpt.losses import unifrac_loss_var, _pairwise_distances 
-from amplicon_gpt.layers import SampleEncoder,  NucleotideEinsum, ReadHead, FullNucleotideEinsum
+from amplicon_gpt.layers import SampleEncoder,  NucleotideEinsum, ReadHead, MultiHeadPCAProjection
 
 MAX_SEQ = 1600
 BATCH_SIZE=8
@@ -8,7 +8,7 @@ BATCH_SIZE=8
 def transfer_learn_base(batch_size: int, dropout: float):   
     d_model = 128
     dff = 128
-    num_heads = 6
+    num_heads = 8
     num_enc_layers = 4
     norm_first = False
     
@@ -16,23 +16,13 @@ def transfer_learn_base(batch_size: int, dropout: float):
     model_input = tf.keras.layers.Embedding(
         5,
         d_model,
-        embeddings_initializer="glorot_uniform",
+        embeddings_initializer="uniform",
         input_length=100,
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
-    model_input = tf.keras.layers.LayerNormalization()(model_input)
-    model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True,  activation='relu')(model_input)
-    model_input = NucleotideEinsum(128,
-                               input_max_length=dff,
-                               normalize_output=True,
-                               activation='relu')(model_input)
-    model_input = NucleotideEinsum(128,
-                                   input_max_length=128,
-                                   reduce_tensor=True,
-                                   normalize_output=True,
-                                   activation='relu')(model_input)
+    model_input = MultiHeadPCAProjection()(model_input)
     model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
-    output = ReadHead(d_model, output_dim=128)(model_input)
+    output = ReadHead(d_model, output_dim=d_model)(model_input)
     model = tf.keras.Model(inputs=input, outputs=output)
     return model
 
@@ -84,10 +74,9 @@ def classification(batch_size: int, dropout: float):
     return model
 
 def regression(batch_size: int):   
-    dropout=0.5
     d_model = 128
     dff = 128
-    num_heads = 6
+    num_heads = 8
     num_enc_layers = 4
     norm_first = False
     
@@ -95,26 +84,17 @@ def regression(batch_size: int):
     model_input = tf.keras.layers.Embedding(
         5,
         d_model,
-        embeddings_initializer="glorot_uniform",
+        embeddings_initializer="uniform",
         input_length=100,
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
-    model_input = tf.keras.layers.LayerNormalization()(model_input)
-    model_input = NucleotideEinsum(dff, input_max_length=100, normalize_output=True,  activation='relu')(model_input)
-    model_input = NucleotideEinsum(128,
-                               input_max_length=dff,
-                               normalize_output=True,
-                               activation='relu')(model_input)
-    model_input = NucleotideEinsum(128,
-                                   input_max_length=128,
-                                   reduce_tensor=True,
-                                   normalize_output=True,
-                                   activation='relu')(model_input)
-    model_input = SampleEncoder(dropout, num_enc_layers, num_heads, dff, norm_first)(model_input)
-    output = ReadHead(d_model, output_dim=1)(model_input)
+    model_input = MultiHeadPCAProjection()(model_input)
+    model_input = SampleEncoder(0.5, num_enc_layers, num_heads, dff, norm_first)(model_input)
+    output = ReadHead(d_model, output_dim=d_model)(model_input)
+    output = tf.keras.layers.Dense(1)
     model = tf.keras.Model(inputs=input, outputs=output)
-    
-    boundaries = [1400]
+    # lr = 0.0001
+    boundaries = [4400*4]
     values = [0.0001, 0.0001]
     lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
         boundaries, values)
@@ -123,7 +103,7 @@ def regression(batch_size: int):
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr, beta_2=0.999, epsilon=1e-7)
     model.compile(
         optimizer=optimizer,
-        loss='mean_squared_error', metrics=['mae'],
+        loss='mse', metrics=[MAE()],
         jit_compile=False)
     return model
 
@@ -143,8 +123,8 @@ class MAE(tf.keras.metrics.Metric):
     
 def compile_model(model):
     # lr = 0.0001
-    boundaries = [4400*4, 8800*4]
-    values = [0.0001, 0.00005, 0.00001]
+    boundaries = [4400*4]
+    values = [0.0001, 0.0001]
     lr = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
         boundaries, values)
 
