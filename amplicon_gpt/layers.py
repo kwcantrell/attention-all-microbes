@@ -6,57 +6,60 @@ import tensorflow_models as tfm
     package="amplicon_gpt.layer"
 )
 class MultiHeadPCAProjection(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
-        num_heads = 8
+        num_heads = 4
         emb_shape = shape[-1]
         head_size = emb_shape // num_heads
         reshape = shape[:-1] + [num_heads, head_size]
-
         first_transp = [i for i in range(len(reshape))]
         first_transp = first_transp[:-3] + [first_transp[-2],
                                             first_transp[-3],
                                             first_transp[-1]]
         second_transp = reshape[:-3] + [emb_shape]
 
-        self.u_proj_vec = self.add_weight(
-            "u_proj_vec",
-            shape=[1, head_size],
-            initializer='glorot_uniform',
-            trainable=True
-        )
-        self.linear_transform = tf.keras.layers.Dense(emb_shape, 'relu')
+        self.linear_transform = tf.keras.layers.Dense(emb_shape,
+                                                      activation='relu')
+
+        self.activation_function = tf.keras.activations.get('relu')
+        self.dff = tf.keras.layers.Dense(128, activation='relu')
+        self.point = tf.keras.layers.Dense(1, activation='relu')
+        self.dropout = tf.keras.layers.Dropout(0.5)
         init_tup = (reshape,
-                    tf.constant(emb_shape - 1, dtype=tf.float32),
-                    first_transp, second_transp)
+                    first_transp,
+                    second_transp,
+                    self.dff,
+                    self.point)
+        self.second = second_transp
         self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
 
-    def init_proj(reshape, emb_shape, first_transp, second_transp):
+    def init_proj(reshape, first_transp, second_transp, dff, point):
         @tf.function(reduce_retracing=True, jit_compile=True)
-        def compute_proj(X, u):
-            # create heads
+        def compute_proj(X):
+            ONE = tf.constant(1)
             X = tf.reshape(X, shape=reshape)
             X = tf.transpose(X, perm=first_transp)
-
-            # compute pca projections
-            X_h = tf.reduce_mean(X, axis=-1, keepdims=True)
-            X = tf.subtract(X, X_h)
+            X -= tf.reduce_mean(X, axis=-2, keepdims=True)
             cov = tf.linalg.matmul(X, X, transpose_a=True)
             if not tf.is_symbolic_tensor(X):
-                cov /= tf.constant(tf.shape(X)[-2] - 1, dtype=tf.float32)
-            _, eig_vec = tf.linalg.eigh(cov)
-            projs = tf.einsum('...ij,...j->...i', eig_vec, u)
+                cov /= tf.constant(reshape[-ONE] - ONE,
+                                   dtype=tf.float32)
+            e, eig_vec = tf.linalg.eigh(cov)
 
-            # join heads
-            concat_projs = tf.einsum('...hi->...ih', projs)
-            output = tf.reshape(concat_projs, shape=second_transp)
-            return output
+            proj = tf.einsum('...ijk->...ikj', eig_vec)
+            proj = dff(proj)
+            proj = tf.squeeze(point(proj))
+            proj = tf.reshape(proj, shape=second_transp)
+            return proj
         return compute_proj
 
-    def call(self, inputs):
+    def call(self, inputs, training=False):
         output = self.linear_transform(inputs)
-        output = self.compute_proj(output, self.u_proj_vec)
-        return output
+        output = self.compute_proj(output)
+        return self.dropout(output, training=training)
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -159,50 +162,6 @@ class NucleotideEinsum(tf.keras.layers.Layer):
 @tf.keras.saving.register_keras_serializable(
     package="amplicon_gpt.layers"
 )
-class SampleEncoder(tf.keras.layers.Layer):
-    def __init__(
-            self,
-            dropout,
-            num_enc_layers,
-            num_heads,
-            dff,
-            norm_first,
-            **kwargs
-    ):
-        super().__init__(name="sample_encoder", **kwargs)
-        self.dropout = dropout
-        self.num_enc_layers = num_enc_layers
-        self.num_heads = num_heads
-        self.dff = dff
-        self.norm_first = norm_first
-
-        self.encoding_blocks = tfm.nlp.models.TransformerEncoder(
-            num_layers=num_enc_layers,
-            num_attention_heads=8,
-            intermediate_size=2048,
-            dropout_rate=0.5,
-            norm_first=True,
-            activation='gelu',
-        )
-
-    def get_config(self):
-        config = {
-            "dropout": self.dropout,
-            "num_enc_layers": self.num_enc_layers,
-            "num_heads": self.num_heads,
-            "dff": self.dff,
-            "norm_first": self.norm_first,
-        }
-        return config
-
-    def call(self, input, training=False):
-        print(training)
-        return self.encoding_blocks(input)
-
-
-@tf.keras.saving.register_keras_serializable(
-    package="amplicon_gpt.layers"
-)
 class ReadHead(tf.keras.layers.Layer):
     def __init__(
             self,
@@ -213,20 +172,22 @@ class ReadHead(tf.keras.layers.Layer):
         super().__init__(name='read_head', **kwargs)
         self.dff = dff
         self.output_dim = output_dim
+        self.pca_proj = MultiHeadPCAProjection(name='read_head_project')
         self.dense = tf.keras.layers.Dense(256, activation='relu')
         self.dense2 = tf.keras.layers.Dense(output_dim)
         self.dropout = tf.keras.layers.Dropout(0.2)
-        self.pca_proj = MultiHeadPCAProjection()
-        self.linear_activation = tf.keras.layers.Activation('linear',
-                                                            dtype='float32')
 
     def get_config(self):
-        config = {
+        config = super().get_config()
+        config.update({
             "dff": self.dff,
             "output_dim": self.output_dim
-        }
+        })
         return config
 
     def call(self, inputs):
         output = self.pca_proj(inputs)
+        output = self.dense(output)
+        output = self.dropout(output)
+        output = self.dense2(output)
         return output

@@ -10,6 +10,10 @@ from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
 from unifrac import unweighted
 from biom import load_table
+from amplicon_gpt.data_utils import (
+    get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
+    batch_dataset,
+)
 
 
 def mean_confidence_interval(data, confidence=0.95):
@@ -103,23 +107,33 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
 
 
 class ProjectEncoder(tf.keras.callbacks.Callback):
-    def __init__(self, data, model_path, pred_pcoa_path, true_pcoa_path,
-                 table_path, tree_path, num_samples, batch_size, **kwargs):
+    def __init__(self,
+                 i_table,
+                 i_tree,
+                 output_dir,
+                 batch_size):
         super().__init__()
+        self.i_table = i_table
+        self.i_tree = i_tree
         self.batch_size = batch_size
-        self.data = data
-        self.table = load_table(table_path)
-        self.model_path = model_path
+        self.table = load_table(i_table)
+        self.output_dir = output_dir
         self.cur_step = 0
-        self.pred_pcoa_path = pred_pcoa_path
-        self.true_pcoa_path = true_pcoa_path
-        self.table_path = table_path
-        self.tree_path = tree_path
-        self.num_samples = num_samples
+        self.num_samples = 250
+        seq_dataset = get_sequencing_dataset(i_table)
+        unifrac_dataset = get_unifrac_dataset(i_table, i_tree)
+        dataset = combine_datasets(seq_dataset,
+                                   unifrac_dataset,
+                                   add_index=True)
+        self.dataset = batch_dataset(dataset,
+                                     batch_size,
+                                     shuffle=True,
+                                     repeat=1,
+                                     is_pairwise=True)
 
     def _log_epoch_data(self):
         tf.print('loggin data...')
-        self.model.save(os.path.join(self.model_path, 'encoder.keras'),
+        self.model.save(os.path.join(self.output_dir, 'encoder.keras'),
                         save_format='keras')
         total_samples = (int(self.table.shape[1] / self.batch_size)
                          * self.batch_size)
@@ -127,7 +141,7 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         sample_indices = np.arange(total_samples)
         np.random.shuffle(sample_indices)
         sample_indices = sample_indices[:self.num_samples]
-        pred = self.model.predict(self.data)
+        pred = self.model.predict(self.dataset)
 
         pred = tf.gather(pred, sample_indices)
         distances = _pairwise_distances(pred, squared=False)
@@ -140,16 +154,16 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
                                                 method='fsvd',
                                                 number_of_dimensions=3,
                                                 inplace=True)
-        pred_pcoa.write(self.pred_pcoa_path)
+        pred_pcoa.write(os.path.join(self.output_dir, 'pred_pcoa.pcoa'))
 
         true_unifrac_distances = unweighted(
-                self.table_path, self.tree_path
+                self.i_table, self.i_tree
                 ).filter(self.table.ids(axis='sample')[sample_indices])
         true_pcoa = skbio.stats.ordination.pcoa(true_unifrac_distances,
                                                 method='fsvd',
                                                 number_of_dimensions=3,
                                                 inplace=True)
-        true_pcoa.write(self.true_pcoa_path)
+        true_pcoa.write(os.path.join(self.output_dir, 'true_pcoa.pcoa'))
 
     def on_epoch_end(self, epoch, logs=None):
         if self.cur_step % 5 == 0:
