@@ -8,18 +8,20 @@ import tensorflow_models as tfm
 class MultiHeadPCAProjection(tf.keras.layers.Layer):
     def __init__(self,
                  hidden_dim,
+                 num_heads,
                  dropout=0.,
                  **kwargs):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
         self.dropout = dropout
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
-        num_heads = 4
+        self.num_heads = 4
         emb_shape = shape[-1]
-        head_size = emb_shape // num_heads
-        reshape = shape[:-1] + [num_heads, head_size]
+        head_size = emb_shape // self.num_heads
+        reshape = shape[:-1] + [self.num_heads, head_size]
         first_transp = [i for i in range(len(reshape))]
         first_transp = first_transp[:-3] + [first_transp[-2],
                                             first_transp[-3],
@@ -81,6 +83,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         config = super().get_config()
         config.update({
             "hidden_dim": self.hidden_dim,
+            "num_heads": self.num_heads,
             "dropout": self.dropout
         })
         return config
@@ -93,16 +96,19 @@ class ReadHead(tf.keras.layers.Layer):
     def __init__(
             self,
             hidden_dim,
+            num_heads,
             output_dim,
             dropout=0.,
             **kwargs
     ):
         super().__init__(name='read_head', **kwargs)
         self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
         self.output_dim = output_dim
         self.dropout = dropout
         self.pca_proj = MultiHeadPCAProjection(
             hidden_dim=self.hidden_dim,
+            num_heads=self.num_heads,
             dropout=self.dropout,
             name='read_head_project')
         self.dense = tf.keras.layers.Dense(self.output_dim,
@@ -112,6 +118,7 @@ class ReadHead(tf.keras.layers.Layer):
         config = super().get_config()
         config.update({
             "hidden_dim": self.hidden_dim,
+            "num_heads": self.num_heads,
             "output_dim": self.output_dim,
             "dropout": self.dropout
         })

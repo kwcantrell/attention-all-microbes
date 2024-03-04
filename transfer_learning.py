@@ -6,12 +6,7 @@ from amplicon_gpt.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
 )
-from amplicon_gpt.model_utils import transfer_learn_base
-
-
-# Allow using -h to show help information
-# https://click.palletsprojects.com/en/7.x/documentation/#help-parameter-customization
-CTXSETS = {"help_option_names": ["-h", "--help"]}
+from amplicon_gpt.model_utils import pretrain_unifrac
 
 
 @click.group()
@@ -67,15 +62,10 @@ def unifrac(i_table,
     val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
     validation_dataset = batch_dataset(val_data, batch_size, is_pairwise=True)
 
-    model = transfer_learn_base(batch_size)
+    model = pretrain_unifrac(batch_size)
 
     model.summary()
 
-    # Define the Keras TensorBoard callback.
-    # logdir="base-model/logs/"
-    # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir,
-    #                                               profile_batch='50, 75',
-    #   write_graph=False)
     model.fit(training_dataset,
               validation_data=validation_dataset,
               epochs=epochs,

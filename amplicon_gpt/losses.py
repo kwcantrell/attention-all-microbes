@@ -48,7 +48,7 @@ def _pairwise_distances(embeddings, squared=False):
     return distances
 
 
-def unifrac_loss(batch_size):
+def pairwise_loss(batch_size):
     def inner(y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred)
         difference = tf.square(y_true - y_pred_dist)
