@@ -1,7 +1,7 @@
 import click
 import tensorflow as tf
 import aam._parameter_descriptions as desc
-from aam.callbacks import ProjectEncoder
+from aam.callbacks import ProjectEncoder, SaveModel
 from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
@@ -79,7 +79,8 @@ def unifrac(i_table,
               validation_data=validation_dataset,
               epochs=epochs,
               batch_size=batch_size,
-              callbacks=[ProjectEncoder(i_table,
+              callbacks=[SaveModel(output_dir),
+                         ProjectEncoder(i_table,
                                         i_tree,
                                         output_dir,
                                         batch_size)])

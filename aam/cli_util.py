@@ -40,7 +40,7 @@ def aam_model_options(func):
                      default=1,
                      type=int),
         click.option('--lr',
-                     default=0.01,
+                     default=0.0005,
                      type=float)
     ]
 

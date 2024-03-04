@@ -38,15 +38,13 @@ def get_sequencing_dataset(table_path):
     return (tf.data.Dataset.from_tensor_slices(table_data)
             .map(get_asv_id,
                  num_parallel_calls=tf.data.AUTOTUNE)
-            .prefetch(tf.data.AUTOTUNE)
-            )
+            .prefetch(tf.data.AUTOTUNE))
 
 
 def get_unifrac_dataset(table_path, tree_path):
     distance = unweighted(table_path, tree_path).data
     return (tf.data.Dataset.from_tensor_slices(distance)
-            .prefetch(tf.data.AUTOTUNE)
-            )
+            .prefetch(tf.data.AUTOTUNE))
 
 
 def combine_datasets(seq_dataset, dist_dataset, add_index=False):
@@ -59,6 +57,7 @@ def combine_datasets(seq_dataset, dist_dataset, add_index=False):
 
     seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
     dataset_size = seq_dataset.cardinality()
+
     if add_index:
         zip = (tf.data.Dataset.range(dataset_size),
                seq_dataset,
@@ -68,9 +67,7 @@ def combine_datasets(seq_dataset, dist_dataset, add_index=False):
                dist_dataset)
     return (tf.data.Dataset
             .zip(*zip)
-            .shuffle(dataset_size, reshuffle_each_iteration=False)
-            .prefetch(tf.data.AUTOTUNE)
-            )
+            .prefetch(tf.data.AUTOTUNE))
 
 
 def batch_dataset(dataset,
@@ -116,9 +113,8 @@ def batch_dataset(dataset,
                .map(extract_zip)
                .prefetch(tf.data.AUTOTUNE))
 
+    dataset = dataset.repeat(repeat)
     if not shuffle:
         dataset = dataset.cache()
-    else:
-        dataset = dataset.repeat(repeat)
 
     return dataset.prefetch(tf.data.AUTOTUNE)

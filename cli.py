@@ -7,6 +7,7 @@ from aam.data_utils import (
 )
 from aam.model_utils import regression
 from aam.cli_util import aam_model_options
+from aam.callbacks import SaveModel
 
 
 @click.group()
@@ -122,7 +123,7 @@ def fit_regressor(i_table,
               validation_data=validation_dataset,
               epochs=epochs,
               batch_size=batch_size,
-              callbacks=[])
+              callbacks=[SaveModel(output_dir)])
 
 
 @cli.command()

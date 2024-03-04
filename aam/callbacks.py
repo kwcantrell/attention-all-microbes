@@ -43,8 +43,6 @@ def mean_absolute_error(dataset, model, fname, s_type):
     plt.subplot(1, 1, 1)
     plt.scatter(true_age, pred_age, 7, marker='.', c='grey', alpha=0.5)
     plt.plot(xx, yy)
-    # plt.xlim(min_x,max_x)
-    # plt.ylim(min_x,max_x)
     mae, h = '%.4g' % mae, '%.4g' % h
     plt.xlabel('Reported age')
     plt.ylabel('Predicted age')
@@ -52,24 +50,6 @@ def mean_absolute_error(dataset, model, fname, s_type):
               MAE: ${mae} \pm {h}$""")
     plt.savefig(fname)
     plt.close()
-
-
-class BaseCheckpoint(tf.keras.callbacks.Callback):
-    def __init__(self, root_path, dataset, s_type, steps_per_checkpoint=5,
-                 **kwargs):
-        super().__init__()
-
-        self.dataset = dataset
-        self.root_path = root_path
-        self.model_path = os.path.join(self.root_path, 'model.keras')
-        self.figure_path = os.path.join(self.root_path, 'figures')
-        self.cur_step = 1
-        self.total_mae = 0
-        self.s_type = s_type
-        if not os.path.exists(self.root_path):
-            os.makedirs(self.root_path)
-        if not os.path.exists(self.figure_path):
-            os.makedirs(self.figure_path)
 
 
 class MAE_Scatter(tf.keras.callbacks.Callback):
@@ -106,6 +86,18 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         return super().on_epoch_end(epoch, logs)
 
 
+class SaveModel(tf.keras.callbacks.Callback):
+    def __init__(self, output_dir):
+        self.output_dir = output_dir
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+
+    def on_epoch_end(self, epoch, logs=None):
+        # TODO add save conditions
+        self.model.save(os.path.join(self.output_dir, 'encoder.keras'),
+                        save_format='keras')
+
+
 class ProjectEncoder(tf.keras.callbacks.Callback):
     def __init__(self,
                  i_table,
@@ -127,14 +119,12 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
                                    add_index=True)
         self.dataset = batch_dataset(dataset,
                                      batch_size,
-                                     shuffle=True,
+                                     shuffle=False,
                                      repeat=1,
                                      is_pairwise=True)
 
     def _log_epoch_data(self):
         tf.print('loggin data...')
-        self.model.save(os.path.join(self.output_dir, 'encoder.keras'),
-                        save_format='keras')
         total_samples = (int(self.table.shape[1] / self.batch_size)
                          * self.batch_size)
 
