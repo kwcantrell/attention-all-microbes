@@ -1,11 +1,12 @@
 import click
 import tensorflow as tf
-import amplicon_gpt._parameter_descriptions as desc
-from amplicon_gpt.data_utils import (
+import aam._parameter_descriptions as desc
+from aam.data_utils import (
     get_sequencing_dataset, combine_datasets,
     batch_dataset, align_table_and_metadata
 )
-from amplicon_gpt.model_utils import regression
+from aam.model_utils import regression
+from aam.cli_util import aam_model_options
 
 
 @click.group()
@@ -63,34 +64,24 @@ def fit_classifier(i_table, m_metadata_file, metadata_column, missing_samples,
               default='error',
               type=click.Choice(['error', 'ignore'], case_sensitive=False),
               help=desc.MISSING_SAMPLES_DESC)
-@click.option('--batch-size',
-              default=8,
-              type=int)
-@click.option('--train-percent',
-              default=0.8,
-              type=float)
-@click.option('--repeat',
-              default=1,
-              type=int)
-@click.option('--epochs',
-              default=100,
-              type=int)
-@click.option('--output-dir', required=True)
+@aam_model_options
+@click.option('--output-dir',
+              required=True)
 def fit_regressor(i_table,
                   m_metadata_file,
                   m_metadata_column,
                   p_missing_samples,
-                  batch_size,
-                  train_percent,
-                  repeat,
-                  epochs,
+                  p_batch_size,
+                  p_train_percent,
+                  p_epochs,
+                  p_repeat,
+                  p_d_model,
+                  p_pca_hidden_dim,
+                  p_pca_heads,
+                  p_t_heads,
+                  p_output_dim,
                   output_dir):
-
-    """
-    TODO: Normalize regress var i.e. center with a std of 0.
-    TODO: Save params needed to normalize and convert back
-          for loss
-    """
+    # TODO: Normalize regress var i.e. center with a std of 0.
     table, metdata = align_table_and_metadata(i_table,
                                               m_metadata_file,
                                               m_metadata_column)
@@ -100,31 +91,29 @@ def fit_regressor(i_table,
                                y_dataset)
 
     size = seq_dataset.cardinality().numpy()
-    train_size = int(size*train_percent/batch_size)*batch_size
+    train_size = int(size*p_train_percent/p_batch_size)*p_batch_size
 
     training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
     training_dataset = batch_dataset(training_dataset,
-                                     batch_size,
+                                     p_batch_size,
                                      shuffle=True,
-                                     repeat=repeat)
+                                     repeat=p_repeat)
 
     val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
-    validation_dataset = batch_dataset(val_data, batch_size)
+    validation_dataset = batch_dataset(val_data, p_batch_size)
 
-    model = regression(batch_size)
+    model = regression(p_batch_size,
+                       p_d_model,
+                       p_pca_hidden_dim,
+                       p_pca_heads,
+                       p_t_heads,
+                       p_output_dim)
 
     model.summary()
-
-    # Define the Keras TensorBoard callback.
-    # logdir="base-model/logs/"
-    # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir,
-    #                                               profile_batch='50, 75',
-    #   write_graph=False)
     model.fit(training_dataset,
               validation_data=validation_dataset,
-              epochs=epochs,
-              initial_epoch=0,
-              batch_size=batch_size,
+              epochs=p_epochs,
+              batch_size=p_batch_size,
               callbacks=[])
 
 

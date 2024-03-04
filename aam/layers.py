@@ -18,9 +18,15 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
-        self.num_heads = 4
         emb_shape = shape[-1]
-        head_size = emb_shape // self.num_heads
+        self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim,
+                                                     activation='relu',
+                                                     use_bias=False)
+        self.linear_down_scale = tf.keras.layers.Dense(emb_shape,
+                                                       activation='relu',
+                                                       use_bias=False)
+        # occurs after up scaling
+        head_size = self.hidden_dim // self.num_heads
         reshape = shape[:-1] + [self.num_heads, head_size]
         first_transp = [i for i in range(len(reshape))]
         first_transp = first_transp[:-3] + [first_transp[-2],
@@ -30,11 +36,8 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         second_transp = second_transp[:-3] + [second_transp[-2],
                                               second_transp[-3],
                                               second_transp[-1]]
-        second_reshape = shape[:-2] + [emb_shape, self.hidden_dim]
-        self.linear_transform = tf.keras.layers.Dense(emb_shape,
-                                                      activation='relu')
-
-        self.dff = tf.keras.layers.Dense(self.hidden_dim,
+        second_reshape = shape[:-2] + [self.hidden_dim, head_size]
+        self.dff = tf.keras.layers.Dense(head_size,
                                          activation='relu',
                                          use_bias=False)
         self.point = tf.keras.layers.Dense(1,
@@ -56,7 +59,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
                   second_reshape,
                   dff,
                   point):
-        @tf.function(reduce_retracing=True, jit_compile=True)
+        @tf.function(jit_compile=True)
         def compute_proj(X):
             ONE = tf.constant(1)
             X = tf.reshape(X, shape=reshape)
@@ -75,8 +78,9 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         return compute_proj
 
     def call(self, inputs, training):
-        output = self.linear_transform(inputs)
+        output = self.linear_up_scale(inputs)
         output = self.compute_proj(output)
+        output = self.linear_down_scale(output)
         return self.dropout(output, training=training)
 
     def get_config(self):

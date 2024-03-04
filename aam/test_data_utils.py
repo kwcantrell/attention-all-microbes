@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from biom.table import Table
-from amplicon_gpt.data_utils import get_sequencing_dataset
+from aam.data_utils import get_sequencing_dataset
 
 
 class TestSequencingData(unittest.TestCase):

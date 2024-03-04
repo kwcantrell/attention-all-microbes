@@ -1,12 +1,13 @@
 import click
 import tensorflow as tf
-import amplicon_gpt._parameter_descriptions as desc
-from amplicon_gpt.callbacks import ProjectEncoder
-from amplicon_gpt.data_utils import (
+import aam._parameter_descriptions as desc
+from aam.callbacks import ProjectEncoder
+from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
 )
-from amplicon_gpt.model_utils import pretrain_unifrac
+from aam.model_utils import pretrain_unifrac
+from aam.cli_util import aam_model_options
 
 
 @click.group()
@@ -23,25 +24,19 @@ def transfer_learning():
               required=True,
               help=desc.TABLE_DESC,
               type=click.Path(exists=True))
-@click.option('--batch-size',
-              default=8,
-              type=int)
-@click.option('--train-percent',
-              default=0.8,
-              type=float)
-@click.option('--repeat',
-              default=1,
-              type=int)
-@click.option('--epochs',
-              default=100,
-              type=int)
+@aam_model_options
 @click.option('--output-dir', required=True)
 def unifrac(i_table,
             i_tree,
-            batch_size,
-            train_percent,
-            repeat,
-            epochs,
+            p_batch_size,
+            p_train_percent,
+            p_epochs,
+            p_repeat,
+            p_d_model,
+            p_pca_hidden_dim,
+            p_pca_heads,
+            p_t_heads,
+            p_output_dim,
             output_dir):
     seq_dataset = get_sequencing_dataset(i_table)
     unifrac_dataset = get_unifrac_dataset(i_table, i_tree)
@@ -50,31 +45,37 @@ def unifrac(i_table,
                                add_index=True)
 
     size = seq_dataset.cardinality().numpy()
-    train_size = int(size*train_percent/batch_size)*batch_size
+    train_size = int(size*p_train_percent/p_batch_size)*p_batch_size
 
     training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
     training_dataset = batch_dataset(training_dataset,
-                                     batch_size,
+                                     p_batch_size,
                                      shuffle=True,
-                                     repeat=repeat,
+                                     repeat=p_repeat,
                                      is_pairwise=True)
 
     val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
-    validation_dataset = batch_dataset(val_data, batch_size, is_pairwise=True)
+    validation_dataset = batch_dataset(val_data,
+                                       p_batch_size,
+                                       is_pairwise=True)
 
-    model = pretrain_unifrac(batch_size)
+    model = pretrain_unifrac(p_batch_size,
+                             p_d_model,
+                             p_pca_hidden_dim,
+                             p_pca_heads,
+                             p_t_heads,
+                             p_output_dim)
 
     model.summary()
 
     model.fit(training_dataset,
               validation_data=validation_dataset,
-              epochs=epochs,
-              initial_epoch=0,
-              batch_size=batch_size,
+              epochs=p_epochs,
+              batch_size=p_batch_size,
               callbacks=[ProjectEncoder(i_table,
                                         i_tree,
                                         output_dir,
-                                        batch_size)])
+                                        p_batch_size)])
 
 
 def main():

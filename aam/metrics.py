@@ -1,5 +1,5 @@
 import tensorflow as tf
-from amplicon_gpt.losses import _pairwise_distances
+from aam.losses import _pairwise_distances
 
 
 def pairwise_mae(batch_size):

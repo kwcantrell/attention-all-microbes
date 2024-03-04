@@ -1,17 +1,17 @@
 import tensorflow as tf
 import tensorflow_models as tfm
-from amplicon_gpt.losses import pairwise_loss
-from amplicon_gpt.layers import ReadHead, MultiHeadPCAProjection
-from amplicon_gpt.metrics import pairwise_mae
+from aam.losses import pairwise_loss
+from aam.layers import ReadHead, MultiHeadPCAProjection
+from aam.metrics import pairwise_mae
 
 
 def _construct_base(batch_size: int,
-                    pca_heads,
-                    t_heads,
+                    d_model: int,
+                    pca_hidden_dim: int,
+                    pca_heads: int,
+                    t_heads: int,
                     output_dim: int):
-    d_model = 64
     dff = 2048
-    hidden_dim = 256
     num_enc_layers = 6
     dropout = 0.5
 
@@ -25,7 +25,7 @@ def _construct_base(batch_size: int,
         input_length=100,
         input_shape=[batch_size, None, 100],
         name="embedding")(input)
-    model_input = MultiHeadPCAProjection(hidden_dim=hidden_dim,
+    model_input = MultiHeadPCAProjection(hidden_dim=pca_hidden_dim,
                                          num_heads=pca_heads,
                                          dropout=dropout)(model_input)
     model_input += tfm.nlp.layers.PositionEmbedding(
@@ -39,18 +39,15 @@ def _construct_base(batch_size: int,
             norm_first=True,
             activation='relu',
         )(model_input)
-    output = ReadHead(hidden_dim=dff,
+    output = ReadHead(hidden_dim=pca_hidden_dim,
                       num_heads=pca_heads,
                       output_dim=output_dim,
                       dropout=dropout)(model_input)
     return tf.keras.Model(inputs=input, outputs=output)
 
 
-def pretrain_unifrac(batch_size: int):
-    model = _construct_base(batch_size,
-                            pca_heads=8,
-                            t_heads=4,
-                            output_dim=64)
+def pretrain_unifrac(batch_size: int, *args):
+    model = _construct_base(batch_size, *args)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=0.0005,
                                           beta_2=0.999,
                                           epsilon=1e-7)
@@ -74,11 +71,8 @@ def classification(num_class: int, batch_size: int):
     return model
 
 
-def regression(batch_size: int):
-    model = _construct_base(batch_size,
-                            pca_heads=8,
-                            t_heads=4,
-                            output_dim=1)
+def regression(batch_size: int, *args):
+    model = _construct_base(batch_size, *args)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=0.0001,
                                           beta_2=0.999,
                                           epsilon=1e-7)

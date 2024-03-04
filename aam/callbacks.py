@@ -5,12 +5,12 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import sklearn
 # from tensorboard.plugins import projector
-from amplicon_gpt.losses import _pairwise_distances
+from aam.losses import _pairwise_distances
 from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
 from unifrac import unweighted
 from biom import load_table
-from amplicon_gpt.data_utils import (
+from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
 )
