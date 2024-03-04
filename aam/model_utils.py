@@ -6,15 +6,14 @@ from aam.metrics import pairwise_mae
 
 
 def _construct_base(batch_size: int,
-                    d_model: int,
+                    dropout: float,
                     pca_hidden_dim: int,
                     pca_heads: int,
-                    t_heads: int,
+                    dff: int,
+                    d_model: int,
+                    enc_layers: int,
+                    enc_heads: int,
                     output_dim: int):
-    dff = 2048
-    num_enc_layers = 6
-    dropout = 0.5
-
     input = tf.keras.Input(shape=[None, 100],
                            batch_size=batch_size,
                            dtype=tf.int64)
@@ -29,11 +28,11 @@ def _construct_base(batch_size: int,
                                          num_heads=pca_heads,
                                          dropout=dropout)(model_input)
     model_input += tfm.nlp.layers.PositionEmbedding(
-                max_length=5000,
+                max_length=2000,
                 seq_axis=1)(model_input)
     model_input = tfm.nlp.models.TransformerEncoder(
-            num_layers=num_enc_layers,
-            num_attention_heads=t_heads,
+            num_layers=enc_layers,
+            num_attention_heads=enc_heads,
             intermediate_size=dff,
             dropout_rate=dropout,
             norm_first=True,
@@ -46,9 +45,9 @@ def _construct_base(batch_size: int,
     return tf.keras.Model(inputs=input, outputs=output)
 
 
-def pretrain_unifrac(batch_size: int, *args):
+def pretrain_unifrac(batch_size: int, lr: float, *args):
     model = _construct_base(batch_size, *args)
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=0.0005,
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
                                           beta_2=0.999,
                                           epsilon=1e-7)
     model.compile(optimizer=optimizer,
@@ -71,9 +70,9 @@ def classification(num_class: int, batch_size: int):
     return model
 
 
-def regression(batch_size: int, *args):
+def regression(batch_size: int, lr: float, *args):
     model = _construct_base(batch_size, *args)
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=0.0001,
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
                                           beta_2=0.999,
                                           epsilon=1e-7)
     model.compile(optimizer=optimizer,
