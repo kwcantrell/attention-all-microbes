@@ -24,6 +24,9 @@ def aam_model_options(func):
         click.option('--pca-heads',
                      default=64,
                      type=int),
+        click.option('--pca-layers',
+                     default=6,
+                     type=int),
         click.option('--dff',
                      default=2048,
                      type=int),
@@ -44,7 +47,7 @@ def aam_model_options(func):
                      type=float),
         click.option('--max-bp',
                      default=100,
-                     type=int)
+                     type=int),
     ]
 
     for option in reversed(model_options):

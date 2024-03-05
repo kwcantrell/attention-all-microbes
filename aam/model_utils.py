@@ -9,6 +9,7 @@ def _construct_base(batch_size: int,
                     dropout: float,
                     pca_hidden_dim: int,
                     pca_heads: int,
+                    pca_layers: int,
                     dff: int,
                     d_model: int,
                     enc_layers: int,
@@ -29,12 +30,9 @@ def _construct_base(batch_size: int,
                 max_length=max_bp,
                 seq_axis=2)(model_input)
     model_input = PCAProjector(hidden_dim=pca_hidden_dim,
-                                         num_heads=pca_heads,
-                                         num_layers=2,
-                                         dropout=dropout)(model_input)
-    # model_input = MultiHeadPCAProjection(hidden_dim=pca_hidden_dim,
-    #                                      num_heads=pca_heads,
-    #                                      dropout=dropout)(model_input)
+                               num_heads=pca_heads,
+                               num_layers=pca_layers,
+                               dropout=dropout)(model_input)
     model_input += tfm.nlp.layers.PositionEmbedding(
                 max_length=2000,
                 seq_axis=1)(model_input)
@@ -48,6 +46,7 @@ def _construct_base(batch_size: int,
         )(model_input)
     output = ReadHead(hidden_dim=pca_hidden_dim,
                       num_heads=pca_heads,
+                      num_layers=pca_layers,
                       output_dim=output_dim,
                       dropout=dropout)(model_input)
     return tf.keras.Model(inputs=input, outputs=output)

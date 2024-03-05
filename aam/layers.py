@@ -10,11 +10,9 @@ class PCAProjector(tf.keras.layers.Layer):
                  hidden_dim,
                  num_heads,
                  num_layers,
-                 dropout):
-        super().__init__(self,
-                         hidden_dim,
-                         num_heads,
-                         dropout)
+                 dropout,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.num_layers = num_layers
         for i in range(num_layers):
             setattr(self,
@@ -27,13 +25,15 @@ class PCAProjector(tf.keras.layers.Layer):
                     ) )
         self.point = tf.keras.layers.Dense(1,
                                            activation='relu',
-                                           use_bias=False)    
+                                           use_bias=False)
+        self.dropout = tf.keras.layers.Dropout(dropout)
+
     def call(self, inputs):
         outputs = inputs
         for i in range(self.num_layers):
             outputs = getattr(self,
                               f'pca_layer_{i}')(outputs)
-        return self.point(outputs)    
+        return tf.squeeze(self.dropout(self.point(outputs)), axis=-1)
         
 
 @tf.keras.saving.register_keras_serializable(
@@ -74,15 +74,11 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.dff = tf.keras.layers.Dense(head_size,
                                          activation='relu',
                                          use_bias=False)
-        # self.point = tf.keras.layers.Dense(1,
-        #                                    activation='relu',
-        #                                    use_bias=False)
         init_tup = (reshape,
                     first_transp,
                     second_transp,
                     second_reshape,
-                    self.dff,
-                    self.point)
+                    self.dff)
         self.second = second_transp
         self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
 
@@ -90,8 +86,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
                   first_transp,
                   second_transp,
                   second_reshape,
-                  dff,
-                  point):
+                  dff):
         @tf.function(jit_compile=True)
         def compute_proj(X):
             ONE = tf.constant(1)
@@ -106,7 +101,6 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             proj = dff(eig_vec)
             proj = tf.transpose(proj, perm=second_transp)
             proj = tf.reshape(proj, shape=second_reshape)
-            # proj = tf.squeeze(point(proj), axis=-1)
             return proj
         return compute_proj
 
@@ -134,6 +128,7 @@ class ReadHead(tf.keras.layers.Layer):
             self,
             hidden_dim,
             num_heads,
+            num_layers,
             output_dim,
             dropout=0.,
             **kwargs
@@ -143,9 +138,10 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.output_dim = output_dim
         self.dropout = dropout
-        self.pca_proj = MultiHeadPCAProjection(
+        self.pca_proj = PCAProjector(
             hidden_dim=self.hidden_dim,
             num_heads=self.num_heads,
+            num_layers=num_layers,
             dropout=self.dropout,
             name='read_head_project')
         self.dense = tf.keras.layers.Dense(self.output_dim,
