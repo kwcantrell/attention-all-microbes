@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 from aam.losses import pairwise_loss
-from aam.layers import ReadHead, MultiHeadPCAProjection
+from aam.layers import ReadHead, MultiHeadPCAProjection, PCAProjector
 from aam.metrics import pairwise_mae
 
 
@@ -28,9 +28,13 @@ def _construct_base(batch_size: int,
     model_input += tfm.nlp.layers.PositionEmbedding(
                 max_length=max_bp,
                 seq_axis=2)(model_input)
-    model_input = MultiHeadPCAProjection(hidden_dim=pca_hidden_dim,
+    model_input = PCAProjector(hidden_dim=pca_hidden_dim,
                                          num_heads=pca_heads,
+                                         num_layers=2,
                                          dropout=dropout)(model_input)
+    # model_input = MultiHeadPCAProjection(hidden_dim=pca_hidden_dim,
+    #                                      num_heads=pca_heads,
+    #                                      dropout=dropout)(model_input)
     model_input += tfm.nlp.layers.PositionEmbedding(
                 max_length=2000,
                 seq_axis=1)(model_input)

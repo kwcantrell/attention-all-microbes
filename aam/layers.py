@@ -5,11 +5,45 @@ import tensorflow_models as tfm
 @tf.keras.saving.register_keras_serializable(
     package="amplicon_gpt.layer"
 )
+class PCAProjector(tf.keras.layers.Layer):
+    def __init__(self,
+                 hidden_dim,
+                 num_heads,
+                 num_layers,
+                 dropout):
+        super().__init__(self,
+                         hidden_dim,
+                         num_heads,
+                         dropout)
+        self.num_layers = num_layers
+        for i in range(num_layers):
+            setattr(self,
+                    f'pca_layer_{i}',
+                    MultiHeadPCAProjection(
+                        hidden_dim,
+                        num_heads,
+                        dropout,
+                        name=f'layer-{i}'
+                    ) )
+        self.point = tf.keras.layers.Dense(1,
+                                           activation='relu',
+                                           use_bias=False)    
+    def call(self, inputs):
+        outputs = inputs
+        for i in range(self.num_layers):
+            outputs = getattr(self,
+                              f'pca_layer_{i}')(outputs)
+        return self.point(outputs)    
+        
+
+@tf.keras.saving.register_keras_serializable(
+    package="amplicon_gpt.layer"
+)
 class MultiHeadPCAProjection(tf.keras.layers.Layer):
     def __init__(self,
                  hidden_dim,
                  num_heads,
-                 dropout=0.,
+                 dropout,
                  **kwargs):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
@@ -40,9 +74,9 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.dff = tf.keras.layers.Dense(head_size,
                                          activation='relu',
                                          use_bias=False)
-        self.point = tf.keras.layers.Dense(1,
-                                           activation='relu',
-                                           use_bias=False)
+        # self.point = tf.keras.layers.Dense(1,
+        #                                    activation='relu',
+        #                                    use_bias=False)
         init_tup = (reshape,
                     first_transp,
                     second_transp,
@@ -72,7 +106,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             proj = dff(eig_vec)
             proj = tf.transpose(proj, perm=second_transp)
             proj = tf.reshape(proj, shape=second_reshape)
-            proj = tf.squeeze(point(proj), axis=-1)
+            # proj = tf.squeeze(point(proj), axis=-1)
             return proj
         return compute_proj
 
