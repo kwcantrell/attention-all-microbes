@@ -27,13 +27,22 @@ class PCAProjector(tf.keras.layers.Layer):
                                            activation='relu',
                                            use_bias=False)
         self.dropout = tf.keras.layers.Dropout(dropout)
+        
+    def build(self, input_shape):
+        shape = [x if x is not None else -1 for x in input_shape]
+        emb_shape = shape[-1]
+        self.back_proj = tf.keras.layers.Dense(emb_shape,
+                                               activation='relu',
+                                               use_bias=False)
 
     def call(self, inputs):
         outputs = inputs
         for i in range(self.num_layers):
             outputs = getattr(self,
                               f'pca_layer_{i}')(outputs)
-        return tf.squeeze(self.dropout(self.point(outputs)), axis=-1)
+        outputs = tf.squeeze(self.point(outputs), axis=-1)
+        outputs = self.back_proj(outputs)
+        return self.dropout(outputs)
         
 
 @tf.keras.saving.register_keras_serializable(
@@ -56,9 +65,6 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim,
                                                      activation='relu',
                                                      use_bias=False)
-        self.linear_down_scale = tf.keras.layers.Dense(emb_shape,
-                                                       activation='relu',
-                                                       use_bias=False)
         # occurs after up scaling
         head_size = self.hidden_dim // self.num_heads
         reshape = shape[:-1] + [self.num_heads, head_size]
@@ -70,10 +76,11 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         second_transp = second_transp[:-3] + [second_transp[-2],
                                               second_transp[-3],
                                               second_transp[-1]]
-        second_reshape = shape[:-2] + [self.hidden_dim, head_size]
+        second_reshape = shape[:-2] + [head_size, self.hidden_dim]
         self.dff = tf.keras.layers.Dense(head_size,
                                          activation='relu',
                                          use_bias=False)
+        self.dropout = tf.keras.layers.Dropout(self.dropout)
         init_tup = (reshape,
                     first_transp,
                     second_transp,
@@ -90,6 +97,8 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         @tf.function(jit_compile=True)
         def compute_proj(X):
             ONE = tf.constant(1)
+            if not tf.is_symbolic_tensor(X):
+                reshape[1] = tf.shape(X)[1]
             X = tf.reshape(X, shape=reshape)
             X = tf.transpose(X, perm=first_transp)
             X -= tf.reduce_mean(X, axis=-2, keepdims=True)
@@ -107,8 +116,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
     def call(self, inputs):
         output = self.linear_up_scale(inputs)
         output = self.compute_proj(output)
-        output = self.linear_down_scale(output)
-        return output
+        return self.dropout(output)
 
     def get_config(self):
         config = super().get_config()

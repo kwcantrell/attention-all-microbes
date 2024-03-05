@@ -8,7 +8,7 @@ from aam.data_utils import (
 from aam.model_utils import regression
 from aam.cli_util import aam_model_options
 from aam.callbacks import SaveModel, MAE_Scatter
-
+import os
 
 @click.group()
 class cli:
@@ -89,6 +89,9 @@ def fit_regressor(i_table,
                   max_bp,
                   output_dir):
     # TODO: Normalize regress var i.e. center with a std of 0.
+    if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
     table, metdata = align_table_and_metadata(i_table,
                                               m_metadata_file,
                                               m_metadata_column)

@@ -37,16 +37,16 @@ def mean_absolute_error(dataset, model, fname, epoch):
     yy = p(xx)
 
     plt.figure(figsize=(4, 4))
-    plt.rcParams.update({
-        'text.usetex': True
-    })
+    # plt.rcParams.update({
+    #     'text.usetex': True
+    # })
     plt.subplot(1, 1, 1)
     plt.scatter(true_val, pred_val, 7, marker='.', c='grey', alpha=0.5)
     plt.plot(xx, yy)
     mae, h = '%.4g' % mae, '%.4g' % h
     plt.xlabel('True Value')
     plt.ylabel('Predicted Value')
-    plt.title(rf"""MAE: ${mae} \pm {h}$ (epoch: {epoch})""")
+    plt.title(f"MAE: {mae}  {h} (epoch: {epoch})")
     plt.savefig(fname)
     plt.close()
 
