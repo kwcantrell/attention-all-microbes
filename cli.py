@@ -7,7 +7,7 @@ from aam.data_utils import (
 )
 from aam.model_utils import regression
 from aam.cli_util import aam_model_options
-from aam.callbacks import SaveModel
+from aam.callbacks import SaveModel, MAE_Scatter
 
 
 @click.group()
@@ -85,6 +85,7 @@ def fit_regressor(i_table,
                   enc_heads,
                   output_dim,
                   lr,
+                  max_bp,
                   output_dir):
     # TODO: Normalize regress var i.e. center with a std of 0.
     table, metdata = align_table_and_metadata(i_table,
@@ -93,7 +94,8 @@ def fit_regressor(i_table,
     seq_dataset = get_sequencing_dataset(table)
     y_dataset = tf.data.Dataset.from_tensor_slices(metdata[m_metadata_column])
     dataset = combine_datasets(seq_dataset,
-                               y_dataset)
+                               y_dataset,
+                               max_bp)
 
     size = seq_dataset.cardinality().numpy()
     train_size = int(size*train_percent/batch_size)*batch_size
@@ -116,14 +118,19 @@ def fit_regressor(i_table,
                        d_model,
                        enc_layers,
                        enc_heads,
-                       output_dim)
+                       output_dim,
+                       max_bp)
 
     model.summary()
     model.fit(training_dataset,
               validation_data=validation_dataset,
               epochs=epochs,
               batch_size=batch_size,
-              callbacks=[SaveModel(output_dir)])
+              callbacks=[SaveModel(output_dir),
+                         MAE_Scatter(m_metadata_column,
+                                     validation_dataset,
+                                     output_dir)
+                         ])
 
 
 @cli.command()

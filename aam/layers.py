@@ -43,8 +43,6 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.point = tf.keras.layers.Dense(1,
                                            activation='relu',
                                            use_bias=False)
-        self.dropout1 = tf.keras.layers.Dropout(self.dropout)
-        self.dropout2 = tf.keras.layers.Dropout(self.dropout)
         init_tup = (reshape,
                     first_transp,
                     second_transp,
@@ -78,12 +76,11 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             return proj
         return compute_proj
 
-    def call(self, inputs, training):
+    def call(self, inputs):
         output = self.linear_up_scale(inputs)
-        output = self.dropout1(output)
         output = self.compute_proj(output)
         output = self.linear_down_scale(output)
-        return self.dropout2(output, training=training)
+        return output
 
     def get_config(self):
         config = super().get_config()

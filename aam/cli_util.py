@@ -41,7 +41,10 @@ def aam_model_options(func):
                      type=int),
         click.option('--lr',
                      default=0.0005,
-                     type=float)
+                     type=float),
+        click.option('--max-bp',
+                     default=100,
+                     type=int)
     ]
 
     for option in reversed(model_options):

@@ -47,12 +47,12 @@ def get_unifrac_dataset(table_path, tree_path):
             .prefetch(tf.data.AUTOTUNE))
 
 
-def combine_datasets(seq_dataset, dist_dataset, add_index=False):
+def combine_datasets(seq_dataset, dist_dataset, max_bp, add_index=False):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
         max_tokens=7,
         split='character',
         output_mode='int',
-        output_sequence_length=100)
+        output_sequence_length=max_bp)
     sequence_tokenizer.adapt(seq_dataset.take(1))
 
     seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))

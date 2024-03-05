@@ -13,17 +13,21 @@ def _construct_base(batch_size: int,
                     d_model: int,
                     enc_layers: int,
                     enc_heads: int,
-                    output_dim: int):
-    input = tf.keras.Input(shape=[None, 100],
+                    output_dim: int,
+                    max_bp: int):
+    input = tf.keras.Input(shape=[None, max_bp],
                            batch_size=batch_size,
                            dtype=tf.int64)
     model_input = tf.keras.layers.Embedding(
         5,
         d_model,
         embeddings_initializer="uniform",
-        input_length=100,
-        input_shape=[batch_size, None, 100],
+        input_length=max_bp,
+        input_shape=[batch_size, None, max_bp],
         name="embedding")(input)
+    model_input += tfm.nlp.layers.PositionEmbedding(
+                max_length=max_bp,
+                seq_axis=2)(model_input)
     model_input = MultiHeadPCAProjection(hidden_dim=pca_hidden_dim,
                                          num_heads=pca_heads,
                                          dropout=dropout)(model_input)
@@ -34,10 +38,9 @@ def _construct_base(batch_size: int,
             num_layers=enc_layers,
             num_attention_heads=enc_heads,
             intermediate_size=dff,
-            attention_dropout_rate=dropout,
             dropout_rate=dropout,
             norm_first=True,
-            activation='gelu',
+            activation='relu',
         )(model_input)
     output = ReadHead(hidden_dim=pca_hidden_dim,
                       num_heads=pca_heads,

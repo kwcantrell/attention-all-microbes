@@ -24,14 +24,14 @@ def mean_confidence_interval(data, confidence=0.95):
     return m, h
 
 
-def mean_absolute_error(dataset, model, fname, s_type):
-    pred_age = tf.squeeze(model.predict(dataset)).numpy()
-    true_age = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
-    mae, h = mean_confidence_interval(np.abs(true_age - pred_age))
+def mean_absolute_error(dataset, model, fname, epoch):
+    pred_val = tf.squeeze(model.predict(dataset)).numpy()
+    true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
+    mae, h = mean_confidence_interval(np.abs(true_val - pred_val))
 
-    min_x = 15
-    max_x = np.max(true_age) + 2
-    coeff = np.polyfit(true_age, pred_age, deg=1)
+    min_x = np.min(true_val)
+    max_x = np.max(true_val)
+    coeff = np.polyfit(true_val, pred_val, deg=1)
     p = np.poly1d(coeff)
     xx = np.linspace(min_x, max_x, 1000)
     yy = p(xx)
@@ -41,48 +41,33 @@ def mean_absolute_error(dataset, model, fname, s_type):
         'text.usetex': True
     })
     plt.subplot(1, 1, 1)
-    plt.scatter(true_age, pred_age, 7, marker='.', c='grey', alpha=0.5)
+    plt.scatter(true_val, pred_val, 7, marker='.', c='grey', alpha=0.5)
     plt.plot(xx, yy)
     mae, h = '%.4g' % mae, '%.4g' % h
-    plt.xlabel('Reported age')
-    plt.ylabel('Predicted age')
-    plt.title(rf"""{s_type} microbiota
-              MAE: ${mae} \pm {h}$""")
+    plt.xlabel('True Value')
+    plt.ylabel('Predicted Value')
+    plt.title(rf"""MAE: ${mae} \pm {h}$ (epoch: {epoch})""")
     plt.savefig(fname)
     plt.close()
 
 
 class MAE_Scatter(tf.keras.callbacks.Callback):
-    def __init__(self, root_path, dataset, s_type, title,
-                 steps_per_checkpoint=5, **kwargs):
+    def __init__(self, title, dataset, out_dir):
         super().__init__()
-        self.dataset = dataset
-        self.root_path = root_path
-        self.model_path = os.path.join(self.root_path, 'model.keras')
-        self.figure_path = os.path.join(self.root_path, 'figures')
-        self.cur_step = 0
-        self.total_mae = 0
-        self.s_type = s_type
         self.title = title
-        if not os.path.exists(self.root_path):
-            os.makedirs(self.root_path)
-        if not os.path.exists(self.figure_path):
-            os.makedirs(self.figure_path)
+        self.dataset = dataset
+        self.out_dir = out_dir
 
     def on_epoch_end(self, epoch, logs=None):
-        if self.cur_step % 5 == 0:
-            self.total_mae += 1
-            self.model.save(self.model_path, save_format='keras')
+        if epoch % 5 == 0:
             mean_absolute_error(
                 self.dataset,
                 self.model,
                 fname=os.path.join(
-                    self.figure_path, f'MAE-{self.title}-{self.total_mae}.png'
+                    self.out_dir, f'MAE-{self.title}-epoch-{epoch}.png'
                     ),
-                s_type=self.s_type
+                epoch=epoch
             )
-            self.cur_step = 0
-        self.cur_step += 1
         return super().on_epoch_end(epoch, logs)
 
 
