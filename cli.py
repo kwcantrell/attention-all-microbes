@@ -18,7 +18,7 @@ SAMPLE_CLASS_DESC = (
     "Sample classifier trained with fit_classifier."
 )
 SAMPLE_REGR_DESC = (
-"Sample regressor trained with fit_regressor."
+    "Sample regressor trained with fit_regressor."
 )
 
 
