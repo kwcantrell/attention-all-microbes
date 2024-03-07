@@ -35,17 +35,20 @@ def unifrac(i_table,
             dropout,
             pca_hidden_dim,
             pca_heads,
+            pca_layers,
             dff,
             d_model,
             enc_layers,
             enc_heads,
             output_dim,
             lr,
+            max_bp,
             output_dir):
     seq_dataset = get_sequencing_dataset(i_table)
     unifrac_dataset = get_unifrac_dataset(i_table, i_tree)
     dataset = combine_datasets(seq_dataset,
                                unifrac_dataset,
+                               max_bp,
                                add_index=True)
 
     size = seq_dataset.cardinality().numpy()
@@ -68,11 +71,19 @@ def unifrac(i_table,
                              dropout,
                              pca_hidden_dim,
                              pca_heads,
+                             pca_layers,
                              dff,
                              d_model,
                              enc_layers,
                              enc_heads,
-                             output_dim)
+                             output_dim,
+                             max_bp)
+
+    def scheduler(epoch, lr):
+        if epoch <= 15 or epoch % 15 != 0:
+            return lr
+        return lr * tf.math.exp(-0.1)
+
     model.summary()
 
     model.fit(training_dataset,
@@ -83,7 +94,8 @@ def unifrac(i_table,
                          ProjectEncoder(i_table,
                                         i_tree,
                                         output_dir,
-                                        batch_size)])
+                                        batch_size),
+                         tf.keras.callbacks.LearningRateScheduler(scheduler)])
 
 
 def main():
