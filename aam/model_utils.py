@@ -26,9 +26,9 @@ def _construct_base(batch_size: int,
         input_length=max_bp,
         input_shape=[batch_size, None, max_bp],
         name="embedding")(input)
-    model_input += tfm.nlp.layers.PositionEmbedding(
-                max_length=max_bp,
-                seq_axis=2)(model_input)
+    # model_input += tfm.nlp.layers.PositionEmbedding(
+    #             max_length=max_bp,
+    #             seq_axis=2)(model_input)
     model_input = PCAProjector(hidden_dim=pca_hidden_dim,
                                num_heads=pca_heads,
                                num_layers=pca_layers)(model_input)

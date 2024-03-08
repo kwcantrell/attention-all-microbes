@@ -139,7 +139,8 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         true_pcoa.write(os.path.join(self.output_dir, 'true_pcoa.pcoa'))
 
     def on_epoch_end(self, epoch, logs=None):
-        if self.cur_step % 5 == 0:
+        # if self.cur_step % 5 == 0:
+        if True:
             self._log_epoch_data()
             self.cur_step = 0
         self.cur_step += 1
