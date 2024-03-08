@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 from aam.losses import pairwise_loss
-from aam.layers import ReadHead, MultiHeadPCAProjection, PCAProjector
+from aam.layers import ReadHead, PCAProjector
 from aam.metrics import pairwise_mae
 
 
@@ -62,15 +62,15 @@ def pretrain_unifrac(batch_size: int, lr: float, *args):
     return model
 
 
-def classification(num_class: int, batch_size: int):
-    model = _construct_base(batch_size, num_class)
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=0.001,
+def classification(batch_size: int, lr: float, *args):
+    model = _construct_base(batch_size, *args)
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
                                           beta_2=0.999,
                                           epsilon=1e-7)
     loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     model.compile(optimizer=optimizer,
                   loss=loss,
-                  metrics=[tf.keras.metrics.Accuracy()],
+                  metrics=['accuracy'],
                   jit_compile=False)
     return model
 

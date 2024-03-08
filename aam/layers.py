@@ -169,44 +169,30 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
-        # emb_shape = shape[-1]
-        # self.hidden_dim = 256
-        # self.num_heads = 16
-        # self.dff2 = tf.keras.layers.Dense(256, activation='relu')
         self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim,
                                                      activation='relu')
         # occurs after up scaling
         head_size = self.hidden_dim // self.num_heads
-        # reshape = shape[:-2] + [512,
-        #                         self.num_heads,
-        #                         head_size]
+        self.dff = tf.keras.layers.Dense(head_size)
+
         reshape = shape[:-1] + [self.num_heads, head_size]
         first_transp = [i for i in range(len(reshape))]
         first_transp = first_transp[:-3] + [first_transp[-2],
                                             first_transp[-1],
                                             first_transp[-3]]
-        eig_trasp = [i for i in range(len(reshape))]
-        # eig_trasp = eig_trasp[:-2] + [eig_trasp[-1], eig_trasp[-2]]
         second_transp = [i for i in range(len(reshape))]
         second_transp = second_transp[:-3] + [second_transp[-2],
                                               second_transp[-3],
                                               second_transp[-1]]
-        dff_dim = self.hidden_dim
         second_reshape = shape[:-2] + [head_size, self.hidden_dim]
-        self.eig_trasp = [i for i in range(len(reshape))]
-        self.eig_trasp = self.eig_trasp[:-2] + [self.eig_trasp[-1], self.eig_trasp[-2]]
-        # self.dff = tf.keras.layers.Dense(dff_dim, activation='relu')
-        self.dff = tf.keras.layers.Dense(head_size)
-        
-        self.reshape = reshape
-        self.first_transp = first_transp
-        self.second_transp = second_transp
-        self.second_reshape = second_reshape
-        self.compute_proj = MultiHeadPCAProjection.init_proj(self.reshape,
-                                                             self.first_transp,
-                                                             self.eig_trasp,
-                                                             self.second_transp,
-                                                             self.second_reshape,
+        eig_trasp = [i for i in range(len(reshape))]
+        eig_trasp = eig_trasp[:-2] + [eig_trasp[-1], eig_trasp[-2]]
+
+        self.compute_proj = MultiHeadPCAProjection.init_proj(reshape,
+                                                             first_transp,
+                                                             eig_trasp,
+                                                             second_transp,
+                                                             second_reshape,
                                                              self.dff)
 
     def init_proj(reshape,
@@ -222,8 +208,12 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             output = tf.reshape(X, shape=reshape)
             output = tf.transpose(output, perm=first_transp)
             if not tf.is_symbolic_tensor(output):
-                output = output - tf.math.reduce_mean(output, axis=-1, keepdims=True)
-                output = output / tf.math.sqrt(tf.math.reduce_std(output, axis=-1, keepdims=True))
+                output = output - tf.math.reduce_mean(output,
+                                                      axis=-1,
+                                                      keepdims=True)
+                output /= tf.math.sqrt(tf.math.reduce_std(output,
+                                                          axis=-1,
+                                                          keepdims=True))
             cov = tf.linalg.matmul(output, output, transpose_b=True)
             _, eig_vec = tf.linalg.eigh(cov)
             output = tf.transpose(eig_vec, perm=eig_trasp)
@@ -231,21 +221,11 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             output = tf.transpose(output, perm=second_transp)
             output = tf.reshape(output, shape=second_reshape)
             return output
-            # return tf.transpose(eig_vec, perm=eig_trasp)
         return compute_proj
 
     def call(self, inputs):
-        # output = self.dff2(inputs)
         output = self.linear_up_scale(inputs)
-        # if not tf.is_symbolic_tensor(output):
-        #     self.reshape[1] = tf.shape(inputs)[1]
-        # output = tf.reshape(output, shape=self.reshape)
-        # output = tf.transpose(output, perm=self.first_transp)
         output = self.compute_proj(output)
-        # output = tf.transpose(output, perm=self.eig_trasp)
-        # output = tf.transpose(output, perm=self.second_transp)
-        # output = tf.reshape(output, shape=self.second_reshape)
-        # output = self.dff(output)
         return output
 
     def get_config(self):
@@ -274,11 +254,6 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        # self.pca_proj = PCAProjector(
-        #     hidden_dim=self.hidden_dim,
-        #     num_heads=self.num_heads,
-        #     num_layers=self.num_layers,
-        #     name='read_head_project')
         self.pca_proj = NucleotideEinsum(64,
                                          reduce_tensor=True,
                                          normalize_output=True,

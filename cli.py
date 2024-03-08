@@ -5,10 +5,11 @@ from aam.data_utils import (
     get_sequencing_dataset, combine_datasets,
     batch_dataset, align_table_and_metadata
 )
-from aam.model_utils import regression
+from aam.model_utils import regression, classification
 from aam.cli_util import aam_model_options
 from aam.callbacks import SaveModel, MAE_Scatter
 import os
+
 
 @click.group()
 class cli:
@@ -43,10 +44,81 @@ def confusion_matrix(i_feature_table):
               default='error',
               type=click.Choice(['error', 'ignore'], case_sensitive=False),
               help=desc.MISSING_SAMPLES_DESC)
+@aam_model_options
 @click.option('--output-dir', required=True)
-def fit_classifier(i_table, m_metadata_file, metadata_column, missing_samples,
+def fit_classifier(i_table,
+                   m_metadata_file,
+                   m_metadata_column,
+                   p_missing_samples,
+                   batch_size,
+                   train_percent,
+                   epochs,
+                   repeat,
+                   dropout,
+                   pca_hidden_dim,
+                   pca_heads,
+                   pca_layers,
+                   dff,
+                   d_model,
+                   enc_layers,
+                   enc_heads,
+                   output_dim,
+                   lr,
+                   max_bp,
                    output_dir):
-    pass
+    # TODO: Normalize regress var i.e. center with a std of 0.
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    table, metdata = align_table_and_metadata(i_table,
+                                              m_metadata_file,
+                                              m_metadata_column,
+                                              is_regressor=False)
+    num_classes = max(metdata[m_metadata_column]) + 1
+    seq_dataset = get_sequencing_dataset(table)
+    y_dataset = tf.data.Dataset.from_tensor_slices(metdata[m_metadata_column])
+    dataset = combine_datasets(seq_dataset,
+                               y_dataset,
+                               max_bp)
+
+    size = seq_dataset.cardinality().numpy()
+    train_size = int(size*train_percent/batch_size)*batch_size
+
+    training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
+    training_dataset = batch_dataset(training_dataset,
+                                     batch_size,
+                                     shuffle=True,
+                                     repeat=repeat)
+
+    val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
+    validation_dataset = batch_dataset(val_data, batch_size)
+
+    model = classification(batch_size,
+                           lr,
+                           dropout,
+                           pca_hidden_dim,
+                           pca_heads,
+                           pca_layers,
+                           dff,
+                           d_model,
+                           enc_layers,
+                           enc_heads,
+                           num_classes,
+                           max_bp)
+
+    def scheduler(epoch, lr):
+        if epoch <= 10 or epoch % 15 != 0:
+            return lr
+        return lr * tf.math.exp(-0.1)
+
+    model.summary()
+    model.fit(training_dataset,
+              validation_data=validation_dataset,
+              epochs=epochs,
+              batch_size=batch_size,
+              callbacks=[SaveModel(output_dir),
+                         tf.keras.callbacks.LearningRateScheduler(scheduler)
+                         ])
 
 
 @cli.command()
@@ -90,8 +162,8 @@ def fit_regressor(i_table,
                   output_dir):
     # TODO: Normalize regress var i.e. center with a std of 0.
     if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            
+        os.makedirs(output_dir)
+
     table, metdata = align_table_and_metadata(i_table,
                                               m_metadata_file,
                                               m_metadata_column)
@@ -126,6 +198,11 @@ def fit_regressor(i_table,
                        output_dim,
                        max_bp)
 
+    def scheduler(epoch, lr):
+        if epoch <= 10 or epoch % 15 != 0:
+            return lr
+        return lr * tf.math.exp(-0.1)
+
     model.summary()
     model.fit(training_dataset,
               validation_data=validation_dataset,
@@ -134,7 +211,8 @@ def fit_regressor(i_table,
               callbacks=[SaveModel(output_dir),
                          MAE_Scatter(m_metadata_column,
                                      validation_dataset,
-                                     output_dir)
+                                     output_dir),
+                         tf.keras.callbacks.LearningRateScheduler(scheduler)
                          ])
 
 

@@ -4,7 +4,6 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import sklearn
-# from tensorboard.plugins import projector
 from aam.losses import _pairwise_distances
 from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
@@ -139,35 +138,21 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         true_pcoa.write(os.path.join(self.output_dir, 'true_pcoa.pcoa'))
 
     def on_epoch_end(self, epoch, logs=None):
-        # if self.cur_step % 5 == 0:
-        if True:
+        if self.cur_step % 5 == 0:
             self._log_epoch_data()
             self.cur_step = 0
         self.cur_step += 1
 
 
 class Accuracy(tf.keras.callbacks.Callback):
-    def __init__(self, root_path, dataset, s_type, steps_per_checkpoint=5,
-                 **kwargs):
+    def __init__(self, title, dataset, out_dir):
         super().__init__()
+        self.title = title
         self.dataset = dataset
-        self.root_path = root_path
-        self.model_path = os.path.join(self.root_path, 'model.keras')
-        self.figure_path = os.path.join(self.root_path, 'figures')
-        self.cur_step = 0
-        self.total_mae = 0
-        self.s_type = s_type
-        self.steps_per_checkpoint = steps_per_checkpoint
-        if not os.path.exists(self.root_path):
-            os.makedirs(self.root_path)
-        if not os.path.exists(self.figure_path):
-            os.makedirs(self.figure_path)
+        self.out_dir = out_dir
 
     def on_epoch_end(self, epoch, logs=None):
-        if self.cur_step % self.steps_per_checkpoint == 0:
-            self.total_mae += 1
-            self.model.save(self.model_path, save_format='keras')
-
+        if epoch % 5 == 0:
             pred_cat = tf.squeeze(self.model.predict(self.dataset)).numpy()
             true_cat = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in
                                        self.dataset])
@@ -184,8 +169,8 @@ class Accuracy(tf.keras.callbacks.Callback):
                 plt.grid(True)
                 ax = plt.gca()
                 ax.set_aspect('equal')
-                fname = os.path.join(self.figure_path,
-                                     f'auc-{self.total_mae}.png')
+                fname = os.path.join(self.out_dir,
+                                     f'auc-{epoch}.png')
                 plt.savefig(fname)
                 plt.close('all')
 
@@ -202,11 +187,8 @@ class Accuracy(tf.keras.callbacks.Callback):
                 plt.grid(True)
                 ax = plt.gca()
                 ax.set_aspect('equal')
-                fname = os.path.join(self.figure_path,
-                                     f'roc-{self.total_mae}.png')
+                fname = os.path.join(self.out_dir,
+                                     f'roc-{self.epoch}.png')
                 plt.savefig(fname)
             plot_roc('ROC', true_cat, pred_cat)
-
-            self.cur_step = 0
-        self.cur_step += 1
         return super().on_epoch_end(epoch, logs)
