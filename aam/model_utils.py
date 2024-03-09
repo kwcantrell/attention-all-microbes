@@ -46,7 +46,7 @@ def _construct_base(batch_size: int,
     output = ReadHead(hidden_dim=pca_hidden_dim,
                       num_heads=pca_heads,
                       num_layers=pca_layers,
-                      output_dim=output_dim)(model_input)
+                      output_dim=32)(model_input)
     return tf.keras.Model(inputs=input, outputs=output)
 
 
@@ -58,6 +58,35 @@ def pretrain_unifrac(batch_size: int, lr: float, *args):
     model.compile(optimizer=optimizer,
                   loss=pairwise_loss(batch_size),
                   metrics=[pairwise_mae(batch_size)],
+                  jit_compile=False)
+    return model
+
+def transfer_regression(batch_size: int, lr: float, *args):
+    model = _construct_base(batch_size, *args)
+    model.trainable = False
+    model.load_weights('base-model-wiht-pos/encoder.keras')
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
+                                          beta_2=0.999,
+                                          epsilon=1e-7)
+    input = tf.keras.Input(shape=[None, 100],
+                           batch_size=8,
+                           dtype=tf.int64)
+    output = tfm.nlp.models.TransformerEncoder(
+            num_layers=2,
+            num_attention_heads=4,
+            intermediate_size=1024,
+            dropout_rate=0.2,
+            norm_first=True,
+            activation='relu',
+        )(model.layers[-2].output)
+    output = ReadHead(hidden_dim=128,
+                      num_heads=16,
+                      num_layers=2,
+                      output_dim=1)(output)
+    model = tf.keras.Model(inputs=model.layers[0].input, outputs=output)
+    model.compile(optimizer=optimizer,
+                  loss='mse',
+                  metrics=['mae'],
                   jit_compile=False)
     return model
 
