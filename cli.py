@@ -199,7 +199,7 @@ def fit_regressor(i_table,
                        max_bp)
 
     def scheduler(epoch, lr):
-        if epoch <= 10 or epoch % 15 != 0:
+        if epoch % 10 != 0:
             return lr
         return lr * tf.math.exp(-0.1)
 

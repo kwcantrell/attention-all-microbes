@@ -69,7 +69,6 @@ class NucleotideEinsum(tf.keras.layers.Layer):
             initializer=tf.keras.initializers.get(self.kernel_initializer)
         )
         self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(0.50)
 
         self.pos_emb_red = tfm.nlp.layers.PositionEmbedding(
                 max_length=self.dff, seq_axis=seq_axis)
@@ -139,6 +138,7 @@ class PCAProjector(tf.keras.layers.Layer):
                               f'pca_layer_{i}')(outputs)
             outputs = getattr(self,
                               f'ff-{i}')(outputs)
+
         outputs = tf.squeeze(self.point(outputs), axis=-1)
         outputs = self.back_proj(outputs)
         return outputs
@@ -164,8 +164,6 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
-        self.nuc_ein = NucleotideEinsum(self.hidden_dim,
-                                        reduce_tensor=False)
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
@@ -254,11 +252,13 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        self.pca_proj = NucleotideEinsum(64,
+        self.pca_proj = NucleotideEinsum(128,
                                          reduce_tensor=True,
                                          normalize_output=True,
                                          seq_axis=1)
-        self.dff = tf.keras.layers.Dense(128, activation='relu', use_bias=True)
+        self.dff = tf.keras.layers.Dense(1024,
+                                         activation='relu',
+                                         use_bias=True)
         self.dense = tf.keras.layers.Dense(self.output_dim)
 
     def get_config(self):

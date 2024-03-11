@@ -35,10 +35,16 @@ def mean_absolute_error(dataset, model, fname, epoch):
     xx = np.linspace(min_x, max_x, 1000)
     yy = p(xx)
 
+    diag = np.polyfit(true_val, true_val, deg=1)
+    p = np.poly1d(diag)
+    diag_xx = np.linspace(min_x, max_x, 1000)
+    diag_yy = p(diag_xx)
+
     plt.figure(figsize=(4, 4))
     plt.subplot(1, 1, 1)
     plt.scatter(true_val, pred_val, 7, marker='.', c='grey', alpha=0.5)
     plt.plot(xx, yy)
+    plt.plot(diag_xx, diag_yy)
     mae, h = '%.4g' % mae, '%.4g' % h
     plt.xlabel('True Value')
     plt.ylabel('Predicted Value')
@@ -48,14 +54,15 @@ def mean_absolute_error(dataset, model, fname, epoch):
 
 
 class MAE_Scatter(tf.keras.callbacks.Callback):
-    def __init__(self, title, dataset, out_dir):
+    def __init__(self, title, dataset, out_dir, report_back_after_epochs=5):
         super().__init__()
         self.title = title
         self.dataset = dataset
         self.out_dir = out_dir
+        self.report_back_after_epochs = report_back_after_epochs
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch % 5 == 0:
+        if epoch % self.report_back_after_epochs == 0:
             mean_absolute_error(
                 self.dataset,
                 self.model,

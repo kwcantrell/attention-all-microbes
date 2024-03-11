@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tensorflow_models as tfm
-from aam.losses import pairwise_loss
+from aam.losses import pairwise_loss, pairwise_residual_mse
 from aam.layers import ReadHead, PCAProjector
 from aam.metrics import pairwise_mae
 
@@ -26,20 +26,14 @@ def _construct_base(batch_size: int,
         input_length=max_bp,
         input_shape=[batch_size, None, max_bp],
         name="embedding")(input)
-    # model_input += tfm.nlp.layers.PositionEmbedding(
-    #             max_length=max_bp,
-    #             seq_axis=2)(model_input)
     model_input = PCAProjector(hidden_dim=pca_hidden_dim,
                                num_heads=pca_heads,
                                num_layers=pca_layers)(model_input)
-    model_input += tfm.nlp.layers.PositionEmbedding(
-                max_length=2000,
-                seq_axis=1)(model_input)
     model_input = tfm.nlp.models.TransformerEncoder(
             num_layers=enc_layers,
             num_attention_heads=enc_heads,
             intermediate_size=dff,
-            dropout_rate=dropout,
+            intermediate_dropout=dropout,
             norm_first=True,
             activation='relu',
         )(model_input)
@@ -58,6 +52,34 @@ def pretrain_unifrac(batch_size: int, lr: float, *args):
     model.compile(optimizer=optimizer,
                   loss=pairwise_loss(batch_size),
                   metrics=[pairwise_mae(batch_size)],
+                  jit_compile=False)
+    return model
+
+
+def transfer_regression(batch_size: int, lr: float, *args):
+    model = _construct_base(batch_size, *args)
+    model.trainable = False
+    model.load_weights('pretrained/encoder.keras')
+    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
+                                          beta_2=0.999,
+                                          epsilon=1e-7)
+    output = tfm.nlp.models.TransformerEncoder(
+            num_layers=2,
+            num_attention_heads=4,
+            intermediate_size=1024,
+            dropout_rate=0.2,
+            norm_first=True,
+            activation='relu',
+        )(model.layers[-2].output)
+    output = ReadHead(hidden_dim=128,
+                      num_heads=16,
+                      num_layers=2,
+                      output_dim=1)(output)
+    model = tf.keras.Model(inputs=model.layers[0].input, outputs=output)
+    loss = pairwise_residual_mse(batch_size=batch_size)
+    model.compile(optimizer=optimizer,
+                  loss=loss,
+                  metrics=['mae'],
                   jit_compile=False)
     return model
 
