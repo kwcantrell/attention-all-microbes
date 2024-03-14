@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 from aam.losses import pairwise_loss, pairwise_residual_mse
-from aam.layers import ReadHead, PCAProjector
+from aam.layers import ReadHead, PCAProjector, NucleotideEinsum
 from aam.metrics import pairwise_mae
 
 
@@ -47,6 +47,7 @@ def _construct_base(batch_size: int,
 def pretrain_unifrac(batch_size: int, lr: float, *args):
     model = _construct_base(batch_size, *args)
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
+                                          weight_decay=0.,
                                           beta_2=0.999,
                                           epsilon=1e-7)
     model.compile(optimizer=optimizer,
@@ -102,6 +103,7 @@ def regression(batch_size: int, lr: float, *args):
     optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
                                           beta_2=0.999,
                                           epsilon=1e-7)
+    loss = pairwise_residual_mse(batch_size=batch_size)
     model.compile(optimizer=optimizer,
                   loss='mse', metrics=['mae'],
                   jit_compile=False)
