@@ -10,6 +10,7 @@ from aam.model_utils import pretrain_unifrac, transfer_regression
 from aam.cli_util import aam_model_options
 import os
 
+
 @click.group()
 def transfer_learning():
     pass
@@ -79,12 +80,12 @@ def unifrac(i_table,
                              output_dim,
                              max_bp)
 
-    def scheduler(epoch, lr):
-        if epoch <= 15 or epoch % 15 != 0:
-            return lr
-        return lr * tf.math.exp(-0.1)
-
+    # def scheduler(epoch, lr):
+    #     if epoch <= 15:
+    #         return lr
+    #     return lr * tf.math.exp(-0.1)
     model.summary()
+    # model.load_weights('base-model-wiht-pos/encoder.keras')
 
     model.fit(training_dataset,
               validation_data=validation_dataset,
@@ -94,9 +95,7 @@ def unifrac(i_table,
                          ProjectEncoder(i_table,
                                         i_tree,
                                         output_dir,
-                                        batch_size),
-                         tf.keras.callbacks.LearningRateScheduler(scheduler)])
-
+                                        batch_size)])
 
 
 @transfer_learning.command()
@@ -119,26 +118,26 @@ def unifrac(i_table,
 @click.option('--output-dir',
               required=True)
 def transfer_regress(i_table,
-                  m_metadata_file,
-                  m_metadata_column,
-                  p_missing_samples,
-                  batch_size,
-                  train_percent,
-                  epochs,
-                  repeat,
-                  dropout,
-                  pca_hidden_dim,
-                  pca_heads,
-                  pca_layers,
-                  dff,
-                  d_model,
-                  enc_layers,
-                  enc_heads,
-                  output_dim,
-                  lr,
-                  max_bp,
-                  output_dir):
-# TODO: Normalize regress var i.e. center with a std of 0.
+                     m_metadata_file,
+                     m_metadata_column,
+                     p_missing_samples,
+                     batch_size,
+                     train_percent,
+                     epochs,
+                     repeat,
+                     dropout,
+                     pca_hidden_dim,
+                     pca_heads,
+                     pca_layers,
+                     dff,
+                     d_model,
+                     enc_layers,
+                     enc_heads,
+                     output_dim,
+                     lr,
+                     max_bp,
+                     output_dir):
+    # TODO: Normalize regress var i.e. center with a std of 0.
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -164,17 +163,17 @@ def transfer_regress(i_table,
     validation_dataset = batch_dataset(val_data, batch_size)
 
     model = transfer_regression(batch_size,
-                             lr,
-                             dropout,
-                             pca_hidden_dim,
-                             pca_heads,
-                             pca_layers,
-                             dff,
-                             d_model,
-                             enc_layers,
-                             enc_heads,
-                             output_dim,
-                             max_bp)
+                                lr,
+                                dropout,
+                                pca_hidden_dim,
+                                pca_heads,
+                                pca_layers,
+                                dff,
+                                d_model,
+                                enc_layers,
+                                enc_heads,
+                                output_dim,
+                                max_bp)
 
     def scheduler(epoch, lr):
         if epoch % 10 != 0:

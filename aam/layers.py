@@ -69,7 +69,6 @@ class NucleotideEinsum(tf.keras.layers.Layer):
             initializer=tf.keras.initializers.get(self.kernel_initializer)
         )
         self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(0.50)
 
         self.pos_emb_red = tfm.nlp.layers.PositionEmbedding(
                 max_length=self.dff, seq_axis=seq_axis)
@@ -123,8 +122,7 @@ class PCAProjector(tf.keras.layers.Layer):
                     f'ff-{i}',
                     tf.keras.layers.Dense(self.hidden_dim,
                                           activation='relu'))
-        self.point = tf.keras.layers.Dense(1,
-                                           activation='relu')
+        self.point = tf.keras.layers.Dense(1)
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
@@ -139,6 +137,7 @@ class PCAProjector(tf.keras.layers.Layer):
                               f'pca_layer_{i}')(outputs)
             outputs = getattr(self,
                               f'ff-{i}')(outputs)
+
         outputs = tf.squeeze(self.point(outputs), axis=-1)
         outputs = self.back_proj(outputs)
         return outputs
@@ -164,13 +163,10 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
-        self.nuc_ein = NucleotideEinsum(self.hidden_dim,
-                                        reduce_tensor=False)
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
-        self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim,
-                                                     activation='relu')
+        self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim)
         # occurs after up scaling
         head_size = self.hidden_dim // self.num_heads
         self.dff = tf.keras.layers.Dense(head_size)
@@ -207,17 +203,14 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
                 reshape[1] = tf.shape(X)[1]
             output = tf.reshape(X, shape=reshape)
             output = tf.transpose(output, perm=first_transp)
-            if not tf.is_symbolic_tensor(output):
+            if not tf.is_symbolic_tensor(X):
                 output = output - tf.math.reduce_mean(output,
                                                       axis=-1,
                                                       keepdims=True)
-                output /= tf.math.sqrt(tf.math.reduce_std(output,
-                                                          axis=-1,
-                                                          keepdims=True))
             cov = tf.linalg.matmul(output, output, transpose_b=True)
             _, eig_vec = tf.linalg.eigh(cov)
-            output = tf.transpose(eig_vec, perm=eig_trasp)
-            output = dff(output)
+            output = tf.transpose(output, perm=eig_trasp)
+            output = dff(eig_vec)
             output = tf.transpose(output, perm=second_transp)
             output = tf.reshape(output, shape=second_reshape)
             return output
@@ -254,11 +247,16 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        self.pca_proj = NucleotideEinsum(64,
-                                         reduce_tensor=True,
-                                         normalize_output=True,
-                                         seq_axis=1)
-        self.dff = tf.keras.layers.Dense(128, activation='relu', use_bias=True)
+        # self.pca_proj = NucleotideEinsum(64,
+        #                                  reduce_tensor=True,
+        #                                  normalize_output=True,
+        #                                  seq_axis=1)
+        self.pca_proj = PCAProjector(hidden_dim=hidden_dim,
+                                     num_heads=num_heads,
+                                     num_layers=num_layers)
+        self.dff = tf.keras.layers.Dense(32,
+                                         activation='relu',
+                                         use_bias=True)
         self.dense = tf.keras.layers.Dense(self.output_dim)
 
     def get_config(self):
