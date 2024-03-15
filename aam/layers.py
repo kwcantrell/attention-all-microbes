@@ -247,13 +247,13 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        # self.pca_proj = NucleotideEinsum(64,
-        #                                  reduce_tensor=True,
-        #                                  normalize_output=True,
-        #                                  seq_axis=1)
-        self.pca_proj = PCAProjector(hidden_dim=hidden_dim,
-                                     num_heads=num_heads,
-                                     num_layers=num_layers)
+        self.pca_proj = NucleotideEinsum(64,
+                                         reduce_tensor=True,
+                                         normalize_output=True,
+                                         seq_axis=1)
+        # self.pca_proj = PCAProjector(hidden_dim=hidden_dim,
+        #                              num_heads=num_heads,
+        #                              num_layers=num_layers)
         self.dff = tf.keras.layers.Dense(32,
                                          activation='relu',
                                          use_bias=True)
