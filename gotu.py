@@ -3,12 +3,11 @@ import os
 from datetime import datetime
 
 import tensorflow as tf
+from tensorflow.python.keras.utils import data_utils
 import tensorflow_models as tfm
-from amplicon_gpt.callbacks import ProjectEncoder
-from amplicon_gpt.gotu_data_utils import generate_gotu_dataset, batch_dataset
-from amplicon_gpt.model_utils import transfer_learn_base
-from amplicon_gpt.layers import NucleotideEinsum
-from amplicon_gpt.losses import unifrac_loss_var
+from aam.callbacks import ProjectEncoder
+from gotu.gotu_data_utils import generate_gotu_dataset, batch_dataset
+from aam.layers import NucleotideEinsum
 
 class GOTU_Pad(tf.keras.layers.Layer):
     def __init__(self, gotu_size, **kwargs):
