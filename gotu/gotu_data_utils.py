@@ -45,25 +45,47 @@ def gotu_encode_and_convert(data):
         output_sequence_length=1)
     sequence_tokenizer.adapt(o_ids)
     
-    gotu_dataset = gotu_dataset.map(lambda x: sequence_tokenizer(x))
+    gotu_dataset = gotu_dataset.map(lambda x:(
+        tf.concat(
+            [tf.constant([[1]], dtype=tf.int64), sequence_tokenizer(x) + 2, tf.constant([[2]], dtype=tf.int64)],
+            axis=0)
+        ))
     return gotu_dataset
 
 def combine_all_datasets(asv_dataset, gotu_dataset):
     dataset_size = asv_dataset.cardinality()
-    return (tf.data.Dataset
+    return ((tf.data.Dataset
             .zip(asv_dataset, gotu_dataset)
             .shuffle(dataset_size, reshuffle_each_iteration=False)    
             .prefetch(tf.data.AUTOTUNE)
-            )
+            ))
 
 def batch_dataset(dataset, batch_size):
+    def extract_zip(asv_data, gotu_data):
+        return ({
+            "encoder_inputs": asv_data,
+            "decoder_inputs": gotu_data[:-1, :],
+        },
+        gotu_data[1:, :]
+                )
+
+
     dataset = dataset.cache()
     size = dataset.cardinality()
     dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
     dataset = (dataset
-        .padded_batch(batch_size, padded_shapes=([None,150], [NUM_GOTUS + 1, 1]), drop_remainder=True)
-        .prefetch(tf.data.AUTOTUNE)
-    )
+                .map(extract_zip)
+                .padded_batch(batch_size,
+                             padded_shapes=({"encoder_inputs": [None, 150],
+                                             "decoder_inputs": [None, None]},
+                                           [None, None]),
+                             drop_remainder=True)
+                .prefetch(tf.data.AUTOTUNE)
+                .prefetch(tf.data.AUTOTUNE))
+    # dataset = (dataset
+    #     .padded_batch(batch_size, padded_shapes=([None,150], [NUM_GOTUS + 1, 1]), drop_remainder=True)
+    #     .prefetch(tf.data.AUTOTUNE)
+    # )
 
     dataset = dataset.cache()
     return dataset.prefetch(tf.data.AUTOTUNE)
@@ -72,4 +94,5 @@ def generate_gotu_dataset(gotu_fp, asv_fp):
     gotu_encoded = gotu_encode_and_convert(load_biom_table(gotu_fp))
     asv_encoded = asv_encode_and_convert(load_biom_table(asv_fp))
     
-    return combine_all_datasets(asv_encoded, gotu_encoded)
+    return batch_dataset(combine_all_datasets(asv_encoded, gotu_encoded), 8)
+
