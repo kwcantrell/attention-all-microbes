@@ -53,8 +53,9 @@ def _pairwise_distances(embeddings, squared=False):
 def pairwise_loss(batch_size):
     @tf.function(jit_compile=True)
     def inner(y_true, y_pred):
-        y_pred_dist = _pairwise_distances(y_pred)
-        difference = tf.square(y_true - y_pred_dist)
+        y_true = tf.math.square(y_true)
+        y_pred_dist = _pairwise_distances(y_pred, squared=True)
+        difference = tf.math.square(y_true - y_pred_dist)
         difference = tf.linalg.band_part(difference, 0, -1)
         return tf.reduce_sum(difference) / comb(batch_size, 2)
     return inner

@@ -208,9 +208,9 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
                                                       axis=-1,
                                                       keepdims=True)
             cov = tf.linalg.matmul(output, output, transpose_b=True)
-            _, eig_vec = tf.linalg.eigh(cov)
+            _, output = tf.linalg.eigh(cov)
             output = tf.transpose(output, perm=eig_trasp)
-            output = dff(eig_vec)
+            output = dff(output)
             output = tf.transpose(output, perm=second_transp)
             output = tf.reshape(output, shape=second_reshape)
             return output
@@ -251,9 +251,6 @@ class ReadHead(tf.keras.layers.Layer):
                                          reduce_tensor=True,
                                          normalize_output=True,
                                          seq_axis=1)
-        # self.pca_proj = PCAProjector(hidden_dim=hidden_dim,
-        #                              num_heads=num_heads,
-        #                              num_layers=num_layers)
         self.dff = tf.keras.layers.Dense(32,
                                          activation='relu',
                                          use_bias=True)
