@@ -13,3 +13,10 @@ amplicon_gpt/__pycache__/*
 amplicon_gpt/.ipynb_checkpoints/*
 shu-aging/*
 core.*
+aam/__pycache__/*
+aam/.ipynb_checkpoints/*
+aam/.DS_Store
+<<<<<<< HEAD
+
+=======
+>>>>>>> a759f81fe1bcf51075562b0ac30bafdf301e6850

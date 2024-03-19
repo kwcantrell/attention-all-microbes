@@ -1,6 +1,8 @@
 import tensorflow as tf
+from math import comb
 
 
+@tf.function(jit_compile=True)
 def _pairwise_distances(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
     Args:
@@ -49,10 +51,33 @@ def _pairwise_distances(embeddings, squared=False):
 
 
 def pairwise_loss(batch_size):
+    @tf.function(jit_compile=True)
     def inner(y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred)
         difference = tf.square(y_true - y_pred_dist)
-        difference = tf.math.reduce_sum(difference, axis=0)
-        return tf.math.reduce_sum(difference) / (
-            (batch_size * batch_size) - batch_size) / 2.0
+        difference = tf.linalg.band_part(difference, 0, -1)
+        return tf.reduce_sum(difference) / comb(batch_size, 2)
+    return inner
+
+
+def pairwise_residual_mse(batch_size):
+    @tf.function(jit_compile=True)
+    def sqrt_res(ys):
+        r = tf.reshape(ys, shape=(-1, 1)) - tf.reshape(ys, shape=(1, -1))
+        r = tf.square(r)
+        r_mask = tf.cast(tf.equal(r, 0.0), tf.float32)
+        r = r + r_mask * 1e-16
+        r = tf.sqrt(r)
+        return r * (1.0 - r_mask)
+
+    @tf.function(jit_compile=True)
+    def inner(y_true, y_pred):
+        y_true = tf.squeeze(y_true)
+        y_pred = tf.squeeze(y_pred)
+        mse = tf.reduce_sum(tf.square(y_true - y_pred)) / batch_size
+        r_yt = sqrt_res(y_true)
+        r_yp = sqrt_res(y_pred)
+        rse = tf.linalg.band_part(tf.square(r_yt - r_yp), 0, -1)
+        mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
+        return mse + mrse
     return inner

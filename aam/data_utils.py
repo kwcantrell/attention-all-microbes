@@ -7,11 +7,16 @@ from unifrac import unweighted
 
 def align_table_and_metadata(table_path,
                              metadata_path,
-                             metadata_col=None):
+                             metadata_col=None,
+                             is_regressor=True):
     metadata = pd.read_csv(metadata_path, sep='\t', index_col=0)
-    metadata = metadata[pd.to_numeric(metadata[metadata_col],
-                                      errors='coerce').notnull()]
-    metadata[metadata_col] = metadata[metadata_col].astype(np.float32)
+    if is_regressor:
+        metadata = metadata[pd.to_numeric(metadata[metadata_col],
+                                          errors='coerce').notnull()]
+        metadata[metadata_col] = metadata[metadata_col].astype(np.float32)
+    else:
+        metadata[metadata_col] = metadata[metadata_col].astype('category')
+        metadata[metadata_col] = metadata[metadata_col].cat.codes.astype('int')
     table = load_table(table_path)
     return table.align_to_dataframe(metadata, axis='sample')
 
@@ -87,8 +92,9 @@ def batch_dataset(dataset,
 
         def step_pad(ind, seq, dist):
             ASV_DIM = 0
+            FACTOR = 32
             shape = tf.shape(seq)[ASV_DIM]
-            pad = shape // 8 * 8 + 8 - shape
+            pad = shape // FACTOR * FACTOR + FACTOR - shape
             return (ind, tf.pad(seq, [[0, pad], [0, 0]]), dist)
 
         padded_shape = ([], [None, 100], [None])
