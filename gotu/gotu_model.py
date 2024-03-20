@@ -46,7 +46,7 @@ def gotu_model_base(batch_size: int,
     decoder_embedding = tf.squeeze(decoder_embedding, axis=-2)
 
     model_output = tfm.nlp.models.TransformerDecoder(
-        num_layers=6,
+        num_layers=enc_layers,
         dropout_rate=dropout,
         num_attention_heads=enc_heads,
         intermediate_size=dff,
@@ -64,7 +64,7 @@ def gotu_classification(batch_size: int, load_model: False, **kwargs):
     if load_model:
         model.load_weights('../attention-all-microbes/gotu_decoder_model/encoder.keras')
     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001,
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005,
                                     beta_1=0.9,
                                     beta_2=0.98,
                                     epsilon=1e-9)
