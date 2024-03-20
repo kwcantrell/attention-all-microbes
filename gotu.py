@@ -1,5 +1,3 @@
-import os
-
 import tensorflow as tf
 import tensorflow_models as tfm
 from gotu.gotu_data_utils import generate_gotu_dataset, batch_dataset
@@ -35,7 +33,8 @@ val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
 validation_dataset = batch_dataset(val_data, batch_size)
 
 model = gotu_classification(batch_size=8,
-                            dropout=0,
+                            load_model=True,
+                            dropout=0.3,
                             dff=1024,
                             d_model=128,
                             enc_layers=6,
