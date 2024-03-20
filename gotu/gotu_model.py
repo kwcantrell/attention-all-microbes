@@ -1,8 +1,4 @@
 """gotu_model.py"""
-
-import os
-import json
-
 import tensorflow as tf
 import tensorflow_models as tfm
 
@@ -62,8 +58,10 @@ def gotu_model_base(batch_size: int,
  
     return gotu_model
 
-def gotu_classification(batch_size: int, **kwargs):
+def gotu_classification(batch_size: int, load_model: False, **kwargs):
     model = gotu_model_base(batch_size, **kwargs)
+    if load_model:
+        model.load_weights('../attention-all-microbes/gotu_decoder_model/encoder.keras')
     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005,
                                     beta_1=0.9,
