@@ -1,6 +1,9 @@
+"""gotu_data_utils.py"""
+
 import numpy as np
 import tensorflow as tf
 from biom import load_table
+
 NUM_GOTUS = 6838
 
 def load_biom_table(fp):
@@ -47,9 +50,7 @@ def gotu_encode_and_convert(data):
     sequence_tokenizer.adapt(o_ids)
     gotu_list = data.ids(axis='observation')
     gotu_tokens = sequence_tokenizer(gotu_list) + 2
-    print("!!!!!!!!!!!!!")
-    print(gotu_list.shape)
-    print(gotu_tokens.numpy().shape)
+
     gotu_dict = {
         t: gotu for t, gotu in zip(list(tf.squeeze(gotu_tokens, axis=-1).numpy()), gotu_list)
     }
@@ -91,10 +92,6 @@ def batch_dataset(dataset, batch_size):
                              drop_remainder=True)
                 .prefetch(tf.data.AUTOTUNE)
                 .prefetch(tf.data.AUTOTUNE))
-    # dataset = (dataset
-    #     .padded_batch(batch_size, padded_shapes=([None,150], [NUM_GOTUS + 1, 1]), drop_remainder=True)
-    #     .prefetch(tf.data.AUTOTUNE)
-    # )
 
     dataset = dataset.cache()
     return dataset.prefetch(tf.data.AUTOTUNE)
