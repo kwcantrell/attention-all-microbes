@@ -5,6 +5,28 @@ from aam.layers import ReadHead, PCAProjector, NucleotideEinsum
 from aam.metrics import pairwise_mae
 
 
+class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, d_model, warmup_steps=4000):
+        super().__init__()
+
+        self.d_model = d_model
+        self.d_model = tf.cast(self.d_model, tf.float32)
+
+        self.warmup_steps = warmup_steps
+
+    def __call__(self, step):
+        step = tf.cast(step, dtype=tf.float32)
+        arg1 = tf.math.rsqrt(step)
+        arg2 = step * (self.warmup_steps ** -1.5)
+
+        return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+    
+    def get_config(self):
+        return {
+            "d_model": self.d_model
+        }
+
+
 def _construct_base(batch_size: int,
                     dropout: float,
                     pca_hidden_dim: int,
@@ -51,10 +73,11 @@ def _construct_base(batch_size: int,
 
 def pretrain_unifrac(batch_size: int, lr: float, *args):
     model = _construct_base(batch_size, *args)
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
-                                          weight_decay=0.1,
-                                          beta_2=0.999,
-                                          epsilon=1e-7)
+    
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr,
+                                          beta_1=0.9,
+                                          beta_2=0.98,
+                                          epsilon=1e-9)
     model.compile(optimizer=optimizer,
                   loss=pairwise_loss(batch_size),
                   metrics=[pairwise_mae(batch_size)],

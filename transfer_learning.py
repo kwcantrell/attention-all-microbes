@@ -85,7 +85,7 @@ def unifrac(i_table,
     #         return lr
     #     return lr * tf.math.exp(-0.1)
     model.summary()
-    # model.load_weights('base-model-wiht-pos/encoder.keras')
+    # model.load_weights('base-model-large-ein/encoder.keras')
 
     model.fit(training_dataset,
               validation_data=validation_dataset,
