@@ -34,7 +34,7 @@ validation_dataset = batch_dataset(val_data, batch_size)
 
 model = gotu_classification(batch_size=8,
                             load_model=True,
-                            dropout=0.3,
+                            dropout=0.5,
                             dff=1024,
                             d_model=128,
                             enc_layers=6,
