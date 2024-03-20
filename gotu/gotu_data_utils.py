@@ -1,6 +1,4 @@
 """gotu_data_utils.py"""
-
-import numpy as np
 import tensorflow as tf
 from biom import load_table
 
