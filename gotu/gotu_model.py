@@ -2,6 +2,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
+from gotu.gotu_callback import CustomSchedule
 from aam.model_utils import _construct_base
 
 NUM_GOTUS = 6838
@@ -69,7 +70,7 @@ def gotu_classification(batch_size: int, load_model: False, **kwargs):
     if load_model:
         model.load_weights('../attention-all-microbes/gotu_decoder_model/encoder.keras')
     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005,
+    optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(128),
                                     beta_1=0.9,
                                     beta_2=0.98,
                                     epsilon=1e-9)
