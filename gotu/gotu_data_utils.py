@@ -1,4 +1,5 @@
 """gotu_data_utils.py"""
+import numpy as np
 import tensorflow as tf
 from biom import load_table
 
@@ -64,7 +65,7 @@ def combine_all_datasets(asv_dataset, gotu_dataset):
     dataset_size = asv_dataset.cardinality()
     return ((tf.data.Dataset
             .zip(asv_dataset, gotu_dataset)
-            .shuffle(dataset_size, reshuffle_each_iteration=False)    
+        #    .shuffle(dataset_size, reshuffle_each_iteration=False)    
             .prefetch(tf.data.AUTOTUNE)
             ))
 
@@ -88,15 +89,53 @@ def batch_dataset(dataset, batch_size):
                                              "decoder_inputs": [None, 1]},
                                            [None]),
                              drop_remainder=True)
-                .prefetch(tf.data.AUTOTUNE)
                 .prefetch(tf.data.AUTOTUNE))
 
     dataset = dataset.cache()
     return dataset.prefetch(tf.data.AUTOTUNE)
 
-def generate_gotu_dataset(gotu_fp, asv_fp):
+def generate_train_val_sets(dataset: tf.data.Dataset,
+                            train_split: int,
+                            batch_size: int,
+                            shuffle: int):
+    size = dataset.cardinality().numpy()
+    best_overlap = 0
+    best_training_set = None
+    best_val_set = None
+    dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
+    dataset = dataset.cache()
+    for i in range(shuffle):
+        train_size = int(size * train_split / batch_size) * batch_size
+        training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
+        val_dataset = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
+        
+        for _, x in training_dataset:
+            train_set = x.numpy()
+        for _, y in val_dataset:
+            val_set = y.numpy()
+        
+        set_overlap = len(np.intersect1d(train_set, val_set)) / len(val_set)
+        if set_overlap > best_overlap:
+            best_overlap = set_overlap
+            best_training_set = training_dataset
+            best_val_set = val_dataset
+            
+    
+    batched_training_dataset = batch_dataset(best_training_set, batch_size)
+    batched_validation_dataset = batch_dataset(best_val_set, batch_size)
+    print(f"Best Overlap: {best_overlap * 100}%")
+    return batched_training_dataset, batched_validation_dataset
+
+
+
+def create_datasets(gotu_fp, asv_fp):
     gotu_encoded, gotu_dict = gotu_encode_and_convert(load_biom_table(gotu_fp))
     asv_encoded = asv_encode_and_convert(load_biom_table(asv_fp))
+    combined_dataset = combine_all_datasets(asv_encoded, gotu_encoded)
+    training_batched, val_batched = generate_train_val_sets(combined_dataset, 
+                                                            0.7,
+                                                            8,
+                                                            50)
     
-    return combine_all_datasets(asv_encoded, gotu_encoded), gotu_dict
+    return training_batched, val_batched, gotu_dict
 
