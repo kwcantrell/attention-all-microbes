@@ -18,7 +18,7 @@ def gotu_model_base(batch_size: int,
         dropout=dropout,
         pca_hidden_dim=64,
         pca_heads=4,
-        pca_layers=1,
+        pca_layers=2,
         dff=dff,
         d_model=d_model,
         enc_layers=enc_layers,
@@ -60,6 +60,11 @@ def gotu_model_base(batch_size: int,
     return gotu_model
 
 def gotu_classification(batch_size: int, load_model: False, **kwargs):
+    # def scheduler(epoch, lr):
+    #     if epoch % 10 != 0:
+    #         return lr
+    #     return lr * tf.math.exp(-0.1)
+    
     model = gotu_model_base(batch_size, **kwargs)
     if load_model:
         model.load_weights('../attention-all-microbes/gotu_decoder_model/encoder.keras')
@@ -68,6 +73,6 @@ def gotu_classification(batch_size: int, load_model: False, **kwargs):
                                     beta_1=0.9,
                                     beta_2=0.98,
                                     epsilon=1e-9)
-    model.compile(optimizer=optimizer, loss=loss_object, metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss=loss_object, metrics=['sparse_categorical_accuracy'])
     
     return model
