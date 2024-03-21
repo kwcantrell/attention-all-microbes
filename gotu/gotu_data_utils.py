@@ -65,7 +65,7 @@ def combine_all_datasets(asv_dataset, gotu_dataset):
     dataset_size = asv_dataset.cardinality()
     return ((tf.data.Dataset
             .zip(asv_dataset, gotu_dataset)
-        #    .shuffle(dataset_size, reshuffle_each_iteration=False)    
+            .shuffle(dataset_size, reshuffle_each_iteration=True)    
             .prefetch(tf.data.AUTOTUNE)
             ))
 
@@ -102,9 +102,10 @@ def generate_train_val_sets(dataset: tf.data.Dataset,
     best_overlap = 0
     best_training_set = None
     best_val_set = None
-    dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
-    dataset = dataset.cache()
+
     for i in range(shuffle):
+        dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
+        dataset = dataset.cache()
         train_size = int(size * train_split / batch_size) * batch_size
         training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
         val_dataset = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
@@ -115,6 +116,7 @@ def generate_train_val_sets(dataset: tf.data.Dataset,
             val_set = y.numpy()
         
         set_overlap = len(np.intersect1d(train_set, val_set)) / len(val_set)
+        print(f"Set Overlap: {set_overlap * 100}%")
         if set_overlap > best_overlap:
             best_overlap = set_overlap
             best_training_set = training_dataset
@@ -133,9 +135,9 @@ def create_datasets(gotu_fp, asv_fp):
     asv_encoded = asv_encode_and_convert(load_biom_table(asv_fp))
     combined_dataset = combine_all_datasets(asv_encoded, gotu_encoded)
     training_batched, val_batched = generate_train_val_sets(combined_dataset, 
-                                                            0.7,
+                                                            0.8,
                                                             8,
-                                                            50)
+                                                            100)
     
     return training_batched, val_batched, gotu_dict
 
