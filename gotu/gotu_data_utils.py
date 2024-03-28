@@ -51,7 +51,7 @@ def gotu_encode_and_convert(data):
     gotu_tokens = sequence_tokenizer(gotu_list) + 2
 
     gotu_dict = {
-        t: gotu for t, gotu in zip(list(tf.squeeze(gotu_tokens, axis=-1).numpy()), gotu_list)
+        int(t): gotu for t, gotu in zip(list(tf.squeeze(gotu_tokens, axis=-1).numpy()), gotu_list)
     }
     
     gotu_dataset = gotu_dataset.map(lambda x:(
@@ -62,10 +62,8 @@ def gotu_encode_and_convert(data):
     return gotu_dataset, gotu_dict
 
 def combine_all_datasets(asv_dataset, gotu_dataset):
-    dataset_size = asv_dataset.cardinality()
     return ((tf.data.Dataset
             .zip(asv_dataset, gotu_dataset)
-            .shuffle(dataset_size, reshuffle_each_iteration=True)    
             .prefetch(tf.data.AUTOTUNE)
             ))
 
@@ -81,7 +79,6 @@ def batch_dataset(dataset, batch_size):
 
     dataset = dataset.cache()
     size = dataset.cardinality()
-    dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
     dataset = (dataset
                 .map(extract_zip)
                 .padded_batch(batch_size,
@@ -130,7 +127,7 @@ def generate_train_val_sets(dataset: tf.data.Dataset,
 
 
 
-def create_datasets(gotu_fp, asv_fp):
+def create_training_dataset(gotu_fp, asv_fp):
     gotu_encoded, gotu_dict = gotu_encode_and_convert(load_biom_table(gotu_fp))
     asv_encoded = asv_encode_and_convert(load_biom_table(asv_fp))
     combined_dataset = combine_all_datasets(asv_encoded, gotu_encoded)
@@ -141,3 +138,10 @@ def create_datasets(gotu_fp, asv_fp):
     
     return training_batched, val_batched, gotu_dict
 
+def create_prediction_dataset(gotu_fp, asv_fp, batch_size):
+    gotu_encoded, gotu_dict = gotu_encode_and_convert(load_biom_table(gotu_fp))
+    asv_encoded = asv_encode_and_convert(load_biom_table(asv_fp))
+    combined_dataset = batch_dataset(combine_all_datasets(asv_encoded, gotu_encoded), batch_size)
+    
+    
+    return combined_dataset, gotu_dict
