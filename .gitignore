@@ -1,6 +1,8 @@
 data/*
+*.pyc
 agp-data/*
 base-model/*
+gotu_decoder_model/
 base-model-*/*
 data/*
 paper/*
@@ -8,15 +10,14 @@ pcoa/*
 veg-prediction/*
 hazel/*
 *.ipynb
+gotu/.ipynb_checkpoints/
 .Trash-0
 amplicon_gpt/__pycache__/*
 amplicon_gpt/.ipynb_checkpoints/*
 shu-aging/*
 core.*
 aam/__pycache__/*
-aam/.ipynb_checkpoints/*
+attention-all-microbes/.ipynb_checkpoints/*
 aam/.DS_Store
-<<<<<<< HEAD
+.ipynb_checkpoints/*
 
-=======
->>>>>>> a759f81fe1bcf51075562b0ac30bafdf301e6850
