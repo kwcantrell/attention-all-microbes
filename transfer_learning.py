@@ -80,12 +80,12 @@ def unifrac(i_table,
                              output_dim,
                              max_bp)
 
-    # def scheduler(epoch, lr):
-    #     if epoch <= 15:
-    #         return lr
-    #     return lr * tf.math.exp(-0.1)
+    def scheduler(epoch, lr):
+        return lr
+
     model.summary()
-    # model.load_weights('base-model-large-ein/encoder.keras')
+    model.build([8,None, 100])
+    # model.load_weights('base-model-large-pca-read-2/encoder.keras')
 
     model.fit(training_dataset,
               validation_data=validation_dataset,
@@ -95,7 +95,8 @@ def unifrac(i_table,
                          ProjectEncoder(i_table,
                                         i_tree,
                                         output_dir,
-                                        batch_size)])
+                                        batch_size),
+                        tf.keras.callbacks.LearningRateScheduler(scheduler)])
 
 
 @transfer_learning.command()
@@ -179,7 +180,7 @@ def transfer_regress(i_table,
         if epoch % 10 != 0:
             return lr
         return lr * tf.math.exp(-0.1)
-
+    
     model.summary()
     model.fit(training_dataset,
               validation_data=validation_dataset,
@@ -189,7 +190,7 @@ def transfer_regress(i_table,
                          MAE_Scatter(m_metadata_column,
                                      validation_dataset,
                                      output_dir),
-                         tf.keras.callbacks.LearningRateScheduler(scheduler)
+                         # tf.keras.callbacks.LearningRateScheduler(scheduler)
                          ])
 
 

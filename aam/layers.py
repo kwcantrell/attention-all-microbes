@@ -163,6 +163,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
+        self.norm = tf.keras.layers.LayerNormalization(axis=-2)
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
@@ -217,6 +218,8 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         return compute_proj
 
     def call(self, inputs):
+        if not tf.is_symbolic_tensor(inputs):
+            inputs = self.norm(inputs)
         output = self.linear_up_scale(inputs)
         output = self.compute_proj(output)
         return output
@@ -240,6 +243,7 @@ class ReadHead(tf.keras.layers.Layer):
             num_heads,
             num_layers,
             output_dim,
+            dropout=0.0,
             **kwargs
     ):
         super().__init__(name='read_head', **kwargs)
@@ -247,14 +251,16 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        self.pca_proj = NucleotideEinsum(64,
+        self.norm = tf.keras.layers.LayerNormalization(axis=-2)
+        self.pca_proj = NucleotideEinsum(128,
                                          reduce_tensor=True,
                                          normalize_output=True,
                                          seq_axis=1)
-        self.dff = tf.keras.layers.Dense(32,
+        self.dff = tf.keras.layers.Dense(128,
                                          activation='relu',
                                          use_bias=True)
         self.dense = tf.keras.layers.Dense(self.output_dim)
+        self.dropout = tf.keras.layers.Dropout(dropout)
 
     def get_config(self):
         config = super().get_config()
@@ -266,8 +272,11 @@ class ReadHead(tf.keras.layers.Layer):
         })
         return config
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
+        if not tf.is_symbolic_tensor(inputs):
+            inputs = self.norm(inputs)
         output = self.pca_proj(inputs)
         output = self.dff(output)
+        output = self.dropout(output, training=training)
         output = self.dense(output)
         return output

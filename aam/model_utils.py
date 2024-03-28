@@ -6,7 +6,7 @@ from aam.metrics import pairwise_mae
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, d_model, warmup_steps=4000):
+    def __init__(self, d_model, warmup_steps=10000):
         super().__init__()
 
         self.d_model = d_model
@@ -42,7 +42,7 @@ def _construct_base(batch_size: int,
                            batch_size=batch_size,
                            dtype=tf.int64)
     model_input = tf.keras.layers.Embedding(
-        5,
+        7,
         d_model,
         embeddings_initializer="uniform",
         input_length=max_bp,
@@ -60,7 +60,7 @@ def _construct_base(batch_size: int,
             num_layers=enc_layers,
             num_attention_heads=enc_heads,
             intermediate_size=dff,
-            intermediate_dropout=dropout,
+            dropout_rate=dropout,
             norm_first=True,
             activation='relu',
         )(model_input)
@@ -74,6 +74,7 @@ def _construct_base(batch_size: int,
 def pretrain_unifrac(batch_size: int, lr: float, *args):
     model = _construct_base(batch_size, *args)
     
+    # optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(128),
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr,
                                           beta_1=0.9,
                                           beta_2=0.98,
@@ -87,26 +88,29 @@ def pretrain_unifrac(batch_size: int, lr: float, *args):
 
 def transfer_regression(batch_size: int, lr: float, *args):
     model = _construct_base(batch_size, *args)
+    model.build(input_shape=[8, None, 100])
+    model.load_weights('base-model-large/encoder.keras')
     model.trainable = False
-    optimizer = tf.keras.optimizers.AdamW(learning_rate=lr,
-                                          beta_2=0.999,
-                                          epsilon=1e-7)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr,
+                                          beta_1=0.9,
+                                          beta_2=0.98,
+                                          epsilon=1e-9)
     output = tfm.nlp.models.TransformerEncoder(
-            num_layers=2,
-            num_attention_heads=4,
+            num_layers=4,
+            num_attention_heads=8,
             intermediate_size=1024,
-            dropout_rate=0.2,
+            dropout_rate=0.1,
             norm_first=True,
             activation='relu',
         )(model.layers[-2].output)
     output = ReadHead(hidden_dim=128,
-                      num_heads=16,
-                      num_layers=2,
+                      num_heads=8,
+                      num_layers=1,
                       output_dim=1)(output)
     model = tf.keras.Model(inputs=model.layers[0].input, outputs=output)
     loss = pairwise_residual_mse(batch_size=batch_size)
     model.compile(optimizer=optimizer,
-                  loss=loss,
+                  loss=pairwise_residual_mse(batch_size),
                   metrics=['mae'],
                   jit_compile=False)
     return model

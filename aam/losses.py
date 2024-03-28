@@ -80,5 +80,5 @@ def pairwise_residual_mse(batch_size):
         r_yp = sqrt_res(y_pred)
         rse = tf.linalg.band_part(tf.square(r_yt - r_yp), 0, -1)
         mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
-        return mse + mrse
+        return mse + 0.5*mrse
     return inner

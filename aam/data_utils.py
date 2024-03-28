@@ -38,8 +38,8 @@ def get_sequencing_dataset(table_path):
     table_data = tf.sparse.reorder(table_data)
 
     def get_asv_id(x):
+        # return tf.repeat(tf.gather(o_ids, x.indices), repeats=tf.cast(x.values / 2.0, dtype=tf.int64), axis=0)
         return tf.gather(o_ids, x.indices)
-
     return (tf.data.Dataset.from_tensor_slices(table_data)
             .map(get_asv_id,
                  num_parallel_calls=tf.data.AUTOTUNE)
