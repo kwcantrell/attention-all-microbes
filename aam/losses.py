@@ -101,10 +101,10 @@ def pairwise_residual_mae(batch_size, mean=None, std=None):
             y_pred = denormalize(y_pred, mean, std)
         y_true = tf.squeeze(y_true)
         y_pred = tf.squeeze(y_pred)
-        mae = tf.reduce_sum(tf.abs(y_true - y_pred)) / batch_size
+        mae = tf.reduce_sum(tf.abs(y_pred - y_true)) / batch_size
         r_yt = abs_res(y_true)
         r_yp = abs_res(y_pred)
-        rae = tf.linalg.band_part(tf.abs(r_yt - r_yp), 0, -1)
+        rae = tf.linalg.band_part(tf.abs(r_yp - r_yt), 0, -1)
         mrae = tf.reduce_sum(rae) / comb(batch_size, 2)
         return mae + mrae
     return inner
