@@ -2,7 +2,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from gotu.gotu_callback import CustomSchedule
+from gotu.gotu_callback import CustomSchedule, CSVCallback
 from aam.model_utils import _construct_base
 
 NUM_GOTUS = 6838
@@ -28,8 +28,8 @@ def gotu_model_base(batch_size: int,
         max_bp=max_bp
     )
     
-    encoder_inputs = tf.keras.Input(shape=(None, 150), batch_size=8, dtype=tf.int64, name="encoder_inputs")
-    decoder_inputs = tf.keras.Input(shape=(None, 1), batch_size=8, dtype=tf.int64, name="decoder_inputs")
+    encoder_inputs = tf.keras.Input(shape=(None, 150), batch_size=batch_size, dtype=tf.int64, name="encoder_inputs")
+    decoder_inputs = tf.keras.Input(shape=(None, 1), batch_size=batch_size, dtype=tf.int64, name="decoder_inputs")
     model = tf.keras.Model(
         inputs=asv_model.inputs, 
         outputs=asv_model.layers[-2].output
@@ -60,15 +60,10 @@ def gotu_model_base(batch_size: int,
  
     return gotu_model
 
-def gotu_classification(batch_size: int, load_model: False, **kwargs):
-    # def scheduler(epoch, lr):
-    #     if epoch % 10 != 0:
-    #         return lr
-    #     return lr * tf.math.exp(-0.1)
-    
+def gotu_classification(batch_size: int, load_model: False, model_fp: None, **kwargs):
     model = gotu_model_base(batch_size, **kwargs)
     if load_model:
-        model.load_weights('../attention-all-microbes/gotu_decoder_model/encoder.keras')
+        model.load_weights(model_fp)
     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(128),
                                     beta_1=0.9,
@@ -76,4 +71,17 @@ def gotu_classification(batch_size: int, load_model: False, **kwargs):
                                     epsilon=1e-9)
     model.compile(optimizer=optimizer, loss=loss_object, metrics=['sparse_categorical_accuracy'])
     
+    return model
+
+def gotu_predict(batch_size: int, model_fp: str, **kwargs):
+    model = gotu_model_base(batch_size, **kwargs)
+    model.load_weights(model_fp)
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(128),
+                                    beta_1=0.9,
+                                    beta_2=0.98,
+                                    epsilon=1e-9)
+    model.compile(optimizer=optimizer, loss=loss_object, metrics=['sparse_categorical_accuracy'])
+    model.trainable = False
+
     return model
