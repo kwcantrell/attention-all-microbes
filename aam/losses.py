@@ -61,7 +61,7 @@ def pairwise_loss(batch_size):
     return inner
 
 
-def pairwise_residual_mse(batch_size):
+def pairwise_residual_mse(batch_size, mean=None, std=None):
     @tf.function(jit_compile=True)
     def sqrt_res(ys):
         r = tf.reshape(ys, shape=(-1, 1)) - tf.reshape(ys, shape=(1, -1))
@@ -73,6 +73,9 @@ def pairwise_residual_mse(batch_size):
 
     @tf.function(jit_compile=True)
     def inner(y_true, y_pred):
+        if mean is not None:
+            y_true = denormalize(y_true, mean, std)
+            y_pred = denormalize(y_pred, mean, std)
         y_true = tf.squeeze(y_true)
         y_pred = tf.squeeze(y_pred)
         mse = tf.reduce_sum(tf.square(y_true - y_pred)) / batch_size
@@ -80,5 +83,41 @@ def pairwise_residual_mse(batch_size):
         r_yp = sqrt_res(y_pred)
         rse = tf.linalg.band_part(tf.square(r_yt - r_yp), 0, -1)
         mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
-        return mse + 0.5*mrse
+        return mse + mrse
     return inner
+
+
+def pairwise_residual_mae(batch_size, mean=None, std=None):
+    @tf.function(jit_compile=True)
+    def abs_res(ys):
+        r = tf.reshape(ys, shape=(-1, 1)) - tf.reshape(ys, shape=(1, -1))
+        r = tf.abs(r)
+        return r
+
+    @tf.function(jit_compile=True)
+    def inner(y_true, y_pred):
+        if mean is not None:
+            y_true = denormalize(y_true, mean, std)
+            y_pred = denormalize(y_pred, mean, std)
+        y_true = tf.squeeze(y_true)
+        y_pred = tf.squeeze(y_pred)
+        mae = tf.reduce_sum(tf.abs(y_true - y_pred)) / batch_size
+        r_yt = abs_res(y_true)
+        r_yp = abs_res(y_pred)
+        rae = tf.linalg.band_part(tf.abs(r_yt - r_yp), 0, -1)
+        mrae = tf.reduce_sum(rae) / comb(batch_size, 2)
+        return mae + mrae
+    return inner
+
+
+def denormalize(tensor, mean, std):
+    return tensor*std + mean
+
+
+def mae_loss(mean=None, std=None):
+    def mae(y_true, y_pred):
+        if mean is not None:
+            y_true = denormalize(y_true, mean, std)
+            y_pred = denormalize(y_pred, mean, std)
+        return tf.math.reduce_mean(tf.abs(y_true - y_pred), axis=-1)
+    return mae

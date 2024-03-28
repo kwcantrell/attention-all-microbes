@@ -1,5 +1,5 @@
 import tensorflow as tf
-from aam.losses import _pairwise_distances
+from aam.losses import _pairwise_distances, mae_loss
 
 
 def pairwise_mae(batch_size):
@@ -25,3 +25,23 @@ def pairwise_mae(batch_size):
             return self.loss / self.i
 
     return PairwiseMAE()
+
+
+class MAE(tf.keras.metrics.MeanMetricWrapper):
+    def __init__(self,
+                 input_mean=None,
+                 input_std=None,
+                 name="mae",
+                 dtype=None):
+        super().__init__(fn=mae_loss(input_mean, input_std),
+                         name=name,
+                         dtype=dtype)
+        self.input_mean = input_mean
+        self.input_std = input_std
+        self._direction = "down"
+
+    def get_config(self):
+        return {"input_mean": self.input_mean,
+                "input_std": self.input_std,
+                "name": self.name,
+                "dtype": self.dtype}
