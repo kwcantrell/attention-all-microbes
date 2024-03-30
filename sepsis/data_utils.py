@@ -89,6 +89,7 @@ def batch_dataset(dataset, batch_size, shuffle=False):
     if shuffle:
         size = dataset.cardinality()
         dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
+        dataset = dataset.repeat(10)
     dataset = (dataset
                .map(extract_zip)
                .padded_batch(batch_size,

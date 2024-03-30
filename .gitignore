@@ -16,4 +16,6 @@ core.*
 aam/__pycache__/*
 aam/.ipynb_checkpoints/*
 aam/.DS_Store
-
+sepsis/data/*
+sepsis/.ipynb_checkpoints/*
+sepsis/__pycache__/*

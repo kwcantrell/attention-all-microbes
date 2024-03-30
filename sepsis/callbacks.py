@@ -71,11 +71,12 @@ def violinplot_residuals(dataset, y, y_label, group, group_label, model, fname, 
     max_val = np.max(true_val)
     bin_size = int(max_val / 5)
     true_val = pd.cut(np.array(y, dtype=int),
-                      [i for i in range(0, max_val, bin_size)],
-                      labels=[str(f'{i}-{i+bin_size}') for i in range(0, max_val-bin_size, bin_size)])
+                      5#   [i for i in range(0, max_val, bin_size)],
+    )
+                    #   labels=[str(f'{i}-{i+bin_size}') for i in range(0, max_val, bin_size)])
     data = {f"{y_label}": residuals, "x": true_val, f"{group_label}": group}
     data = pd.DataFrame(data=data)
-    plot = sns.violinplot(data, x="x", hue=f"{group_label}", y=f"{y_label}")
+    plot = sns.boxplot(data, x="x", hue=f"{group_label}", y=f"{y_label}", showfliers=False)
     plot.set(title=f"Age Residuals")
     plt.savefig(fname)
     plt.close()
