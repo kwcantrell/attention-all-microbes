@@ -57,6 +57,11 @@ def convert_to_normalized_dataset(values):
     return dataset, mean, std
 
 
+def convert_to_categorical_dataset(values):
+    dataset = tf.data.Dataset.from_tensor_slices(values)
+    return dataset
+
+
 def filter_and_reorder(metadata, ids):
     metadata = metadata[metadata.index.isin(ids)]
     metadata = metadata.reindex(ids)
@@ -64,7 +69,7 @@ def filter_and_reorder(metadata, ids):
 
 
 def extract_col(metadata, col, output_dtype=None):
-    metadata_col = metadata['host_age']
+    metadata_col = metadata[col]
     if output_dtype is not None:
         metadata_col = metadata_col.astype(output_dtype)
     return metadata_col
@@ -79,25 +84,37 @@ def tokenize_dataset(dataset, vocab):
     return tf.data.Dataset.zip((tokenized_ids, rclr_values))
 
 
-def batch_dataset(dataset, batch_size, shuffle=False):
+def batch_dataset(dataset, batch_size, repeat=None, shuffle=False):
     def extract_zip(feature_rclr, target):
-        return ({
-            "feature": feature_rclr[0],
-            "rclr": feature_rclr[1]},
-             target)
+        inputs = {"feature": feature_rclr[0],
+                  "rclr": feature_rclr[1]}
+        inputs = {"feature": feature_rclr[0],
+                  "rclr": feature_rclr[1]}
+        outputs = {"reg_out": target}
+        return (inputs, outputs)
 
     if shuffle:
         size = dataset.cardinality()
         dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
-        dataset = dataset.repeat(10)
+
+    if repeat:
+        dataset = dataset.repeat(repeat)
+
+    input_pad = {"feature": [None],
+                 "rclr": [None]}
+    input_pad_val = {"feature": "<MASK>",
+                     "rclr": tf.cast(0.0, dtype=tf.float32)}
+
+    output_pad = {"reg_out": []}
+    output_pad_val = {
+        "reg_out": tf.cast(0.0, dtype=tf.float32)
+    }
+
     dataset = (dataset
                .map(extract_zip)
                .padded_batch(batch_size,
-                             padded_shapes=({"feature": [None],
-                                             "rclr": [None]}, []),
-                             padding_values=({"feature": "<MASK>",
-                                             "rclr": tf.cast(0.0, dtype=tf.float32)},
-                                             tf.cast(0.0, dtype=tf.float32)),
+                             padded_shapes=(input_pad, output_pad),
+                             padding_values=(input_pad_val, output_pad_val),
                              drop_remainder=False)
                .prefetch(tf.data.AUTOTUNE))
     return dataset.prefetch(tf.data.AUTOTUNE)

@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 
-@tf.keras.saving.register_keras_serializable(
+@keras.saving.register_keras_serializable(
     package="amplicon_gpt.layers"
 )
 class NucleotideEinsum(tf.keras.layers.Layer):

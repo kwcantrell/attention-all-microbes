@@ -74,16 +74,28 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         return super().on_epoch_end(epoch, logs)
 
 
+@tf.keras.saving.register_keras_serializable(
+    package="SaveModel"
+)
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir):
+    def __init__(self, output_dir, **kwargs):
+        super().__init__(**kwargs)
         self.output_dir = output_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
     def on_epoch_end(self, epoch, logs=None):
-        # TODO add save conditions
-        self.model.save(os.path.join(self.output_dir, 'encoder.keras'),
-                        save_format='keras')
+        self.model.save(
+            os.path.join(self.output_dir, 'encoder.keras'),
+            save_format='keras'
+        )
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "output_dir": self.output_dir
+        }
+        return {**base_config, **config}
 
 
 class ProjectEncoder(tf.keras.callbacks.Callback):

@@ -87,28 +87,6 @@ def pairwise_residual_mse(batch_size, mean=None, std=None):
     return inner
 
 
-def pairwise_residual_mse(batch_size, mean=None, std=None):
-    @tf.function(jit_compile=True)
-    def abs_res(ys):
-        r = tf.reshape(ys, shape=(-1, 1)) - tf.reshape(ys, shape=(1, -1))
-        r = tf.abs(r)
-        return r
-
-    @tf.function(jit_compile=True)
-    def inner(y_true, y_pred):
-        if mean is not None:
-            y_true = denormalize(y_true, mean, std)
-            y_pred = denormalize(y_pred, mean, std)
-        y_true = tf.squeeze(y_true)
-        y_pred = tf.squeeze(y_pred)
-        mse = tf.reduce_sum(tf.square(y_pred - y_true)) / batch_size
-        r_yt = abs_res(y_true)
-        r_yp = abs_res(y_pred)
-        rse = tf.linalg.band_part(tf.square(r_yp - r_yt), 0, -1)
-        mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
-        return mse + mrse
-    return inner
-
 def denormalize(tensor, mean, std):
     return tensor*std + mean
 
@@ -121,24 +99,38 @@ def mae_loss(mean=None, std=None):
         return tf.abs(y_true - y_pred)
     return mae
 
+
 def mse_loss(mean=None, std=None):
-    def mae(y_true, y_pred):
+    def mse(y_true, y_pred):
         if mean is not None:
             y_true = denormalize(y_true, mean, std)
             y_pred = denormalize(y_pred, mean, std)
         return tf.square(y_true - y_pred)
-    return mae
+    return mse
 
+
+@tf.keras.saving.register_keras_serializable(
+    package="real_feature_mask"
+)
+def real_feature_mask(total_features, size):
+    total_features = tf.expand_dims(total_features, axis=-1)
+    mask = tf.cast(tf.range(size), dtype=tf.int64)
+    mask = tf.less(mask, total_features)
+    return mask
 
 
 class MeanSquaredError(tf.keras.losses.Loss):
-    def __init__(self, mean, std, **kwargs):
+    def __init__(self,
+                 mean=None,
+                 std=None,
+                 **kwargs):
         super().__init__(**kwargs)
         self.fn = mse_loss(mean, std)
 
     def call(self, y_true, y_pred):
-        return tf.reduce_mean(self.fn(y_pred, y_true), axis=-1)
-    
+        return tf.reduce_mean(self.fn(y_true, y_pred), axis=-1)
+
+
 class PairwiseMSE(tf.keras.losses.Loss):
     def __init__(self, mean, std, **kwargs):
         super().__init__(**kwargs)
@@ -146,3 +138,4 @@ class PairwiseMSE(tf.keras.losses.Loss):
 
     def call(self, y_true, y_pred):
         return tf.reduce_mean(self.fn(y_pred, y_true), axis=-1)
+
