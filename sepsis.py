@@ -61,7 +61,7 @@ training_no_shuffle = batch_dataset(
 token_dim = 512
 features_to_add = .5
 dropout = .10
-d_model = 1024
+d_model = 64
 ff_dim = 32
 report_back_after = 5
 epochs = 1000
@@ -181,7 +181,7 @@ core_callbacks = [
         'loss',
         patience=50
     ),
-    SaveModel("sepsis/model-2")
+    SaveModel("sepsis/model-test")
 ]
 model.fit(
     training_dataset,

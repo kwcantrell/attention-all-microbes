@@ -36,119 +36,126 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             name="tokens",
             dtype=tf.int64
         )
-        self.embedding_layer = tf.keras.layers.Embedding(
-            input_dim=len(emb_vocab)+1,
-            output_dim=token_dim,
-            embeddings_initializer="ones"
+
+        self.embedding_layer = tf.keras.Sequential(
+            [
+                tf.keras.layers.Embedding(
+                    input_dim=len(emb_vocab)+1,
+                    output_dim=token_dim,
+                    embeddings_initializer="ones"
+                ),
+                tf.keras.layers.Dense(
+                    d_model,
+                    activation='relu',
+                    use_bias=True
+                ),
+                tf.keras.layers.LayerNormalization(),
+                tf.keras.layers.Dropout(dropout_rate)
+            ]
         )
-        self.d_model_ff = tf.keras.layers.Dense(
-            d_model,
-            activation='relu',
-            use_bias=True
-        )
 
-        self.ff_pca = tf.keras.layers.Dense(ff_dim)
-        self.ff_loadings = tf.keras.layers.Dense(ff_dim)
-
-        self.flag = self.add_weight(trainable=False)
-        self.layer_norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(0.1)
-
-    def build(self, input_shape):
-        self.d_model_ff.build([None, None, self.token_dim])
-        self.ff_pca.build([None, None, self.d_model])
-        self.ff_loadings.build([None, None, self.d_model])
-
-    def _random_tokens(self, inputs):
-        tokens, features_to_add, feature_size = inputs
-        features_to_add = tf.squeeze(features_to_add)
-        # get random tokens
-        reduced_tokens = tokens[tokens > 0]
-        reduced_tokens = tf.random.shuffle(reduced_tokens)
-        tokens_selected = tf.minimum(feature_size, features_to_add)
-        reduced_tokens = reduced_tokens[:tokens_selected]
-        reduced_size = tf.cast(tf.shape(reduced_tokens)[0], dtype=tf.int64)
-        reduced_tokens = tf.pad(
-            reduced_tokens,
-            [[feature_size - reduced_size, 0]]
-        )
-        return reduced_tokens
+        def _component_block():
+            return (
+                tf.keras.Sequential(
+                    [
+                        tf.keras.layers.Dense(
+                            ff_dim,
+                            activation='relu',
+                            use_bias=True
+                        ),
+                        tf.keras.layers.LayerNormalization(),
+                        tf.keras.layers.Dropout(dropout_rate)
+                    ]
+                )
+            )
+        self.ff_pca = _component_block()
+        self.ff_loadings = _component_block()
 
     def call(self, inputs, training=True):
         feature, rclr = inputs
-
         feature_tokens = self.feature_tokens(feature)
-        
+
         # extend feature tensor to add random tokens
-        feature_count = tf.reduce_sum(
-            tf.cast(
-                feature_tokens > 0,
-                dtype=tf.float32
+        feature_count = tf.multiply(
+            tf.reduce_sum(
+                tf.cast(
+                    feature_tokens > 0,
+                    dtype=tf.float32
+                ),
+                axis=-1,
+                keepdims=True,
             ),
-            axis=-1,
-            keepdims=True,
-        )        
-        feature_count = tf.cast(
-            feature_count * self.features_add_rate,
-            dtype=tf.int64
+            self.features_add_rate
         )
 
-        batch_size = tf.cast(tf.shape(feature_tokens)[0], dtype=tf.int64)
         feature_size = tf.cast(tf.shape(feature_tokens)[1], dtype=tf.int64)
         feature_mask = tf.not_equal(feature_tokens, 0)
 
-        batch_tokens = tf.expand_dims(self.tokens, axis=0)
-        batch_tokens = tf.repeat(batch_tokens, batch_size, axis=0)
-        token_indices = tf.equal(
-            tf.expand_dims(feature_tokens, axis=-1),
-            tf.expand_dims(batch_tokens, axis=1),
-        )
-        token_indices = tf.cast(token_indices, dtype=tf.int64)
-        token_indices = tf.reduce_sum(
-            token_indices,
-            axis=1
-        )
-        not_in_mask = tf.equal(token_indices, 0)
-        not_in_mask = tf.cast(not_in_mask, dtype=tf.int64)
-        batch_tokens *= not_in_mask
-        shuffled_tokens = tf.map_fn(
-            self._random_tokens,
+        def _random_tokens(inputs):
+            sample_tokens, features_to_add = inputs
+            features_to_add = tf.squeeze(features_to_add)
+
+            in_sample_mask = tf.scatter_nd(
+                tf.expand_dims(sample_tokens, axis=-1),
+                tf.ones_like(sample_tokens),
+                shape=[self.total_tokens]
+            )
+
+            # get random tokens
+            random_tokens = tf.random.shuffle(
+                self.tokens[in_sample_mask < 1]
+            )
+            random_tokens = random_tokens[
+                :tf.minimum(feature_size, features_to_add)
+            ]
+            reduced_size = tf.cast(
+                tf.shape(random_tokens)[0],
+                dtype=tf.int64
+            )
+            random_tokens = tf.pad(
+                random_tokens,
+                [[feature_size - reduced_size, 0]]
+            )
+            return random_tokens
+
+        random_tokens = tf.map_fn(
+            _random_tokens,
             (
-                batch_tokens,
-                feature_count,
-                tf.repeat(feature_size, batch_size)
+                feature_tokens,
+                tf.cast(feature_count, dtype=tf.int64)
             ),
             fn_output_signature=tf.int64
         )
-        shuffled_tokens = tf.random.shuffle(shuffled_tokens)
-
-        # scatter current tokes to create mask for global
-        randomized_tokens = feature_tokens + shuffled_tokens
-        shuffled_tokens = tf.cast(shuffled_tokens, dtype=tf.float32)
-
-        shuffled_mask = tf.cast(
-            tf.greater(shuffled_tokens, 0),
-            dtype=tf.float32
-        )
 
         # get embedding vector
-        feature_embedding = self.embedding_layer(randomized_tokens)
-        output_embeddings = self.d_model_ff(feature_embedding)
+        sample_tokens = feature_tokens + random_tokens
+        output = self.embedding_layer(sample_tokens)
 
-        # scale by rclr
-        randomized_rclr = rclr + shuffled_mask
-        randomized_rclr = tf.expand_dims(randomized_rclr, axis=-1)
-        output_embeddings = output_embeddings * randomized_rclr
+        # add a 1 to rclr where random tokens
+        sample_rclr = tf.add(
+            rclr,
+            tf.cast(
+                random_tokens > 0,
+                dtype=tf.float32
+            )
+        )
+
+        # scale embeddings by rclr
+        output = tf.multiply(
+            output,
+            tf.expand_dims(
+                sample_rclr,
+                axis=-1
+            )
+        )
 
         # prep embeddings for objective functions
-        output_embeddings = self.layer_norm(output_embeddings)
-        output_embeddings = self.dropout(output_embeddings, training=training)
-        output_regression = self.ff_pca(output_embeddings)
-        output_embeddings = self.ff_loadings(output_embeddings)
+        output_embeddings = self.ff_loadings(output)
+        output_regression = self.ff_pca(output)
 
         return [
             feature_mask,
-            randomized_tokens,
+            sample_tokens,
             output_embeddings,
             output_regression
         ]
@@ -290,42 +297,42 @@ class Loadings(tf.keras.layers.Layer):
         return {**base_config, **config}
 
 
-# @tf.keras.saving.register_keras_serializable(
-#     package="ProjectDown"
-# )
-# class ProjectDown(tf.keras.layers.Layer):
-#     def __init__(
-#         self,
-#         emb_dim,
-#         dims,
-#         reduce_dim,
-#         **kwargs
-#     ):
-#         super().__init__(**kwargs)
-#         self.emb_dim = emb_dim
-#         self.dims = dims
-#         self.reduce_dim = reduce_dim
-#         if dims == 3:
-#             shape = [None, emb_dim, emb_dim]
-#         else:
-#             shape = [None, emb_dim]
+@tf.keras.saving.register_keras_serializable(
+    package="ProjectDown"
+)
+class ProjectDown(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        emb_dim,
+        dims,
+        reduce_dim,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.emb_dim = emb_dim
+        self.dims = dims
+        self.reduce_dim = reduce_dim
+        if dims == 3:
+            shape = [None, emb_dim, emb_dim]
+        else:
+            shape = [None, emb_dim]
 
-#         self.proj_down = tf.keras.layers.Dense(1)
-#         self.proj_down.build(shape)
-#         self.reduce_dim = reduce_dim
+        self.proj_down = tf.keras.layers.Dense(1)
+        self.proj_down.build(shape)
+        self.reduce_dim = reduce_dim
 
-#     def call(self, inputs):
-#         if self.reduce_dim:
-#             output = tf.squeeze(self.proj_down(inputs), axis=-1)
-#         else:
-#             output = self.proj_down(inputs)
-#         return output
+    def call(self, inputs):
+        if self.reduce_dim:
+            output = tf.squeeze(self.proj_down(inputs), axis=-1)
+        else:
+            output = self.proj_down(inputs)
+        return output
 
-#     def get_config(self):
-#         base_config = super().get_config()
-#         config = {
-#             "emb_dim": self.emb_dim,
-#             "dims": self.dims,
-#             "reduce_dim": self.reduce_dim
-#         }
-#         return {**base_config, **config}
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "emb_dim": self.emb_dim,
+            "dims": self.dims,
+            "reduce_dim": self.reduce_dim
+        }
+        return {**base_config, **config}
