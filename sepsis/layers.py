@@ -44,8 +44,18 @@ class FeatureEmbedding(tf.keras.layers.Layer):
                     output_dim=token_dim,
                     embeddings_initializer="ones"
                 ),
+            ]
+        )
+
+        self.ff = tf.keras.Sequential(
+            [
                 tf.keras.layers.Dense(
                     d_model,
+                    activation='relu',
+                    use_bias=True
+                ),
+                tf.keras.layers.Dense(
+                    ff_dim,
                     activation='relu',
                     use_bias=True
                 ),
@@ -58,11 +68,7 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             return (
                 tf.keras.Sequential(
                     [
-                        tf.keras.layers.Dense(
-                            ff_dim,
-                            activation='relu',
-                            use_bias=True
-                        ),
+                        tf.keras.layers.Dense(ff_dim),
                         tf.keras.layers.LayerNormalization(),
                         tf.keras.layers.Dropout(dropout_rate)
                     ]
@@ -140,7 +146,7 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             )
         )
 
-        # scale embeddings by rclr
+        # scale embedding tensors by rclr
         output = tf.multiply(
             output,
             tf.expand_dims(
@@ -150,6 +156,7 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         )
 
         # prep embeddings for objective functions
+        output = self.ff(output)
         output_embeddings = self.ff_loadings(output)
         output_regression = self.ff_pca(output)
 
@@ -177,40 +184,37 @@ class FeatureEmbedding(tf.keras.layers.Layer):
     package="PCA"
 )
 class PCA(tf.keras.layers.Layer):
-    def __init__(
-        self,
-        emb_dim,
-        **kwargs
-    ):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.emb_dim = emb_dim
-        self.flag = self.add_weight(trainable=False)
+        self.layer_norm = tf.keras.layers.LayerNormalization()
 
     def call(self, inputs):
-        if self.flag == 0:
-            self.flag.assign_add(1)
-            output = inputs
-        else:
-            output = self.pca(inputs)
-        return output
-
-    def pca(self, input):
-        output = input - tf.math.reduce_mean(
-            input,
-            axis=-2,
+        output = inputs - tf.reduce_mean(
+            tf.identity(inputs),
+            axis=1,
             keepdims=True
         )
-        cov = tf.linalg.matmul(output, output, transpose_a=True)
-        _, output = tf.linalg.eigh(cov)
-        output = tf.transpose(output, perm=[0, 2, 1])
-        return output
+        eigen_values, eigen_vectors = tf.linalg.eigh(
+            tf.matmul(
+                output,
+                output,
+                transpose_a=True
+            )
+        )
+        pca_transform = tf.transpose(
+            tf.matmul(
+                tf.linalg.diag(
+                    eigen_values
+                ),
+                eigen_vectors
+            ),
+            perm=[0, 2, 1]
+        )
+        return self.layer_norm(pca_transform)
 
     def get_config(self):
         base_config = super().get_config()
-        config = {
-            "emb_dim": self.emb_dim,
-        }
-        return {**base_config, **config}
+        return {**base_config}
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -253,48 +257,6 @@ class BinaryLoadings(tf.keras.layers.Layer):
             "dropout": self.dropout,
         }
         return {**base_config, **config}
-    
-@tf.keras.saving.register_keras_serializable(
-    package="BinaryLoadings"
-)
-class Loadings(tf.keras.layers.Layer):
-    def __init__(
-        self,
-        enc_layers,
-        enc_heads,
-        dff,
-        dropout,
-        output_ff,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.enc_layers = enc_layers
-        self.enc_heads = enc_heads
-        self.dff = dff
-        self.dropout = dropout
-        self.encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=enc_layers,
-            num_attention_heads=enc_heads,
-            intermediate_size=dff,
-            dropout_rate=dropout,
-            norm_first=True,
-            activation='relu')
-        self.ff = tf.keras.layers.Dense(output_ff)
-
-    def call(self, inputs, training=None):
-        output = inputs
-        output = self.encoder(inputs, training=training)
-        return self.ff(output)
-
-    def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "enc_layers": self.enc_layers,
-            "enc_heads": self.enc_heads,
-            "dff": self.dff,
-            "dropout": self.dropout,
-        }
-        return {**base_config, **config}
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -313,19 +275,29 @@ class ProjectDown(tf.keras.layers.Layer):
         self.dims = dims
         self.reduce_dim = reduce_dim
         if dims == 3:
-            shape = [None, emb_dim, emb_dim]
+            shape = [None, None, emb_dim]
         else:
             shape = [None, emb_dim]
 
+        self.ff = tf.keras.layers.Dense(
+            emb_dim,
+            activation='relu',
+            use_bias=True
+        )
+        self.ff.build(shape)
         self.proj_down = tf.keras.layers.Dense(1)
         self.proj_down.build(shape)
         self.reduce_dim = reduce_dim
 
     def call(self, inputs):
+        outputs = self.ff(inputs)
         if self.reduce_dim:
-            output = tf.squeeze(self.proj_down(inputs), axis=-1)
+            output = tf.squeeze(
+                self.proj_down(outputs),
+                axis=-1
+            )
         else:
-            output = self.proj_down(inputs)
+            output = self.proj_down(outputs)
         return output
 
     def get_config(self):

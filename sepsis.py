@@ -2,6 +2,7 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 from aam.callbacks import SaveModel
+from aam.layers import PCAProjector, ReadHead
 from aam.metrics import MAE
 from sepsis.model import AttentionRegression
 from sepsis.layers import FeatureEmbedding, PCA, ProjectDown, BinaryLoadings
@@ -61,11 +62,10 @@ training_no_shuffle = batch_dataset(
 token_dim = 512
 features_to_add = .5
 dropout = .10
-d_model = 64
+d_model = 1024
 ff_dim = 32
-report_back_after = 5
+report_back_after = 10
 epochs = 1000
-
 feature_input = tf.keras.Input(
     shape=[None],
     dtype=tf.string,
@@ -97,17 +97,14 @@ output_regression = emb_outputs[3]
 binary_loadings = BinaryLoadings(
     enc_layers=2,
     enc_heads=2,
-    dff=32,
+    dff=512,
     dropout=dropout,
     name="FeatureLoadings"
 )
 output_embeddings = binary_loadings(output_embeddings)
 
 regressor = tf.keras.Sequential([
-    PCA(
-        ff_dim,
-        name="pca"
-    ),
+    PCA(name="pca"),
     ProjectDown(
         ff_dim,
         dims=3,
@@ -122,6 +119,61 @@ regressor = tf.keras.Sequential([
     )
 ])
 output_regression = regressor(output_regression)
+
+# token_dim = 512
+# features_to_add = .5
+# dropout = .10
+# d_model = 1024
+# ff_dim = 64
+# report_back_after = 10
+# epochs = 1000
+
+# feature_input = tf.keras.Input(
+#     shape=[None],
+#     dtype=tf.string,
+#     name="feature"
+# )
+# rclr_input = tf.keras.Input(
+#     shape=[None],
+#     dtype=tf.float32,
+#     name="rclr"
+# )
+
+# feature_emb = FeatureEmbedding(
+#     token_dim,
+#     rclr_table.ids(axis='observation').tolist(),
+#     features_to_add,
+#     d_model,
+#     ff_dim,
+#     dropout,
+#     name="FeatureEmbeddings",
+#     dtype=tf.float32
+# )
+# emb_outputs = feature_emb((feature_input, rclr_input))
+
+# output_token_mask = emb_outputs[0]
+# output_tokens = emb_outputs[1]
+# output_embeddings = emb_outputs[2]
+# output_regression = emb_outputs[3]
+
+# binary_loadings = BinaryLoadings(
+#     enc_layers=2,
+#     enc_heads=2,
+#     dff=1024,
+#     dropout=dropout,
+#     name="FeatureLoadings"
+# )
+# output_embeddings = binary_loadings(output_embeddings)
+
+# regressor = tf.keras.Sequential([
+#     ReadHead(
+#         ff_dim,
+#         1,
+#         1,
+#         1
+#     )
+# ])
+# output_regression = regressor(output_regression)
 
 model = AttentionRegression(
     mean_age,
@@ -173,15 +225,15 @@ emb_out_callbacks = [
 core_callbacks = [
     tf.keras.callbacks.ReduceLROnPlateau(
         "loss",
-        factor=0.9,
-        patients=10,
-        min_lr=0.0001
+        factor=0.5,
+        patients=2,
+        min_lr=0.00001
     ),
-    tf.keras.callbacks.EarlyStopping(
-        'loss',
-        patience=50
-    ),
-    SaveModel("sepsis/model-test")
+    # tf.keras.callbacks.EarlyStopping(
+    #     'confidence',
+    #     patience=50
+    # ),
+    SaveModel("sepsis/model-2")
 ]
 model.fit(
     training_dataset,

@@ -102,9 +102,8 @@ def mae_loss(mean=None, std=None):
 
 def mse_loss(mean=None, std=None):
     def mse(y_true, y_pred):
-        if mean is not None:
-            y_true = denormalize(y_true, mean, std)
-            y_pred = denormalize(y_pred, mean, std)
+        y_true = denormalize(y_true, mean, std)
+        y_pred = denormalize(y_pred, mean, std)
         return tf.square(y_true - y_pred)
     return mse
 

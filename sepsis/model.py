@@ -2,7 +2,17 @@ import tensorflow as tf
 from sepsis.losses import FeaturePresent
 from sepsis.layers import FeatureEmbedding, PCA, ProjectDown, BinaryLoadings
 from aam.metrics import MAE
+from aam.layers import ReadHead
 
+
+# def _construct_model(
+#     token_dim,
+#     features_to_add,
+#     dropout,
+#     d_model,
+#     ff_dim,
+#     report_back_after,
+# ):
 
 @tf.keras.saving.register_keras_serializable(package="AttentionRegression")
 class AttentionRegression(tf.keras.Model):
@@ -24,7 +34,8 @@ class AttentionRegression(tf.keras.Model):
         self.loss_reg = tf.keras.losses.MeanSquaredError()
         self.loss_loadings = tf.keras.losses.SparseCategoricalCrossentropy(
             ignore_class=0,
-            from_logits=True
+            from_logits=True,
+            reduction="none"
         )
         self.loss_feat_pred = FeaturePresent()
 
@@ -78,8 +89,10 @@ class AttentionRegression(tf.keras.Model):
         y = y['reg_out']
 
         with tf.GradientTape() as tape:
-            outputs = self((inputs), training=True)  # Forward pass
-            # Compute our own loss
+            # Forward pass
+            outputs = self((inputs), training=True)
+
+            # Compute age loss
             loss = self.loss_reg(y, outputs["regression"])
 
             # extract feature labels
@@ -90,7 +103,37 @@ class AttentionRegression(tf.keras.Model):
                 tf.cast(token_mask, dtype=tf.int64)
             )
             embeddings = outputs["embeddings"]
-            conf_loss = self.loss_loadings(labels, embeddings)
+            max_added = tf.reduce_max(
+                tf.reduce_sum(
+                    tf.cast(
+                        tf.equal(labels, 1),
+                        dtype=tf.int64
+                    ),
+                    axis=1
+                )
+            )
+
+            def select_equal_class(inputs):
+                embeddings, labels = inputs
+                added_embeddings = embeddings[-max_added:]
+                added_labels = labels[-max_added:]
+
+                true_embeddings = embeddings[:max_added]
+                true_labels = labels[:max_added]
+                return [
+                    tf.concat((true_embeddings, added_embeddings), axis=0),
+                    tf.concat((true_labels, added_labels), axis=0),
+                ]
+
+            embeddings, labels = tf.map_fn(
+                select_equal_class,
+                [embeddings, labels],
+                fn_output_signature=[tf.float32, tf.int64]
+            )
+            conf_loss = tf.reduce_sum(
+                self.loss_loadings(labels, embeddings),
+                axis=-1
+            )
             loss += conf_loss
 
             self.loss_tracker.update_state(loss)
@@ -110,12 +153,6 @@ class AttentionRegression(tf.keras.Model):
             "confidence": self.confidence_tracker.result(),
             "mae": self.mae_metric.result(),
         }
-    
-    def _construct_model(
-        self,
-
-    ):
-        
 
     def build(self, input_shape):
         feature_input = tf.keras.Input(
@@ -146,57 +183,6 @@ class AttentionRegression(tf.keras.Model):
             self.mae_metric
         ]
 
-    def _feature_count_helper(self, tokens, mask, token_range):
-        tokens = tf.reshape(tokens * mask, shape=(1, -1))
-        tokens = tokens[tokens > 0]
-        tokens = tf.reduce_sum(
-            tf.cast(
-                tf.equal(tokens, token_range),
-                dtype=tf.float32
-            ),
-            axis=1,
-        )
-        return tokens
-
-    def get_token_indices(self, tokens, mask):
-        tokens = tokens * mask
-        return tf.cast(tokens[tokens > 0], dtype=tf.int64)
-
-    def _feature_conf_helper(self, confidence, tokens, mask):
-        max_token = tf.reduce_max(self.feature_emb.tokens + 1)
-        confidence = tf.reshape(confidence * mask, shape=(-1, 1))
-        token_indices = tf.reshape(self.get_token_indices(tokens, mask), shape=(-1, 1))
-
-        confidence = tf.squeeze(tf.gather(confidence, token_indices))
-        conf_score = tf.scatter_nd(
-            token_indices,
-            updates=confidence,
-            shape=[max_token]
-        )
-        return conf_score
-
-    def _feature_helper(self, age, pred_age, confidence, tokens, mask):
-        conf_accum = self._feature_conf_helper(
-            confidence,
-            tokens,
-            mask
-        )
-
-        ages = age * mask
-        age_accum = self._feature_conf_helper(
-            ages,
-            tokens,
-            mask
-        )
-
-        pred_ages = pred_age * mask
-        pred_age_accum = self._feature_conf_helper(
-            pred_ages,
-            tokens,
-            mask
-        )
-        return conf_accum, age_accum, pred_age_accum
-
     def feature_confidences(self, dataset):
         conf_dict = {
             "conf_keys": ["count", "age", "confidence"],
@@ -210,16 +196,26 @@ class AttentionRegression(tf.keras.Model):
                 for k in keys:
                     if k == "age":
                         conf_dict[c][k] = {
-                            "true_age": tf.zeros(self.feature_emb.total_tokens, dtype=tf.float32),
-                            "predicted_age": tf.zeros(self.feature_emb.total_tokens, dtype=tf.float32)
+                            "true_age": tf.zeros(
+                                self.feature_emb.total_tokens,
+                                dtype=tf.float32
+                            ),
+                            "predicted_age": tf.zeros(
+                                self.feature_emb.total_tokens,
+                                dtype=tf.float32
+                            )
                         }
                     else:
-                        conf_dict[c][k] = tf.zeros(self.feature_emb.total_tokens, dtype=tf.float32)
+                        conf_dict[c][k] = tf.zeros(
+                            self.feature_emb.total_tokens,
+                            dtype=tf.float32
+                        )
         _initialize_classes()
 
         def _process_batch(x, y):
             inputs = self._get_inputs(x)
             model_outputs = self(inputs)
+
             def _process_model_outputs():
                 def _normalize_age(tensor):
                     return self.std * tensor + self.mean
@@ -245,11 +241,13 @@ class AttentionRegression(tf.keras.Model):
                     classes = tf.cast(sample_token_mask, dtype=tf.int64) + 1
                     classes *= tf.cast(class_mask, dtype=tf.int64)
                     cls_val = model_outputs["class_labels"][c]
-                    cls_mask =  tf.equal(classes, cls_val)
-                    class_tokens = sample_tokens * tf.cast(cls_mask, dtype=tf.int64)
+                    cls_mask = tf.equal(classes, cls_val)
+                    class_tokens = (
+                        sample_tokens * tf.cast(cls_mask, dtype=tf.int64)
+                    )
                     return cls_mask, class_tokens
                 class_mask, class_tokens = _process_class_masks()
-                
+
                 def map_to_tokens(batch_tensor):
                     def _map_sample_tokens(inputs):
                         sampe_confidence, sample_tokens = inputs
@@ -266,7 +264,7 @@ class AttentionRegression(tf.keras.Model):
 
                     # map the class_tensor to the respective token indices
                     batch_token_tensor = tf.reduce_sum(
-                            tf.map_fn(
+                        tf.map_fn(
                             _map_sample_tokens,
                             (class_tensor, class_tokens),
                             fn_output_signature=tf.float32
@@ -281,10 +279,13 @@ class AttentionRegression(tf.keras.Model):
                             model_outputs["embeddings"][:, :, cls_val],
                             tf.cast(class_mask, dtype=tf.float32)
                     )
-                    conf_dict[c]["confidence"] += map_to_tokens(batch_confidence)
+                    conf_dict[c]["confidence"] += map_to_tokens(
+                        batch_confidence
+                    )
                 _process_confidence()
-                
+
                 ones = tf.ones_like(model_outputs["tokens"], dtype=tf.float32)
+
                 def _process_ages():
                     conf_dict[c]["age"]["true_age"] += map_to_tokens(
                         tf.multiply(
@@ -308,7 +309,7 @@ class AttentionRegression(tf.keras.Model):
 
         for batch in dataset:
             _process_batch(*batch)
-        
+
         for c in conf_dict["classes"]:
             class_dict = conf_dict[c]
             for k in conf_dict["conf_keys"]:
@@ -321,102 +322,6 @@ class AttentionRegression(tf.keras.Model):
                 else:
                     class_dict[k] /= token_counts
         return conf_dict
-    # def feature_confidences(self, dataset):
-    #     true_count_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-    #     added_count_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-
-    #     true_conf_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-    #     added_conf_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-        
-    #     pred_true_age_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-    #     pred_added_age_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-
-    #     true_age_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-    #     added_age_accum = tf.zeros_like(self.feature_emb.tokens, dtype=tf.float32)
-
-    #     token_range = tf.range(tf.reduce_max(self.feature_emb.tokens) + 1)
-    #     token_range = tf.reshape(token_range, shape=(-1, 1))
-    #     token_range = tf.cast(token_range, dtype=tf.float32)
-    #     for x, y in dataset:
-    #         inputs = self._get_inputs(x)
-    #         output = self(inputs)
-
-    #         pred_age = tf.reshape(output["regression"], shape=(-1, 1))
-    #         pred_age = pred_age * self.std + self.mean
-
-    #         ages = tf.reshape(y["reg_out"], shape=(-1, 1))
-    #         ages = ages * self.std + self.mean
-
-    #         confidence = tf.keras.activations.softmax(
-    #             output["embeddings"]
-    #         )
-
-    #         token_indices = output['tokens']
-    #         tokens = tf.cast(token_indices, dtype=tf.float32)
-
-    #         true_mask = tf.cast(output['token_mask'], dtype=tf.float32)
-    #         added_mask = tf.cast(~output['token_mask'], dtype=tf.float32)
-
-    #         true_conf_score = confidence[:, :, 1]
-    #         added_conf_score = confidence[:, :, 0]
-
-    #         true_count_accum += self._feature_count_helper(
-    #             tokens,
-    #             true_mask,
-    #             token_range
-    #         )
-    #         added_count_accum += self._feature_count_helper(
-    #             tokens,
-    #             added_mask,
-    #             token_range
-    #         )
-
-    #         true_conf, true_age, pred = self._feature_helper(
-    #             ages,
-    #             pred_age,
-    #             true_conf_score,
-    #             tokens,
-    #             true_mask
-    #         )
-    #         true_conf_accum += true_conf
-    #         true_age_accum += true_age
-    #         pred_true_age_accum += pred
-
-    #         added_conf, added_age, pred = self._feature_helper(
-    #             ages,
-    #             pred_age,
-    #             added_conf_score,
-    #             tokens,
-    #             added_mask
-    #         )
-    #         added_conf_accum += added_conf
-    #         added_age_accum += added_age
-    #         pred_added_age_accum += pred
-
-    #     true_indices = true_count_accum > 0
-    #     avg_true_conf = true_conf_accum[true_indices] / true_count_accum[true_indices]
-    #     avg_true_age = true_age_accum[true_indices] / true_count_accum[true_indices]
-    #     avg_pred_true_age = pred_true_age_accum[true_indices] / true_count_accum[true_indices]
-    #     true_features = token_range[true_indices]
-
-    #     added_indices = added_count_accum > 0
-    #     avg_added_conf = added_conf_accum[added_indices] / added_count_accum[added_indices]
-    #     avg_added_age = added_age_accum[added_indices] / added_count_accum[added_indices]
-    #     avg_pred_add_age = pred_added_age_accum[added_indices] / added_count_accum[added_indices]
-    #     added_features = token_range[added_indices]
-
-    #     return {
-    #         "avg_true_conf": avg_true_conf,
-    #         "avg_added_conf": avg_added_conf,
-    #         "true_count_accum": true_count_accum[true_indices],
-    #         "added_count_accum": added_count_accum[added_indices],
-    #         "avg_true_age": avg_true_age,
-    #         "avg_added_age": avg_added_age,
-    #         "true_features": true_features,
-    #         "added_features": added_features,
-    #         "pred_true_age_accum": avg_pred_true_age,
-    #         "avg_pred_add_age": avg_pred_add_age
-    #     }
 
     def mean_absolute_error(
             self,
@@ -430,10 +335,9 @@ class AttentionRegression(tf.keras.Model):
             outputs = self(inputs)
             y_pred = tf.squeeze(outputs["regression"])
             y_true = tf.squeeze(y["reg_out"])
-            if from_logits:
-                y_pred = (y_pred*self.std) + self.mean
-                y_true = (y_true*self.std) + self.mean
-            mae += tf.reduce_sum(tf.abs(y_true - y_true))
+            y_pred = (y_pred*self.std) + self.mean
+            y_true = (y_true*self.std) + self.mean
+            mae += tf.reduce_sum(tf.abs(y_true - y_pred))
             counts += tf.shape(y_pred)[0]
         mae += tf.reduce_sum(mae)
         counts = tf.cast(counts, dtype=tf.float32)
