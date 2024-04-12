@@ -86,10 +86,11 @@ def tokenize_dataset(dataset, vocab):
 
 def batch_dataset(dataset, batch_size, repeat=None, shuffle=False):
     def extract_zip(feature_rclr, target):
+        gx = tf.exp(tf.reduce_mean(tf.math.log(feature_rclr[1])))
         inputs = {"feature": feature_rclr[0],
-                  "rclr": feature_rclr[1]}
-        inputs = {"feature": feature_rclr[0],
-                  "rclr": feature_rclr[1]}
+                  "rclr": tf.math.log(
+                      feature_rclr[1] / gx,
+                      )}
         outputs = {"reg_out": target}
         return (inputs, outputs)
 

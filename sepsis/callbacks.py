@@ -44,8 +44,11 @@ def mean_absolute_error(dataset, y, hue, hue_label, model, fname, mean, std):
     if hue is not None:
         hue_label = hue_label if hue_label else 'groups'
         data[hue_label] = hue
-    data = pd.DataFrame(data=data)
-    plot = sns.scatterplot(data, x="true", y="pred", hue=hue_label)
+        data = pd.DataFrame(data=data)
+        plot = sns.scatterplot(data, x="true", y="pred", hue=hue_label)
+    else:
+        data = pd.DataFrame(data=data)
+        plot = sns.scatterplot(data, x="true", y="pred")
     plt.plot(xx, yy)
     plt.plot(diag_xx, diag_yy)
     mae = '%.4g' % mae

@@ -274,19 +274,15 @@ class ProjectDown(tf.keras.layers.Layer):
         self.emb_dim = emb_dim
         self.dims = dims
         self.reduce_dim = reduce_dim
-        if dims == 3:
-            shape = [None, None, emb_dim]
-        else:
-            shape = [None, emb_dim]
-
-        self.ff = tf.keras.layers.Dense(
-            emb_dim,
-            activation='relu',
-            use_bias=True
-        )
-        self.ff.build(shape)
+        self.ff = tf.keras.Sequential([
+            tf.keras.layers.Dense(
+                1024,
+                activation='relu',
+            ),
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.Dropout(0.1)
+        ])
         self.proj_down = tf.keras.layers.Dense(1)
-        self.proj_down.build(shape)
         self.reduce_dim = reduce_dim
 
     def call(self, inputs):
