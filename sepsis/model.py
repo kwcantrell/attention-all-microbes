@@ -5,14 +5,90 @@ from aam.metrics import MAE
 from aam.layers import ReadHead
 
 
-# def _construct_model(
-#     token_dim,
-#     features_to_add,
-#     dropout,
-#     d_model,
-#     ff_dim,
-#     report_back_after,
-# ):
+# temp hacky way to initialize model creation
+def _construct_model(
+    ids,
+    mean,
+    std,
+    token_dim,
+    features_to_add,
+    dropout,
+    d_model,
+    ff_dim,
+):
+    feature_input = tf.keras.Input(
+        shape=[None],
+        dtype=tf.string,
+        name="feature"
+    )
+    rclr_input = tf.keras.Input(
+        shape=[None],
+        dtype=tf.float32,
+        name="rclr"
+    )
+
+    feature_emb = FeatureEmbedding(
+        token_dim,
+        ids,
+        features_to_add,
+        d_model,
+        ff_dim,
+        dropout,
+        name="FeatureEmbeddings",
+        dtype=tf.float32
+    )
+    emb_outputs = feature_emb((feature_input, rclr_input))
+
+    output_token_mask = emb_outputs[0]
+    output_tokens = emb_outputs[1]
+    output_embeddings = emb_outputs[2]
+    output_regression = emb_outputs[3]
+
+    binary_loadings = BinaryLoadings(
+        enc_layers=2,
+        enc_heads=2,
+        dff=512,
+        dropout=dropout,
+        name="FeatureLoadings"
+    )
+    output_embeddings = binary_loadings(output_embeddings)
+
+    regressor = tf.keras.Sequential([
+        PCA(name="pca"),
+        ProjectDown(
+            ff_dim,
+            dims=3,
+            reduce_dim=True,
+            name="pca_vec"
+        ),
+        ProjectDown(
+            ff_dim,
+            dims=2,
+            reduce_dim=False,
+            name="reg_out"
+        )
+    ])
+    output_regression = regressor(output_regression)
+
+    model = AttentionRegression(
+        mean,
+        std,
+        feature_emb,
+        binary_loadings,
+        regressor,
+    )
+    optimizer = tf.keras.optimizers.Adam(
+        learning_rate=0.001,
+        beta_1=0.9,
+        beta_2=0.98,
+        epsilon=1e-9
+    )
+    model.compile(
+        optimizer=optimizer
+    )
+    return model
+
+    
 
 @tf.keras.saving.register_keras_serializable(package="AttentionRegression")
 class AttentionRegression(tf.keras.Model):

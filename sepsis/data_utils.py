@@ -2,7 +2,6 @@ import numpy as np
 import tensorflow as tf
 from biom import load_table, Table
 from biom.util import biom_open
-from gemelli.preprocessing import rclr_transformation
 
 
 def load_biom_table(fp):
@@ -46,12 +45,14 @@ def convert_table_to_dataset(table):
     return (tf.data.Dataset.from_tensor_slices(sparse_tensor)
             .map(get_inputs, num_parallel_calls=tf.data.AUTOTUNE)
             .prefetch(tf.data.AUTOTUNE)
-            )
+    )
 
 
 def convert_to_normalized_dataset(values):
-    mean = values.mean()
-    std = values.std()
+    # mean = values.mean()
+    # std = values.std()
+    mean = min(values)
+    std = max(values) - min(values)
     values_normalized = (values - mean) / std
     dataset = tf.data.Dataset.from_tensor_slices(values_normalized)
     return dataset, mean, std
@@ -86,10 +87,11 @@ def tokenize_dataset(dataset, vocab):
 
 def batch_dataset(dataset, batch_size, repeat=None, shuffle=False):
     def extract_zip(feature_rclr, target):
+        gx = tf.exp(tf.reduce_mean(tf.math.log(feature_rclr[1])))
         inputs = {"feature": feature_rclr[0],
-                  "rclr": feature_rclr[1]}
-        inputs = {"feature": feature_rclr[0],
-                  "rclr": feature_rclr[1]}
+                  "rclr": tf.math.log(
+                      feature_rclr[1] / gx,
+                      )}
         outputs = {"reg_out": target}
         return (inputs, outputs)
 
@@ -124,6 +126,6 @@ def train_val_split(dataset: tf.data.Dataset,
                     train_percent: float):
     size = dataset.cardinality().numpy()
     train_size = int(size*train_percent)
-    training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE)
-    validation_dataset = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE)
+    training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE).cache()
+    validation_dataset = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE).cache()
     return training_dataset, validation_dataset

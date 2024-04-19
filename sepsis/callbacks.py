@@ -45,7 +45,7 @@ def mean_absolute_error(dataset, y, hue, hue_label, model, fname, mean, std):
         hue_label = hue_label if hue_label else 'groups'
         data[hue_label] = hue
     data = pd.DataFrame(data=data)
-    plot = sns.scatterplot(data, x="true", y="pred", hue=hue_label)
+    plot = sns.scatterplot(data, x="true", y="pred")
     plt.plot(xx, yy)
     plt.plot(diag_xx, diag_yy)
     mae = '%.4g' % mae
@@ -228,6 +228,9 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
             self.hue = metadata[hue_col].to_list()
         else:
             self.hue = None
+            
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % self.report_back_after_epochs == 0:

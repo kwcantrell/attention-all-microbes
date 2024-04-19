@@ -1,10 +1,9 @@
-import tensorflow as tf
 import pandas as pd
 import numpy as np
 from aam.callbacks import SaveModel
 from aam.layers import PCAProjector, ReadHead
 from aam.metrics import MAE
-from sepsis.model import AttentionRegression
+from sepsis.model import AttentionRegression, _construct_model
 from sepsis.layers import FeatureEmbedding, PCA, ProjectDown, BinaryLoadings
 from sepsis.callbacks import MAE_Scatter, AvgFeatureConfidence
 from sepsis.data_utils import (
@@ -12,11 +11,16 @@ from sepsis.data_utils import (
     convert_to_normalized_dataset, filter_and_reorder, extract_col,
     batch_dataset, shuffle_table, train_val_split
 )
+import tensorflow as tf
+import os
+
+os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir= /opt/tensorflow_2.14_3.9/lib/python3.9/site-packages/nvidia/"
+
 gpus = tf.config.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpus[0], True)
 
-table_fp = 'sepsis/data/pangenome_zebra_prev_LP2_trial_ft.biom'
-rclr_fp = 'sepsis/data/pangenome_zebra_prev_LP2_trial_ft_rclr.biom'
+table_fp = '/home/kcantrel/amplicon-gpt/agp-data/stool-table.biom'
+rclr_fp = '/home/kcantrel/amplicon-gpt/agp-data/stool-table.biom'
 # create_rclr_table(table_fp, rclr_fp)
 
 batch_size = 32
@@ -26,10 +30,11 @@ orig_table = load_biom_table(table_fp)
 rclr_table = shuffle_table(load_biom_table(rclr_fp))
 feature_dataset = convert_table_to_dataset(rclr_table)
 metadata = pd.read_csv(
-    'sepsis/data/full-intervention-withgroup.tsv', sep='\t',
+    '/home/kcantrel/amplicon-gpt/agp-data/stool-meta.tsv', sep='\t',
     index_col=0
 )
-ids = ['.'.join(id.split('.')[1:]) for id in rclr_table.ids(axis='sample')]
+# ids = ['.'.join(id.split('.')[1:]) for id in rclr_table.ids(axis='sample')]
+ids = rclr_table.ids(axis='sample')
 metadata = filter_and_reorder(metadata, ids)
 age_in_weeks = extract_col(metadata, 'host_age', output_dtype=np.float32)
 age_dataset, mean_age, std_age = convert_to_normalized_dataset(age_in_weeks)
@@ -60,138 +65,22 @@ training_no_shuffle = batch_dataset(
 )
 
 token_dim = 512
-features_to_add = .5
+features_to_add = .1
 dropout = .10
 d_model = 1024
 ff_dim = 32
 report_back_after = 10
 epochs = 1000
-feature_input = tf.keras.Input(
-    shape=[None],
-    dtype=tf.string,
-    name="feature"
-)
-rclr_input = tf.keras.Input(
-    shape=[None],
-    dtype=tf.float32,
-    name="rclr"
-)
-
-feature_emb = FeatureEmbedding(
-    token_dim,
+model = _construct_model(
     rclr_table.ids(axis='observation').tolist(),
-    features_to_add,
-    d_model,
-    ff_dim,
-    dropout,
-    name="FeatureEmbeddings",
-    dtype=tf.float32
-)
-emb_outputs = feature_emb((feature_input, rclr_input))
-
-output_token_mask = emb_outputs[0]
-output_tokens = emb_outputs[1]
-output_embeddings = emb_outputs[2]
-output_regression = emb_outputs[3]
-
-binary_loadings = BinaryLoadings(
-    enc_layers=2,
-    enc_heads=2,
-    dff=512,
-    dropout=dropout,
-    name="FeatureLoadings"
-)
-output_embeddings = binary_loadings(output_embeddings)
-
-regressor = tf.keras.Sequential([
-    PCA(name="pca"),
-    ProjectDown(
-        ff_dim,
-        dims=3,
-        reduce_dim=True,
-        name="pca_vec"
-    ),
-    ProjectDown(
-        ff_dim,
-        dims=2,
-        reduce_dim=False,
-        name="reg_out"
-    )
-])
-output_regression = regressor(output_regression)
-
-# token_dim = 512
-# features_to_add = .5
-# dropout = .10
-# d_model = 1024
-# ff_dim = 64
-# report_back_after = 10
-# epochs = 1000
-
-# feature_input = tf.keras.Input(
-#     shape=[None],
-#     dtype=tf.string,
-#     name="feature"
-# )
-# rclr_input = tf.keras.Input(
-#     shape=[None],
-#     dtype=tf.float32,
-#     name="rclr"
-# )
-
-# feature_emb = FeatureEmbedding(
-#     token_dim,
-#     rclr_table.ids(axis='observation').tolist(),
-#     features_to_add,
-#     d_model,
-#     ff_dim,
-#     dropout,
-#     name="FeatureEmbeddings",
-#     dtype=tf.float32
-# )
-# emb_outputs = feature_emb((feature_input, rclr_input))
-
-# output_token_mask = emb_outputs[0]
-# output_tokens = emb_outputs[1]
-# output_embeddings = emb_outputs[2]
-# output_regression = emb_outputs[3]
-
-# binary_loadings = BinaryLoadings(
-#     enc_layers=2,
-#     enc_heads=2,
-#     dff=1024,
-#     dropout=dropout,
-#     name="FeatureLoadings"
-# )
-# output_embeddings = binary_loadings(output_embeddings)
-
-# regressor = tf.keras.Sequential([
-#     ReadHead(
-#         ff_dim,
-#         1,
-#         1,
-#         1
-#     )
-# ])
-# output_regression = regressor(output_regression)
-
-model = AttentionRegression(
     mean_age,
     std_age,
-    feature_emb,
-    binary_loadings,
-    regressor,
+    token_dim,
+    features_to_add,
+    dropout,
+    d_model,
+    ff_dim,
 )
-optimizer = tf.keras.optimizers.Adam(
-    learning_rate=0.01,
-    beta_1=0.9,
-    beta_2=0.98,
-    epsilon=1e-9
-)
-model.compile(
-    optimizer=optimizer
-)
-
 
 reg_out_callbacks = [
     MAE_Scatter(
@@ -199,11 +88,11 @@ reg_out_callbacks = [
         training_no_shuffle,
         metadata[metadata.index.isin(training_ids)],
         'host_age',
-        'intervention_group',
-        'Intervention',
+        None,
+        None,
         mean_age,
         std_age,
-        'sepsis/figures',
+        'base-model-age/figures',
         report_back_after=report_back_after
     )
 ]
@@ -227,19 +116,18 @@ core_callbacks = [
         "loss",
         factor=0.5,
         patients=2,
-        min_lr=0.00001
+        min_lr=0.000001
     ),
-    # tf.keras.callbacks.EarlyStopping(
-    #     'confidence',
-    #     patience=50
-    # ),
-    SaveModel("sepsis/model-2")
+    tf.keras.callbacks.EarlyStopping(
+        'loss',
+        patience=50
+    ),
+    SaveModel("base-model-age")
 ]
 model.fit(
     training_dataset,
     callbacks=[
-        {"reg_out": reg_out_callbacks},
-        {"emb_out": emb_out_callbacks},
+        *reg_out_callbacks,
         *core_callbacks
     ],
     epochs=epochs

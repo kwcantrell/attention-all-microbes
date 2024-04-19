@@ -158,6 +158,17 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         # prep embeddings for objective functions
         output = self.ff(output)
         output_embeddings = self.ff_loadings(output)
+
+        output = tf.multiply(
+            output,
+            tf.expand_dims(
+                tf.cast(
+                    feature_mask,
+                    dtype=tf.float32
+                ),
+                axis=-1
+            )
+        )
         output_regression = self.ff_pca(output)
 
         return [

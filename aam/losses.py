@@ -108,9 +108,6 @@ def mse_loss(mean=None, std=None):
     return mse
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="real_feature_mask"
-)
 def real_feature_mask(total_features, size):
     total_features = tf.expand_dims(total_features, axis=-1)
     mask = tf.cast(tf.range(size), dtype=tf.int64)
