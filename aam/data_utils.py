@@ -4,6 +4,7 @@ import tensorflow as tf
 from biom import load_table
 from unifrac import unweighted
 
+
 def align_table_and_metadata(table_path,
                              metadata_path,
                              metadata_col=None,
@@ -52,7 +53,11 @@ def convert_table_to_dataset(table, include_count=True):
     col_ind = table_coo.col
     values = table_coo.data
     indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    sparse_tensor = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
+    sparse_tensor = tf.sparse.SparseTensor(
+        indices=indices,
+        values=values,
+        dense_shape=table.shape
+    )
     sparse_tensor = tf.sparse.reorder(sparse_tensor)
 
     def get_inputs(x):
@@ -62,9 +67,10 @@ def convert_table_to_dataset(table, include_count=True):
         else:
             return tf.gather(o_ids, x.indices)
 
-    return (tf.data.Dataset.from_tensor_slices(sparse_tensor)
-            .map(get_inputs, num_parallel_calls=tf.data.AUTOTUNE)
-            .prefetch(tf.data.AUTOTUNE)
+    return (
+        tf.data.Dataset.from_tensor_slices(sparse_tensor)
+        .map(get_inputs, num_parallel_calls=tf.data.AUTOTUNE)
+        .prefetch(tf.data.AUTOTUNE)
     )
 
 
@@ -82,7 +88,13 @@ def get_unifrac_dataset(table_path, tree_path):
             .prefetch(tf.data.AUTOTUNE))
 
 
-def combine_datasets(seq_dataset, dist_dataset, max_bp, add_index=False, contains_rclr=False):
+def combine_datasets(
+    seq_dataset,
+    dist_dataset,
+    max_bp,
+    add_index=False,
+    contains_rclr=False
+):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
         max_tokens=7,
         split='character',
@@ -96,6 +108,7 @@ def combine_datasets(seq_dataset, dist_dataset, max_bp, add_index=False, contain
     else:
         tokens = seq_dataset.map(lambda x, y: x)
         sequence_tokenizer.adapt(tokens.take(1))
+
         def tokenize(seq, rclr):
             return (sequence_tokenizer(seq), rclr)
         seq_dataset = seq_dataset.map(tokenize)
@@ -150,7 +163,7 @@ def batch_dataset(
             return (tf.pad(seq, [[0, pad], [0, 0]]), y)
 
         padded_shape = ([None, 100], [])
-    
+
     else:
         def step_pad(seq, y):
             seq, rclr = seq

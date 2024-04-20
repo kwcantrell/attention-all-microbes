@@ -50,7 +50,6 @@ def _create_dataset(
         metadata = metadata[metadata.index.isin(shared_ids)]
         ids = table.ids(axis='sample')
 
-
     # TODO: check for invalid metadata values
     table = table.remove_empty(axis='observation', inplace=False)
     feature_dataset = convert_table_to_dataset(table)
@@ -279,7 +278,10 @@ def scatter_plot(
     pred_val = tf.concat(output['regression'], axis=0)
     pred_val = tf.squeeze(pred_val)
     pred_val = pred_val*std + mean
-    true_val = tf.concat([y["reg_out"] for _, y in training_no_shuffle], axis=0)
+    true_val = tf.concat(
+        [y["reg_out"] for _, y in training_no_shuffle],
+        axis=0
+    )
     true_val = tf.squeeze(true_val)
     true_val = true_val*std + mean
     mae = tf.reduce_mean(tf.abs(true_val - pred_val))

@@ -149,6 +149,7 @@ class PCAProjector(tf.keras.layers.Layer):
         })
         return config
 
+
 @tf.keras.saving.register_keras_serializable(
     package="amplicon_gpt.layer"
 )
@@ -225,9 +226,9 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         return compute_proj
 
     def call(self, inputs):
-        # if not tf.is_symbolic_tensor(inputs):
-        #     inputs = self.norm(inputs)
-        # output = self.linear_up_scale(inputs)
+        if not tf.is_symbolic_tensor(inputs):
+            inputs = self.norm(inputs)
+        output = self.linear_up_scale(inputs)
         tf.print(tf.shape(output))
         output = self.compute_proj(inputs)
         return output
@@ -353,7 +354,7 @@ class ReadHead(tf.keras.layers.Layer):
             ),
             tf.keras.layers.Dense(self.output_dim),
             tf.keras.layers.LayerNormalization(),
-            ProjectDown(32),
+            # ProjectDown(32),
             tf.keras.layers.Dense(
                 output_dim,
                 use_bias=True
@@ -382,7 +383,7 @@ class ReadHead(tf.keras.layers.Layer):
 #     def __init__(self, **kwargs):
 #         super().__init__(**kwargs)
 #         self.layer_norm = tf.keras.layers.LayerNormalization()
-    
+
 #     def build(self, input_shape):
 #         self.perm = [i for i in range(len(input_shape))]
 #         self.perm = self.perm[:-2] + [self.perm[-1], self.perm[-2]]
@@ -410,7 +411,7 @@ class ReadHead(tf.keras.layers.Layer):
 #             perm=self.perm
 #         )
 #         return self.layer_norm(pca_transform)
-    
+
 
 # # @tf.keras.saving.register_keras_serializable(
 # #     package="ProjectDown"
@@ -507,14 +508,14 @@ class ReadHead(tf.keras.layers.Layer):
 #             ),
 #             tf.keras.layers.LayerNormalization(),
 #         ])
-    
+
 #     @tf.function(reduce_retracing=True, jit_compile=True)
 #     def _inner(self, tensor):
 #         output = tensor + self.pos_embedding_layer(tensor)
 #         output = self.ff_pca(output)
 #         output = self.pca_projector(output)
 #         return output
-    
+
 #     def call(self, inputs, training=True):
 #         asvs, clr = inputs
 #         output = self.embedding_layer(asvs)

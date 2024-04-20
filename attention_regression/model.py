@@ -286,7 +286,7 @@ class AttentionRegression(tf.keras.Model):
 
         def _normalize_age(tensor):
             return self.std * tensor + self.mean
-        
+
         def _process_class_masks(sample_token_mask, sample_tokens, cls_val):
             class_mask = tf.greater(sample_tokens, 0)
             classes = tf.cast(sample_token_mask, dtype=tf.int64) + 1

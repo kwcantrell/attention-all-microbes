@@ -57,33 +57,3 @@ class MAE(tf.keras.metrics.MeanMetricWrapper):
             "dtype": self.dtype,
         }
         return {**base_config, **config}
-    
-@tf.keras.saving.register_keras_serializable(
-    package="MAE"
-)
-class MAE(tf.keras.metrics.MeanMetricWrapper):
-    def __init__(
-        self,
-        input_mean=None,
-        input_std=None,
-        dtype=None,
-        **kwargs
-    ):
-        super().__init__(
-            fn=mae_loss(input_mean, input_std),
-            dtype=dtype,
-            **kwargs
-        )
-        self.input_mean = input_mean
-        self.input_std = input_std
-        self._direction = "down"
-
-    def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "input_mean": self.input_mean,
-            "input_std": self.input_std,
-            "name": self.name,
-            "dtype": self.dtype,
-        }
-        return {**base_config, **config}

@@ -25,7 +25,8 @@ def mean_confidence_interval(data, confidence=0.95):
 
 def mean_absolute_error(mean, std, dataset, model, fname, epoch):
     pred_val = tf.squeeze(model.predict(dataset)).numpy()*std + mean
-    true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])*std + mean
+    true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
+    true_val = true_val*std + mean
     mae, h = mean_confidence_interval(np.abs(true_val - pred_val))
 
     min_x = np.min(true_val)

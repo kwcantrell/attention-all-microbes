@@ -134,4 +134,3 @@ class PairwiseMSE(tf.keras.losses.Loss):
 
     def call(self, y_true, y_pred):
         return tf.reduce_mean(self.fn(y_pred, y_true), axis=-1)
-
