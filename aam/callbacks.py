@@ -4,16 +4,15 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import sklearn
-# from tensorboard.plugins import projector
 from aam.losses import _pairwise_distances
 from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
-from unifrac import unweighted
 from biom import load_table
 from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
 )
+from unifrac import unweighted
 
 
 def mean_confidence_interval(data, confidence=0.95):
@@ -24,9 +23,10 @@ def mean_confidence_interval(data, confidence=0.95):
     return m, h
 
 
-def mean_absolute_error(dataset, model, fname, epoch):
-    pred_val = tf.squeeze(model.predict(dataset)).numpy()
+def mean_absolute_error(mean, std, dataset, model, fname, epoch):
+    pred_val = tf.squeeze(model.predict(dataset)).numpy()*std + mean
     true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
+    true_val = true_val*std + mean
     mae, h = mean_confidence_interval(np.abs(true_val - pred_val))
 
     min_x = np.min(true_val)
@@ -36,13 +36,16 @@ def mean_absolute_error(dataset, model, fname, epoch):
     xx = np.linspace(min_x, max_x, 1000)
     yy = p(xx)
 
+    diag = np.polyfit(true_val, true_val, deg=1)
+    p = np.poly1d(diag)
+    diag_xx = np.linspace(min_x, max_x, 1000)
+    diag_yy = p(diag_xx)
+
     plt.figure(figsize=(4, 4))
-    # plt.rcParams.update({
-    #     'text.usetex': True
-    # })
     plt.subplot(1, 1, 1)
     plt.scatter(true_val, pred_val, 7, marker='.', c='grey', alpha=0.5)
     plt.plot(xx, yy)
+    plt.plot(diag_xx, diag_yy)
     mae, h = '%.4g' % mae, '%.4g' % h
     plt.xlabel('True Value')
     plt.ylabel('Predicted Value')
@@ -52,15 +55,28 @@ def mean_absolute_error(dataset, model, fname, epoch):
 
 
 class MAE_Scatter(tf.keras.callbacks.Callback):
-    def __init__(self, title, dataset, out_dir):
+    def __init__(
+        self,
+        mean,
+        std,
+        title,
+        dataset,
+        out_dir,
+        report_back_after_epochs=5
+    ):
         super().__init__()
+        self.mean = mean
+        self.std = std
         self.title = title
         self.dataset = dataset
         self.out_dir = out_dir
+        self.report_back_after_epochs = report_back_after_epochs
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch % 5 == 0:
+        if epoch % self.report_back_after_epochs == 0:
             mean_absolute_error(
+                self.mean,
+                self.std,
                 self.dataset,
                 self.model,
                 fname=os.path.join(
@@ -72,15 +88,24 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir):
+    def __init__(self, output_dir, **kwargs):
+        super().__init__(**kwargs)
         self.output_dir = output_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
     def on_epoch_end(self, epoch, logs=None):
-        # TODO add save conditions
-        self.model.save(os.path.join(self.output_dir, 'encoder.keras'),
-                        save_format='keras')
+        self.model.save(
+            os.path.join(self.output_dir, 'model.keras'),
+            save_format='keras'
+        )
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "output_dir": self.output_dir
+        }
+        return {**base_config, **config}
 
 
 class ProjectEncoder(tf.keras.callbacks.Callback):
@@ -101,6 +126,7 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
         unifrac_dataset = get_unifrac_dataset(i_table, i_tree)
         dataset = combine_datasets(seq_dataset,
                                    unifrac_dataset,
+                                   100,
                                    add_index=True)
         self.dataset = batch_dataset(dataset,
                                      batch_size,
@@ -148,27 +174,14 @@ class ProjectEncoder(tf.keras.callbacks.Callback):
 
 
 class Accuracy(tf.keras.callbacks.Callback):
-    def __init__(self, root_path, dataset, s_type, steps_per_checkpoint=5,
-                 **kwargs):
+    def __init__(self, title, dataset, out_dir):
         super().__init__()
+        self.title = title
         self.dataset = dataset
-        self.root_path = root_path
-        self.model_path = os.path.join(self.root_path, 'model.keras')
-        self.figure_path = os.path.join(self.root_path, 'figures')
-        self.cur_step = 0
-        self.total_mae = 0
-        self.s_type = s_type
-        self.steps_per_checkpoint = steps_per_checkpoint
-        if not os.path.exists(self.root_path):
-            os.makedirs(self.root_path)
-        if not os.path.exists(self.figure_path):
-            os.makedirs(self.figure_path)
+        self.out_dir = out_dir
 
     def on_epoch_end(self, epoch, logs=None):
-        if self.cur_step % self.steps_per_checkpoint == 0:
-            self.total_mae += 1
-            self.model.save(self.model_path, save_format='keras')
-
+        if epoch % 5 == 0:
             pred_cat = tf.squeeze(self.model.predict(self.dataset)).numpy()
             true_cat = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in
                                        self.dataset])
@@ -185,8 +198,8 @@ class Accuracy(tf.keras.callbacks.Callback):
                 plt.grid(True)
                 ax = plt.gca()
                 ax.set_aspect('equal')
-                fname = os.path.join(self.figure_path,
-                                     f'auc-{self.total_mae}.png')
+                fname = os.path.join(self.out_dir,
+                                     f'auc-{epoch}.png')
                 plt.savefig(fname)
                 plt.close('all')
 
@@ -203,11 +216,8 @@ class Accuracy(tf.keras.callbacks.Callback):
                 plt.grid(True)
                 ax = plt.gca()
                 ax.set_aspect('equal')
-                fname = os.path.join(self.figure_path,
-                                     f'roc-{self.total_mae}.png')
+                fname = os.path.join(self.out_dir,
+                                     f'roc-{self.epoch}.png')
                 plt.savefig(fname)
             plot_roc('ROC', true_cat, pred_cat)
-
-            self.cur_step = 0
-        self.cur_step += 1
         return super().on_epoch_end(epoch, logs)

@@ -13,3 +13,9 @@ amplicon_gpt/__pycache__/*
 amplicon_gpt/.ipynb_checkpoints/*
 shu-aging/*
 core.*
+aam/__pycache__/*
+aam/.ipynb_checkpoints/*
+aam/.DS_Store
+attention_regression/data/*
+attention_regression/.ipynb_checkpoints/*
+attention_regression/__pycache__/*
