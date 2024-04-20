@@ -80,6 +80,33 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         self.ff_pca = _component_block()
         self.ff_loadings = _component_block()
 
+    def _random_tokens(self, inputs):
+        sample_tokens, features_to_add, feature_size = inputs
+        features_to_add = tf.squeeze(features_to_add)
+
+        in_sample_mask = tf.scatter_nd(
+            tf.expand_dims(sample_tokens, axis=-1),
+            tf.ones_like(sample_tokens),
+            shape=[self.total_tokens]
+        )
+
+        # get random tokens
+        random_tokens = tf.random.shuffle(
+            self.tokens[in_sample_mask < 1]
+        )
+        random_tokens = random_tokens[
+            :tf.minimum(feature_size, features_to_add)
+        ]
+        reduced_size = tf.cast(
+            tf.shape(random_tokens)[0],
+            dtype=tf.int64
+        )
+        random_tokens = tf.pad(
+            random_tokens,
+            [[feature_size - reduced_size, 0]]
+        )
+        return random_tokens
+
     def call(self, inputs, training=True):
         feature, rclr = inputs
         feature_tokens = self.feature_tokens(feature)
@@ -97,44 +124,22 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             self.features_add_rate
         )
 
-        feature_size = tf.cast(
-            tf.shape(feature_tokens)[1],
-            dtype=tf.int64
+        feature_size = tf.repeat(
+            tf.cast(
+                tf.shape(feature_tokens)[1],
+                dtype=tf.int64
+            ),
+            repeats=[tf.shape(feature_tokens)[0]],
+            axis=0
         )
         feature_mask = tf.not_equal(feature_tokens, 0)
 
-        def _random_tokens(inputs):
-            sample_tokens, features_to_add = inputs
-            features_to_add = tf.squeeze(features_to_add)
-
-            in_sample_mask = tf.scatter_nd(
-                tf.expand_dims(sample_tokens, axis=-1),
-                tf.ones_like(sample_tokens),
-                shape=[self.total_tokens]
-            )
-
-            # get random tokens
-            random_tokens = tf.random.shuffle(
-                self.tokens[in_sample_mask < 1]
-            )
-            random_tokens = random_tokens[
-                :tf.minimum(feature_size, features_to_add)
-            ]
-            reduced_size = tf.cast(
-                tf.shape(random_tokens)[0],
-                dtype=tf.int64
-            )
-            random_tokens = tf.pad(
-                random_tokens,
-                [[feature_size - reduced_size, 0]]
-            )
-            return random_tokens
-
         random_tokens = tf.map_fn(
-            _random_tokens,
+            self._random_tokens,
             (
                 feature_tokens,
-                tf.cast(feature_count, dtype=tf.int64)
+                tf.cast(feature_count, dtype=tf.int64),
+                feature_size
             ),
             fn_output_signature=tf.int64
         )
@@ -197,7 +202,10 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         return {**base_config, **config}
 
 
-@tf.function(jit_compile=True)
+@tf.function(
+    jit_compile=True,
+    reduce_retracing=True
+)
 def _pca(tensor):
     output = tensor - tf.reduce_mean(
         tf.identity(tensor),
@@ -341,19 +349,12 @@ class ProjectDown(tf.keras.layers.Layer):
         self.emb_dim = emb_dim
         self.dims = dims
         self.reduce_dim = reduce_dim
-        # if dims == 3:
-        #     shape = [None, None, emb_dim]
-        # else:
-        #     shape = [None, emb_dim]
-
         self.ff = tf.keras.layers.Dense(
             emb_dim,
             activation='relu',
             use_bias=True
         )
-        # self.ff.build(shape)
         self.proj_down = tf.keras.layers.Dense(1)
-        # self.proj_down.build(shape)
         self.reduce_dim = reduce_dim
 
     def call(self, inputs):
