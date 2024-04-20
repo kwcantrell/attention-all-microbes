@@ -1,217 +1,340 @@
 import click
 import tensorflow as tf
 import aam._parameter_descriptions as desc
-from aam.data_utils import (
-    get_sequencing_dataset, combine_datasets,
-    batch_dataset, align_table_and_metadata,
-    convert_to_normalized_dataset, convert_table_to_dataset
-)
-from aam.model_utils import regression
 from aam.cli_util import aam_model_options
-from aam.callbacks import SaveModel, MAE_Scatter
+from attention_regression.data_utils import (
+    load_biom_table, shuffle_table, filter_and_reorder, extract_col,
+    convert_table_to_dataset, batch_dataset, convert_to_normalized_dataset,
+    train_val_split
+)
+from attention_regression.model import _construct_model
+from attention_regression.callbacks import MAE_Scatter
+from aam.callbacks import SaveModel
+import pandas as pd
+import numpy as np
 import os
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 @click.group()
 class cli:
     pass
 
 
-@cli.command()
-@click.option('--i-table', required=True)
-def classify_samples(i_feature_table):
-    pass
+def _create_dataset(
+    i_table_path,
+    m_metadata_file,
+    m_metadata_column,
+    p_missing_samples
+):
+    table = shuffle_table(load_biom_table(i_table_path))
+    metadata = pd.read_csv(
+        m_metadata_file, sep='\t',
+        index_col=0
+    )
+
+    # check for mismatch samples
+    ids = table.ids(axis='sample')
+    shared_ids = set(ids).intersection(set(metadata.index))
+    min_ids = min(len(shared_ids), len(ids), len(metadata.index))
+    max_ids = max(len(shared_ids), len(ids), len(metadata.index))
+    if len(shared_ids) == 0:
+        raise Exception('Table and Metadata have no matching sample ids')
+    if min_ids != max_ids and p_missing_samples == 'error':
+        raise Exception('Table and Metadata do share all same sample ids.')
+    elif min_ids != max_ids and p_missing_samples == 'ignore':
+        print('Warning: Table and Metadata do share all same sample ids.')
+        print('Table and metadata will be filtered')
+        table = table.filter(shared_ids, inplace=False)
+        metadata = metadata[metadata.index.isin(shared_ids)]
+        ids = table.ids(axis='sample')
+
+
+    # TODO: check for invalid metadata values
+    table = table.remove_empty(axis='observation', inplace=False)
+    feature_dataset = convert_table_to_dataset(table)
+    metadata = filter_and_reorder(metadata, ids)
+    regression_data = extract_col(
+        metadata,
+        m_metadata_column,
+        output_dtype=np.float32
+    )
+    regression_dataset, mean, std = convert_to_normalized_dataset(
+        regression_data
+    )
+    full_dataset = tf.data.Dataset.zip((feature_dataset, regression_dataset))
+    training, _ = train_val_split(
+        full_dataset,
+        train_percent=1.
+    )
+    return {
+        'dataset': training,
+        'sample_ids': ids,
+        'mean': mean,
+        'std': std,
+        'metadata': metadata,
+        'table': table
+    }
 
 
 @cli.command()
-@click.option('--i-feature-table', required=True)
-def confusion_matrix(i_feature_table):
-    pass
-
-
-@cli.command()
-@click.option('--i-table',
-              required=True,
-              help=desc.TABLE_DESC,
-              type=click.Path(exists=True))
-@click.option('--m-metadata-file',
-              required=True,
-              type=click.Path(exists=True))
-@click.option('--m-metadata-column',
-              required=True,
-              help=desc.METADATA_COL_DESC,
-              type=str)
-@click.option('--p-missing-samples',
-              default='error',
-              type=click.Choice(['error', 'ignore'], case_sensitive=False),
-              help=desc.MISSING_SAMPLES_DESC)
-@click.option('--output-dir', required=True)
-def fit_classifier(i_table, m_metadata_file, metadata_column, missing_samples,
-                   output_dir):
-    pass
-
-
-@cli.command()
-@click.option('--i-table',
-              required=True,
-              help=desc.TABLE_DESC,
-              type=click.Path(exists=True))
-@click.option('--m-metadata-file',
-              required=True,
-              type=click.Path(exists=True))
-@click.option('--m-metadata-column',
-              required=True,
-              help=desc.METADATA_COL_DESC,
-              type=str)
-@click.option('--p-missing-samples',
-              default='error',
-              type=click.Choice(['error', 'ignore'], case_sensitive=False),
-              help=desc.MISSING_SAMPLES_DESC)
+@click.option(
+    '--i-table-path',
+    required=True,
+    help=desc.TABLE_DESC,
+    type=click.Path(exists=True)
+)
+@click.option(
+    '--m-metadata-file',
+    required=True,
+    type=click.Path(exists=True)
+)
+@click.option(
+    '--m-metadata-column',
+    required=True,
+    help=desc.METADATA_COL_DESC,
+    type=str
+)
+@click.option(
+    '--p-missing-samples',
+    default='error',
+    type=click.Choice(['error', 'ignore'], case_sensitive=False),
+    help=desc.MISSING_SAMPLES_DESC
+)
 @aam_model_options
-@click.option('--output-dir',
-              required=True)
-def fit_regressor(i_table,
-                  m_metadata_file,
-                  m_metadata_column,
-                  p_missing_samples,
-                  batch_size,
-                  train_percent,
-                  epochs,
-                  repeat,
-                  dropout,
-                  pca_hidden_dim,
-                  pca_heads,
-                  pca_layers,
-                  dff,
-                  d_model,
-                  enc_layers,
-                  enc_heads,
-                  output_dim,
-                  lr,
-                  max_bp,
-                  output_dir):
-    # TODO: Normalize regress var i.e. center with a std of 0.
-    if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            
-    table, metdata = align_table_and_metadata(i_table,
-                                              m_metadata_file,
-                                              m_metadata_column)
-    # seq_dataset = get_sequencing_dataset(table)
-    include_count=True
-    seq_dataset = convert_table_to_dataset(table, include_count)
-    y_dataset, mean, std = convert_to_normalized_dataset(metdata[m_metadata_column])
-    dataset = combine_datasets(
-        seq_dataset,
-        y_dataset,
-        max_bp,
-        contains_rclr=include_count
+@click.option(
+    '--p-output-dir',
+    required=True
+)
+def fit_regressor(
+    i_table_path: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: str,
+    p_batch_size: int,
+    p_epochs: int,
+    p_repeat: int,
+    p_dropout: float,
+    p_token_dim: int,
+    p_features_to_add_rate: float,
+    p_ff_d_model: int,
+    p_ff_clr: int,
+    p_pca_heads: int,
+    p_enc_layers: int,
+    p_enc_heads: int,
+    p_lr: float,
+    p_report_back_after: int,
+    p_output_dir: str
+):
+    if not os.path.exists(p_output_dir):
+        os.makedirs(p_output_dir)
+
+    figure_path = os.path.join(p_output_dir, 'figures')
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+
+    dataset_obj = _create_dataset(
+        i_table_path,
+        m_metadata_file,
+        m_metadata_column,
+        p_missing_samples
     )
+    training = dataset_obj['dataset']
+    ids = dataset_obj['sample_ids']
+    training_size = training.cardinality().numpy()
+    training_ids = ids[:training_size]
 
-    size = seq_dataset.cardinality().numpy()
-    train_size = int(size*train_percent/batch_size)*batch_size
-
-    training_dataset = dataset.take(train_size).prefetch(tf.data.AUTOTUNE).cache()
     training_dataset = batch_dataset(
-        training_dataset,
-        batch_size,
-        shuffle=True,
-        repeat=repeat,
-        include_count=include_count
+        training,
+        p_batch_size,
+        repeat=p_repeat,
+        shuffle=True
+    )
+    training_no_shuffle = batch_dataset(
+        training,
+        p_batch_size,
+        shuffle=False
     )
 
-    val_data = dataset.skip(train_size).prefetch(tf.data.AUTOTUNE).cache()
-    validation_dataset = batch_dataset(val_data, batch_size)
-    for x in training_dataset:
-        print(x)
-        break
-    model = regression(batch_size,
-                       lr,
-                       dropout,
-                       pca_hidden_dim,
-                       pca_heads,
-                       pca_layers,
-                       dff,
-                       d_model,
-                       enc_layers,
-                       enc_heads,
-                       output_dim,
-                       max_bp)
+    table = dataset_obj['table']
+    mean = dataset_obj['mean']
+    std = dataset_obj['std']
+    metadata = dataset_obj['metadata']
+    model = _construct_model(
+        table.ids(axis='observation').tolist(),
+        mean,
+        std,
+        p_token_dim,
+        p_features_to_add_rate,
+        p_dropout,
+        p_ff_clr,
+        p_ff_d_model,
+        p_pca_heads,
+        p_enc_layers,
+        p_enc_heads,
+        p_lr
+    )
 
-    model.summary()
-    model.fit(
-        training_dataset,
-        validation_data=validation_dataset,
-        epochs=epochs,
-        batch_size=batch_size,
-        callbacks=[
-        SaveModel(output_dir),
+    reg_out_callbacks = [
         MAE_Scatter(
+            'training',
+            training_no_shuffle,
+            metadata[metadata.index.isin(training_ids)],
+            m_metadata_column,
+            None,
+            None,
             mean,
             std,
-            m_metadata_column,
-            validation_dataset,
-            output_dir
-        ),
+            figure_path,
+            report_back_after=p_report_back_after
+        )
+    ]
+
+    core_callbacks = [
         tf.keras.callbacks.ReduceLROnPlateau(
-            "val_loss",
-            factor=0.7,
-            patients=0,
+            "loss",
+            factor=0.5,
+            patients=2,
             min_lr=0.000001
         ),
         tf.keras.callbacks.EarlyStopping(
-            'val_loss',
+            'loss',
             patience=50
-        )
-    ])
-    
-
-@cli.command()
-@click.option('--i-table',
-              required=True,
-              help=desc.TABLE_DESC,
-              type=click.Path(exists=True))
-@click.option('--i-sample-estimator',
-              required=True,
-              help=desc.SAMPLE_CLASS_DESC)
-@click.option('--output-dir', required=True)
-def predict_classification(i_table, sample_estimator, output_dir):
-    pass
+        ),
+        SaveModel(p_output_dir)
+    ]
+    model.fit(
+        training_dataset,
+        callbacks=[
+            *reg_out_callbacks,
+            *core_callbacks
+        ],
+        epochs=p_epochs
+    )
 
 
 @cli.command()
-@click.option('--i-table',
-              required=True,
-              help=desc.TABLE_DESC,
-              type=click.Path(exists=True))
-@click.option('--i-sample-estimator',
-              required=True,
-              help=desc.SAMPLE_REGR_DESC)
-@click.option('--output-dir', required=True)
-def predict_regression(i_table, sample_estimator, output_dir):
-    pass
+@click.option(
+    '--i-table-path',
+    required=True,
+    help=desc.TABLE_DESC,
+    type=click.Path(exists=True)
+)
+@click.option(
+    '--i-model-path',
+    required=True,
+    type=click.Path(exists=True)
+)
+@click.option(
+    '--m-metadata-file',
+    required=True,
+    type=click.Path(exists=True)
+)
+@click.option(
+    '--m-metadata-column',
+    required=True,
+    help=desc.METADATA_COL_DESC,
+    type=str
+)
+@click.option(
+    '--p-missing-samples',
+    default='error',
+    type=click.Choice(['error', 'ignore'], case_sensitive=False),
+    help=desc.MISSING_SAMPLES_DESC
+)
+@click.option(
+    '--p-output-dir',
+    required=True
+)
+def scatter_plot(
+    i_table_path,
+    i_model_path,
+    m_metadata_file,
+    m_metadata_column,
+    p_missing_samples,
+    p_output_dir
+):
+    if not os.path.exists(p_output_dir):
+        os.makedirs(p_output_dir)
+    model = tf.keras.models.load_model(i_model_path)
+    dataset_obj = _create_dataset(
+        i_table_path,
+        m_metadata_file,
+        m_metadata_column,
+        p_missing_samples
+    )
+    training = dataset_obj['dataset']
+    training_no_shuffle = batch_dataset(
+        training,
+        32,
+        shuffle=False
+    )
 
+    mean = dataset_obj['mean']
+    std = dataset_obj['std']
+    std = model.std
+    mean = model.mean
+    output = model.predict(training_no_shuffle)
+    pred_val = tf.concat(output['regression'], axis=0)
+    pred_val = tf.squeeze(pred_val)
+    pred_val = pred_val*std + mean
+    true_val = tf.concat([y["reg_out"] for _, y in training_no_shuffle], axis=0)
+    true_val = tf.squeeze(true_val)
+    true_val = true_val*std + mean
+    mae = tf.reduce_mean(tf.abs(true_val - pred_val))
 
-@cli.command()
-@click.option('--i-feature-table', required=True)
-def regress_samples(i_feature_table):
-    pass
+    min_x = tf.reduce_min(true_val)
+    max_x = tf.reduce_max(true_val)
+    coeff = np.polyfit(true_val, pred_val, deg=1)
+    p = np.poly1d(coeff)
+    xx = np.linspace(min_x, max_x, 50)
+    yy = p(xx)
 
+    diag = np.polyfit(true_val, true_val, deg=1)
+    p = np.poly1d(diag)
+    diag_xx = np.linspace(min_x, max_x, 50)
+    diag_yy = p(diag_xx)
+    data = {
+        "#SampleID": dataset_obj["sample_ids"],
+        "pred": pred_val.numpy(),
+        "true": true_val.numpy()
+    }
+    data = pd.DataFrame(data=data)
+    plot = sns.scatterplot(data, x="true", y="pred")
+    plt.plot(xx, yy)
+    plt.plot(diag_xx, diag_yy)
+    mae = '%.4g' % mae
+    plot.set(xlabel='True')
+    plot.set(ylabel='Predicted')
+    plot.set(title=f"Mean Absolute Error: {mae}")
+    plt.savefig(
+        os.path.join(p_output_dir, 'scatter-plot.png'),
+        bbox_inches="tight"
+    )
+    plt.close()
+    data["residual"] = data["true"] - data["pred"]
 
-@cli.command()
-@click.option('--i-feature-table', required=True)
-def scatterplot(i_feature_table):
-    pass
-
-
-@cli.command()
-@click.option('--i-feature-table', required=True)
-def summarize(i_feature_table):
-    pass
+    mean_residual = np.mean(np.abs(data["residual"]))
+    mean_residual = '%.4g' % mean_residual
+    plot = sns.displot(data, x="residual")
+    plot.set(title=f"Mean Absolute Residual: {mean_residual}")
+    plt.savefig(
+        os.path.join(p_output_dir, 'residual-plot.png'),
+        bbox_inches="tight"
+    )
+    plt.close()
+    data.to_csv(
+        os.path.join(p_output_dir, 'sample-residuals.tsv'),
+        sep='\t',
+        index=False
+    )
 
 
 def main():
     gpus = tf.config.list_physical_devices('GPU')
-    tf.config.experimental.set_memory_growth(gpus[0], True)
+    if len(gpus) > 0:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
     cli()
 
 

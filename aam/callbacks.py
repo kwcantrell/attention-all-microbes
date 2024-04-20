@@ -95,7 +95,7 @@ class SaveModel(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         self.model.save(
-            os.path.join(self.output_dir, 'encoder.keras'),
+            os.path.join(self.output_dir, 'model.keras'),
             save_format='keras'
         )
 

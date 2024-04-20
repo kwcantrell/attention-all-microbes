@@ -1,15 +1,20 @@
 # Attention All Microbes (AAM)
+(Alpha release: Bugs may be present)
 
-Deep Learning Methods for microbial sequencing data. 
-
-(Alpha Version, currently only supports 16S)
+Attention-based network for microbial sequencing data. 
 
 # Installation
 
 
-# Training from scratch
+# Training
+
+Currently only supports  `python cli.py fit-regressor`
+
+# Results
+
+Currently only supports  `python cli.py scatter-plot`
 
 
-# Transfer Learning
-So to be intergrated...
+
+
 

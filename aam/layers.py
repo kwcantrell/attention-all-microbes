@@ -374,168 +374,169 @@ class ReadHead(tf.keras.layers.Layer):
         output = self.read_head(inputs)
         return output
 
-@tf.keras.saving.register_keras_serializable(
-    package="PCA"
-)
-class PCA(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.layer_norm = tf.keras.layers.LayerNormalization()
+
+# @tf.keras.saving.register_keras_serializable(
+#     package="PCA"
+# )
+# class PCA(tf.keras.layers.Layer):
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         self.layer_norm = tf.keras.layers.LayerNormalization()
     
-    def build(self, input_shape):
-        self.perm = [i for i in range(len(input_shape))]
-        self.perm = self.perm[:-2] + [self.perm[-1], self.perm[-2]]
+#     def build(self, input_shape):
+#         self.perm = [i for i in range(len(input_shape))]
+#         self.perm = self.perm[:-2] + [self.perm[-1], self.perm[-2]]
 
-    def call(self, inputs):
-        output = inputs - tf.reduce_mean(
-            tf.identity(inputs),
-            axis=1,
-            keepdims=True
-        )
-        eigen_values, eigen_vectors = tf.linalg.eigh(
-            tf.matmul(
-                output,
-                output,
-                transpose_a=True
-            )
-        )
-        pca_transform = tf.transpose(
-            tf.matmul(
-                tf.linalg.diag(
-                    eigen_values
-                ),
-                eigen_vectors
-            ),
-            perm=self.perm
-        )
-        return self.layer_norm(pca_transform)
+#     def call(self, inputs):
+#         output = inputs - tf.reduce_mean(
+#             tf.identity(inputs),
+#             axis=1,
+#             keepdims=True
+#         )
+#         eigen_values, eigen_vectors = tf.linalg.eigh(
+#             tf.matmul(
+#                 output,
+#                 output,
+#                 transpose_a=True
+#             )
+#         )
+#         pca_transform = tf.transpose(
+#             tf.matmul(
+#                 tf.linalg.diag(
+#                     eigen_values
+#                 ),
+#                 eigen_vectors
+#             ),
+#             perm=self.perm
+#         )
+#         return self.layer_norm(pca_transform)
     
 
-@tf.keras.saving.register_keras_serializable(
-    package="ProjectDown"
-)
-class ProjectDown(tf.keras.layers.Layer):
-    def __init__(self, emb_dim, **kwargs):
-        super().__init__(**kwargs)
-        self.emb_dim = emb_dim
-        self.ff = tf.keras.layers.Dense(
-            emb_dim,
-            activation='relu',
-            use_bias=True
-        )
-        self.proj_down = tf.keras.layers.Dense(1)
+# # @tf.keras.saving.register_keras_serializable(
+# #     package="ProjectDown"
+# # )
+# # class ProjectDown(tf.keras.layers.Layer):
+# #     def __init__(self, emb_dim, **kwargs):
+# #         super().__init__(**kwargs)
+# #         self.emb_dim = emb_dim
+# #         self.ff = tf.keras.layers.Dense(
+# #             emb_dim,
+# #             activation='relu',
+# #             use_bias=True
+# #         )
+# #         self.proj_down = tf.keras.layers.Dense(1)
 
-    def call(self, inputs):
-        outputs = self.ff(inputs)
-        output = tf.squeeze(
-            self.proj_down(outputs),
-            axis=-1
-        )
-        return output
+# #     def call(self, inputs):
+# #         outputs = self.ff(inputs)
+# #         output = tf.squeeze(
+# #             self.proj_down(outputs),
+# #             axis=-1
+# #         )
+# #         return output
 
-    def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "emb_dim": self.emb_dim,
-        }
-        return {**base_config, **config}
+# #     def get_config(self):
+# #         base_config = super().get_config()
+# #         config = {
+# #             "emb_dim": self.emb_dim,
+# #         }
+# #         return {**base_config, **config}
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="NucleotideEmbedding"
-)
-class NucleotideEmbedding(tf.keras.layers.Layer):
-    def __init__(
-        self,
-        max_bp,
-        emb_dim,
-        d_model,
-        pca_hidden_dim,
-        pca_heads,
-        pca_layers,
-        dropout_rate,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.max_bp = max_bp
-        self.emb_dim = emb_dim
-        self.d_model = d_model
-        self.pca_hidden_dim = pca_hidden_dim
-        self.pca_heads = pca_heads
-        self.pca_layers = pca_layers
-        self.dropout_rate = dropout_rate
+# @tf.keras.saving.register_keras_serializable(
+#     package="NucleotideEmbedding"
+# )
+# class NucleotideEmbedding(tf.keras.layers.Layer):
+#     def __init__(
+#         self,
+#         max_bp,
+#         emb_dim,
+#         d_model,
+#         pca_hidden_dim,
+#         pca_heads,
+#         pca_layers,
+#         dropout_rate,
+#         **kwargs
+#     ):
+#         super().__init__(**kwargs)
+#         self.max_bp = max_bp
+#         self.emb_dim = emb_dim
+#         self.d_model = d_model
+#         self.pca_hidden_dim = pca_hidden_dim
+#         self.pca_heads = pca_heads
+#         self.pca_layers = pca_layers
+#         self.dropout_rate = dropout_rate
 
-        self.embedding_layer = tf.keras.layers.Embedding(
-            7,
-            emb_dim,
-            input_length=max_bp,
-            embeddings_initializer="ones",
-            name="embedding"
-        )
-        self.ff = tf.keras.layers.Dense(
-            256,
-            activation='relu',
-        )
-        self.norm = tf.keras.layers.LayerNormalization()
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
-        self.pos_embedding_layer = tfm.nlp.layers.PositionEmbedding(
-            max_length=max_bp,
-            seq_axis=2
-        )
+#         self.embedding_layer = tf.keras.layers.Embedding(
+#             7,
+#             emb_dim,
+#             input_length=max_bp,
+#             embeddings_initializer="ones",
+#             name="embedding"
+#         )
+#         self.ff = tf.keras.layers.Dense(
+#             256,
+#             activation='relu',
+#         )
+#         self.norm = tf.keras.layers.LayerNormalization()
+#         self.dropout = tf.keras.layers.Dropout(dropout_rate)
+#         self.pos_embedding_layer = tfm.nlp.layers.PositionEmbedding(
+#             max_length=max_bp,
+#             seq_axis=2
+#         )
 
-        def _component_block():
-            return (
-                tf.keras.Sequential(
-                    [
-                        tf.keras.layers.Dense(
-                            128,
-                            activation='relu',
-                        ),
-                        tf.keras.layers.Dense(32),
-                        tf.keras.layers.LayerNormalization(),
-                    ]
-                )
-            )
-        self.ff_pca = _component_block()
-        self.pca_projector =  tf.keras.Sequential([
-            PCA(),
-            ProjectDown(32),
-            tf.keras.layers.Dense(
-                64,
-                activation='relu'
-            ),
-            tf.keras.layers.LayerNormalization(),
-        ])
+#         def _component_block():
+#             return (
+#                 tf.keras.Sequential(
+#                     [
+#                         tf.keras.layers.Dense(
+#                             128,
+#                             activation='relu',
+#                         ),
+#                         tf.keras.layers.Dense(32),
+#                         tf.keras.layers.LayerNormalization(),
+#                     ]
+#                 )
+#             )
+#         self.ff_pca = _component_block()
+#         self.pca_projector =  tf.keras.Sequential([
+#             PCA(),
+#             ProjectDown(32),
+#             tf.keras.layers.Dense(
+#                 64,
+#                 activation='relu'
+#             ),
+#             tf.keras.layers.LayerNormalization(),
+#         ])
     
-    @tf.function(reduce_retracing=True, jit_compile=True)
-    def _inner(self, tensor):
-        output = tensor + self.pos_embedding_layer(tensor)
-        output = self.ff_pca(output)
-        output = self.pca_projector(output)
-        return output
+#     @tf.function(reduce_retracing=True, jit_compile=True)
+#     def _inner(self, tensor):
+#         output = tensor + self.pos_embedding_layer(tensor)
+#         output = self.ff_pca(output)
+#         output = self.pca_projector(output)
+#         return output
     
-    def call(self, inputs, training=True):
-        asvs, clr = inputs
-        output = self.embedding_layer(asvs)
-        output = tf.math.multiply(
-            output,
-            tf.expand_dims(tf.expand_dims(clr, axis=-1), axis=-1)
-        )
-        output = self.norm(output)
-        output = self.dropout(output)
-        output = self.ff(output)
-        output = self._inner(output)
-        return output
+#     def call(self, inputs, training=True):
+#         asvs, clr = inputs
+#         output = self.embedding_layer(asvs)
+#         output = tf.math.multiply(
+#             output,
+#             tf.expand_dims(tf.expand_dims(clr, axis=-1), axis=-1)
+#         )
+#         output = self.norm(output)
+#         output = self.dropout(output)
+#         output = self.ff(output)
+#         output = self._inner(output)
+#         return output
 
-    def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "max_bp:": self.max_bp,
-            "emb_dim": self.emb_dim,
-            "d_model:": self.d_model,
-            "pca_hidden_dim:": self.pca_hidden_dim,
-            "pca_heads:": self.pca_heads,
-            "pca_layers:": self.pca_layers,
-            "dropout_rate:": self.dropout_rate,
-        }
-        return {**base_config, **config}
+#     def get_config(self):
+#         base_config = super().get_config()
+#         config = {
+#             "max_bp:": self.max_bp,
+#             "emb_dim": self.emb_dim,
+#             "d_model:": self.d_model,
+#             "pca_hidden_dim:": self.pca_hidden_dim,
+#             "pca_heads:": self.pca_heads,
+#             "pca_layers:": self.pca_layers,
+#             "dropout_rate:": self.dropout_rate,
+#         }
+#         return {**base_config, **config}
