@@ -158,6 +158,18 @@ class AttentionRegression(tf.keras.Model):
         y_pred = self((inputs), training=False)
         return y_pred
 
+    def select_equal_class(self, inputs):
+        embeddings, labels, max_added = inputs
+        added_embeddings = embeddings[-max_added:]
+        added_labels = labels[-max_added:]
+
+        true_embeddings = embeddings[:max_added]
+        true_labels = labels[:max_added]
+        return (
+            tf.concat((true_embeddings, added_embeddings), axis=0),
+            tf.concat((true_labels, added_labels), axis=0),
+        )
+
     def train_step(self, data):
         x, y = data
         inputs = self._get_inputs(x)
@@ -175,37 +187,28 @@ class AttentionRegression(tf.keras.Model):
                 tf.cast(token_mask, dtype=tf.int64)
             )
             embeddings = outputs["embeddings"]
-            max_added = tf.reduce_max(
-                tf.reduce_sum(
-                    tf.cast(
-                        tf.equal(labels, 1),
-                        dtype=tf.int64
-                    ),
-                    axis=1
-                )
+            max_added = tf.repeat(
+                tf.reduce_max(
+                    tf.reduce_sum(
+                        tf.cast(
+                            tf.equal(labels, 1),
+                            dtype=tf.int64
+                        ),
+                        axis=1
+                    )
+                ),
+                repeats=[tf.shape(tokens)[0]],
+                axis=0
             )
 
-            # need to shuffle embeddings
-            def select_equal_class(inputs):
-                embeddings, labels = inputs
-                added_embeddings = embeddings[-max_added:]
-                added_labels = labels[-max_added:]
-
-                true_embeddings = embeddings[:max_added]
-                true_labels = labels[:max_added]
-                return [
-                    tf.concat((true_embeddings, added_embeddings), axis=0),
-                    tf.concat((true_labels, added_labels), axis=0),
-                ]
-
             embeddings, labels = tf.vectorized_map(
-                select_equal_class,
-                [embeddings, labels]
+                self.select_equal_class,
+                [embeddings, labels, max_added]
             )
 
             # Compute loss
             loss = self.loss_reg(y, outputs["regression"])
-            conf_loss = tf.reduce_sum(
+            conf_loss = tf.reduce_mean(
                 self.loss_loadings(labels, embeddings),
                 axis=-1
             )

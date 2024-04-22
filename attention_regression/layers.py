@@ -274,14 +274,14 @@ class PCA(tf.keras.layers.Layer):
                 self.head_size
             ]
         )
-        multi_head_tensor = self.layer_norm(multi_head_tensor)
-        multi_head_tensor = tf.multiply(
-            multi_head_tensor,
-            (
-                tf.constant(1, dtype=tf.float32) /
-                tf.sqrt(tf.cast(self.head_size, dtype=tf.float32))
-            )
-        )
+        # multi_head_tensor = self.layer_norm(multi_head_tensor)
+        # multi_head_tensor = tf.multiply(
+        #     multi_head_tensor,
+        #     (
+        #         tf.constant(1, dtype=tf.float32) /
+        #         tf.sqrt(tf.cast(self.head_size, dtype=tf.float32))
+        #     )
+        # )
         return multi_head_tensor
 
     def get_config(self):
