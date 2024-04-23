@@ -7,12 +7,12 @@ import sklearn
 from aam.losses import _pairwise_distances
 from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
-from unifrac import unweighted
 from biom import load_table
 from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     batch_dataset,
 )
+from unifrac import unweighted
 
 
 def mean_confidence_interval(data, confidence=0.95):
@@ -23,9 +23,10 @@ def mean_confidence_interval(data, confidence=0.95):
     return m, h
 
 
-def mean_absolute_error(dataset, model, fname, epoch):
-    pred_val = tf.squeeze(model.predict(dataset)).numpy()
+def mean_absolute_error(mean, std, dataset, model, fname, epoch):
+    pred_val = tf.squeeze(model.predict(dataset)).numpy()*std + mean
     true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
+    true_val = true_val*std + mean
     mae, h = mean_confidence_interval(np.abs(true_val - pred_val))
 
     min_x = np.min(true_val)
@@ -54,8 +55,18 @@ def mean_absolute_error(dataset, model, fname, epoch):
 
 
 class MAE_Scatter(tf.keras.callbacks.Callback):
-    def __init__(self, title, dataset, out_dir, report_back_after_epochs=5):
+    def __init__(
+        self,
+        mean,
+        std,
+        title,
+        dataset,
+        out_dir,
+        report_back_after_epochs=5
+    ):
         super().__init__()
+        self.mean = mean
+        self.std = std
         self.title = title
         self.dataset = dataset
         self.out_dir = out_dir
@@ -64,6 +75,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         if epoch % self.report_back_after_epochs == 0:
             mean_absolute_error(
+                self.mean,
+                self.std,
                 self.dataset,
                 self.model,
                 fname=os.path.join(
@@ -75,15 +88,24 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir):
+    def __init__(self, output_dir, **kwargs):
+        super().__init__(**kwargs)
         self.output_dir = output_dir
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
     def on_epoch_end(self, epoch, logs=None):
-        # TODO add save conditions
-        self.model.save(os.path.join(self.output_dir, 'encoder.keras'),
-                        save_format='keras')
+        self.model.save(
+            os.path.join(self.output_dir, 'model.keras'),
+            save_format='keras'
+        )
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "output_dir": self.output_dir
+        }
+        return {**base_config, **config}
 
 
 class ProjectEncoder(tf.keras.callbacks.Callback):
