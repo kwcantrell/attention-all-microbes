@@ -1,6 +1,5 @@
 """gotu.py"""
-import json
-
+import click
 import biom
 import numpy as np
 import tensorflow as tf
@@ -9,8 +8,8 @@ from aam.callbacks import SaveModel
 from gotu.gotu_data_utils import create_training_dataset, create_prediction_dataset
 from gotu.gotu_model import gotu_classification, gotu_predict
 
-
-def run_gotu_training(asv_fp: str, gotu_fp: str, model_fp: None) -> None:
+def run_gotu_training(asv_fp: str, gotu_fp: str, **kwargs) -> None:
+    model_fp = kwargs.get('model_fp', None)
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
@@ -26,9 +25,7 @@ def run_gotu_training(asv_fp: str, gotu_fp: str, model_fp: None) -> None:
 
     if model_fp is None:
         model = gotu_classification(batch_size=8,
-                                    load_model=False,
-                                    model_fp=model_fp,
-                                    dropout=0.1,
+                                    dropout=0.1,    
                                     dff=256,
                                     d_model=128,
                                     enc_layers=4,
@@ -38,7 +35,6 @@ def run_gotu_training(asv_fp: str, gotu_fp: str, model_fp: None) -> None:
     history = model.fit(training_dataset, 
                         validation_data=validation_dataset, 
                         callbacks=[SaveModel("gotu_decoder_model")], epochs=1000)
-
 
 def run_gotu_predictions(asv_fp: str, gotu_fp: str, model_fp: str, pred_out_path: str) -> None:
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -92,12 +88,35 @@ def run_gotu_predictions(asv_fp: str, gotu_fp: str, model_fp: str, pred_out_path
     with biom.util.biom_open(f"{pred_out_path}", 'w') as f:
         pred_biom.to_hdf5(f, "Predicted GOTUs Using DeepLearning")
 
-asv_path = "../data/asv_ordered_table.biom"
-gotu_path = "../data/gotu_ordered_table.biom"
-model_fp = "../attention-all-microbes/gotu_decoder_model/20230321_dynamic_learning_encoder.keras"
-pred_out_path = "../attention-all-microbes/gotu_decoder_model/tester.biom"
 
-run_gotu_predictions(asv_fp=asv_path,
-                     gotu_fp=gotu_path,
-                     model_fp=model_fp,
-                     pred_out_path=pred_out_path)
+@click.command()
+@click.argument('asv_fp', type=click.Path(exists=True))
+@click.argument('gotu_fp', type=click.Path(exists=True))
+@click.option('--load_model', type=click.Path(), help='Load previously trained model')
+@click.option('--model_fp', type=click.Path(), help='File path to save the model.')
+def run_gotu_training_cli(asv_fp, gotu_fp, model_fp):
+    run_gotu_training(asv_fp, gotu_fp, model_fp=model_fp)
+
+@click.command()
+@click.argument('asv_fp', type=click.Path(exists=True))
+@click.argument('gotu_fp', type=click.Path(exists=True))
+@click.argument('model_fp', type=click.Path(exists=True))
+@click.argument('pred_out_path', type=click.Path())
+def run_gotu_predictions_cli(asv_fp, gotu_fp, model_fp, pred_out_path):
+    run_gotu_predictions(asv_fp, gotu_fp, model_fp, pred_out_path)
+
+@click.group()
+def cli():
+    pass
+
+cli.add_command(run_gotu_training_cli, 'train')
+cli.add_command(run_gotu_predictions_cli, 'predict')
+
+if __name__ == '__main__':
+    cli()
+
+# asv_path = "../data/asv_ordered_table.biom"
+# gotu_path = "../data/gotu_ordered_table.biom"
+# model_fp = "../attention-all-microbes/gotu_decoder_model/20230321_dynamic_learning_encoder.keras"
+# pred_out_path = "../attention-all-microbes/gotu_decoder_model/tester.biom"
+
