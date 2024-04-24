@@ -4,6 +4,7 @@ import os
 import time
 import click
 import biom
+import json
 import numpy as np
 import tensorflow as tf
 
@@ -12,14 +13,20 @@ from gotu.gotu_data_utils import (
     create_training_dataset,
     create_prediction_dataset,
     save_dataset,
-    save_gotu_dict
+    save_gotu_dict,
+    load_dataset,
+    load_model_dict,
 )
 from gotu.gotu_model import gotu_classification, gotu_predict
 
 # TODO: Add catch statements to cli to validate file/fp's
 
 
-def run_gotu_training(asv_fp: str, gotu_fp: str, **kwargs) -> None:
+def run_gotu_training(
+    training_dataset: tf.data.Dataset,
+    validation_dataset: tf.data.Dataset,
+    **kwargs,
+) -> None:
     model_fp = kwargs.get("model_fp", None)
     gpus = tf.config.experimental.list_physical_devices("GPU")
     if gpus:
@@ -36,9 +43,6 @@ def run_gotu_training(asv_fp: str, gotu_fp: str, **kwargs) -> None:
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
             print(e)
-    training_dataset, validation_dataset, gotu_dict = create_training_dataset(
-        gotu_fp, asv_fp
-    )
 
     if model_fp is None:
         model = gotu_classification(
@@ -122,16 +126,16 @@ def run_gotu_predictions(
 
 
 @click.command(help="train ASV to GOTU model")
-@click.argument("asv_fp", type=click.Path(exists=True))
-@click.argument("gotu_fp", type=click.Path(exists=True))
-@click.option(
-    "--load_model", type=click.Path(), help="Load previously trained model"
-)
-@click.option(
-    "--model_fp", type=click.Path(), help="File path to save the model."
-)
-def run_gotu_training_cli(asv_fp, gotu_fp, model_fp):
-    run_gotu_training(asv_fp, gotu_fp, model_fp=model_fp)
+@click.argument("dataset-path", type=click.Path(exists=True))
+@click.option("--model_fp", type=click.Path(), help="File path to save the model.")
+def run_gotu_training_cli(dataset_path, model_fp):
+    training_fp = f"{dataset_path}/training_set"
+    val_fp = f"{dataset_path}/validation_set"
+    training_dataset = load_dataset(training_fp)
+    validation_dataset = load_dataset(val_fp)
+    run_gotu_training(
+        training_dataset, validation_dataset, model_fp=model_fp
+    )
 
 
 @click.command(help="Run predictions with previously trained models")
@@ -144,40 +148,29 @@ def run_gotu_predictions_cli(asv_fp, gotu_fp, model_fp, pred_out_path):
 
 
 @click.command(help="Creates tokenized training/validation datasets")
-@click.argument("--asv_fp", type=click.Path(exists=True))
-@click.argument("--gotu_fp", type=click.Path(exists=True))
+@click.argument("asv-fp", type=click.Path(exists=True))
+@click.argument("gotu-fp", type=click.Path(exists=True))
 @click.option("--name", default="a2g")
-@click.option("--train_split", default=0.8, show_default=True)
-@click.option("--out_path", type=click.Path(exists=False))
-def create_training_set_cli(asv_fp, gotu_fp, name, train_split, out_path):
+@click.option("--train-split", default=0.8, show_default=True)
+@click.option("--outpath", type=click.Path(exists=False))
+def create_training_set_cli(asv_fp, gotu_fp, name, train_split, outpath):
     timestamp = time.strftime("%Y%m%d-%H%M")
+    full_dir = f"{outpath}/{timestamp}-{name}"
+
     try:
         os.mkdir(full_dir)
     except NotADirectoryError as e:
         print(f"Failed to create out folder directory: {e}")
-            
-    full_dir = f"{out_path}/{timestamp}-{name}"
-    training_fp = f"{name}-training_set"
-    val_fp = f"{name}-validation_set"
-    dict_fp = f"{name}-gotu_dict"
+
+    training_fp = f"training_set"
+    val_fp = f"validation_set"
+    dict_fp = f"gotu_dict"
     training_batched, val_batched, gotu_dict = create_training_dataset(
-        asv_fp, gotu_fp, train_split, out_path
+        asv_fp, gotu_fp, train_split
     )
-    save_dataset(
-        training_batched,
-        full_dir,
-        training_fp
-    )
-    save_dataset(
-        val_batched,
-        full_dir,
-        val_fp
-    )
-    save_gotu_dict(
-        gotu_dict,
-        full_dir,
-        dict_fp
-    )
+    save_dataset(training_batched, full_dir, training_fp)
+    save_dataset(val_batched, full_dir, val_fp)
+    save_gotu_dict(gotu_dict, full_dir, dict_fp)
 
 
 @click.group()
