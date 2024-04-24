@@ -1,5 +1,7 @@
 """gotu.py"""
 
+import os
+import time
 import click
 import biom
 import numpy as np
@@ -9,8 +11,12 @@ from aam.callbacks import SaveModel
 from gotu.gotu_data_utils import (
     create_training_dataset,
     create_prediction_dataset,
+    save_dataset,
+    save_gotu_dict
 )
 from gotu.gotu_model import gotu_classification, gotu_predict
+
+# TODO: Add catch statements to cli to validate file/fp's
 
 
 def run_gotu_training(asv_fp: str, gotu_fp: str, **kwargs) -> None:
@@ -82,9 +88,7 @@ def run_gotu_predictions(
     for i in range(len(gotu_ids)):
         gotu_obv_dict[gotu_ids[i]] = i
 
-    combined_dataset, gotu_dict = create_prediction_dataset(
-        gotu_fp, asv_fp, 8
-    )
+    combined_dataset, gotu_dict = create_prediction_dataset(gotu_fp, asv_fp, 8)
     model = gotu_predict(
         8,
         model_fp,
@@ -117,7 +121,7 @@ def run_gotu_predictions(
         pred_biom.to_hdf5(f, "Predicted GOTUs Using DeepLearning")
 
 
-@click.command()
+@click.command(help="train ASV to GOTU model")
 @click.argument("asv_fp", type=click.Path(exists=True))
 @click.argument("gotu_fp", type=click.Path(exists=True))
 @click.option(
@@ -130,13 +134,50 @@ def run_gotu_training_cli(asv_fp, gotu_fp, model_fp):
     run_gotu_training(asv_fp, gotu_fp, model_fp=model_fp)
 
 
-@click.command()
+@click.command(help="Run predictions with previously trained models")
 @click.argument("asv_fp", type=click.Path(exists=True))
 @click.argument("gotu_fp", type=click.Path(exists=True))
 @click.argument("model_fp", type=click.Path(exists=True))
 @click.argument("pred_out_path", type=click.Path())
 def run_gotu_predictions_cli(asv_fp, gotu_fp, model_fp, pred_out_path):
     run_gotu_predictions(asv_fp, gotu_fp, model_fp, pred_out_path)
+
+
+@click.command(help="Creates tokenized training/validation datasets")
+@click.argument("--asv_fp", type=click.Path(exists=True))
+@click.argument("--gotu_fp", type=click.Path(exists=True))
+@click.option("--name", default="a2g")
+@click.option("--train_split", default=0.8, show_default=True)
+@click.option("--out_path", type=click.Path(exists=False))
+def create_training_set_cli(asv_fp, gotu_fp, name, train_split, out_path):
+    timestamp = time.strftime("%Y%m%d-%H%M")
+    try:
+        os.mkdir(full_dir)
+    except NotADirectoryError as e:
+        print(f"Failed to create out folder directory: {e}")
+            
+    full_dir = f"{out_path}/{timestamp}-{name}"
+    training_fp = f"{name}-training_set"
+    val_fp = f"{name}-validation_set"
+    dict_fp = f"{name}-gotu_dict"
+    training_batched, val_batched, gotu_dict = create_training_dataset(
+        asv_fp, gotu_fp, train_split, out_path
+    )
+    save_dataset(
+        training_batched,
+        full_dir,
+        training_fp
+    )
+    save_dataset(
+        val_batched,
+        full_dir,
+        val_fp
+    )
+    save_gotu_dict(
+        gotu_dict,
+        full_dir,
+        dict_fp
+    )
 
 
 @click.group()
@@ -146,6 +187,7 @@ def cli():
 
 cli.add_command(run_gotu_training_cli, "train")
 cli.add_command(run_gotu_predictions_cli, "predict")
+cli.add_command(create_training_set_cli, "format-training-data")
 
 if __name__ == "__main__":
     cli()
