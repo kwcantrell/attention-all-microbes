@@ -1,10 +1,50 @@
 """gotu_data_utils.py"""
 
+import json
+
 import numpy as np
 import tensorflow as tf
 from biom import load_table
 
 NUM_GOTUS = 6838
+
+def save_gotu_dict(gotu_dict: dict, outpath: str, name: str):
+    """
+    Converts integer keys of a dictionary to strings and saves the dictionary as a JSON file.
+
+    Args:
+    - gotu_dict (dict): The dictionary with integer keys and corresponding values.
+    - outpath (str): The directory path where the JSON file will be saved.
+    - name (str): The name of the JSON file to be saved (without the extension).
+    """
+    # Convert integer keys to string keys
+    str_keys_gotu_dict = {str(k): v for k, v in gotu_dict.items()}
+
+    # Construct full path for the JSON file
+    full_path = f"{outpath}/{name}.json"
+
+    # Write the dictionary with string keys to a JSON file
+    with open(full_path, 'w') as file:
+        json.dump(str_keys_gotu_dict, file, indent=4)
+
+    print(f"Dictionary saved as {full_path}")
+    
+
+def save_dataset(dataset: tf.data.Dataset, out_path: str, name: str):
+    """
+    Saves a TensorFlow dataset to a specified path with an optional timestamped name.
+
+    Parameters:
+    - dataset (tf.data.Dataset): The TensorFlow dataset to be saved.
+    - out_path (str): The output directory where the dataset will be saved.
+    - name (str): The base name for the saved file.
+    """
+    full_path = f"{out_path}/{name}"
+    try:
+        dataset.save(full_path)
+        print(f"Saved {full_path}")
+    except Exception as e:
+        print(f"Failed to save dataset: {e}")
 
 
 def load_biom_table(fp):
@@ -151,12 +191,12 @@ def generate_train_val_sets(
     return batched_training_dataset, batched_validation_dataset
 
 
-def create_training_dataset(gotu_fp, asv_fp):
+def create_training_dataset(gotu_fp: str, asv_fp: str, train_split: int):
     gotu_encoded, gotu_dict = gotu_encode_and_convert(load_biom_table(gotu_fp))
     asv_encoded = asv_encode_and_convert(load_biom_table(asv_fp))
     combined_dataset = combine_all_datasets(asv_encoded, gotu_encoded)
     training_batched, val_batched = generate_train_val_sets(
-        combined_dataset, 0.8, 8, 100
+        combined_dataset, train_split, 8, 100
     )
 
     return training_batched, val_batched, gotu_dict
