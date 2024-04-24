@@ -47,6 +47,45 @@ def save_dataset(dataset: tf.data.Dataset, out_path: str, name: str):
         print(f"Failed to save dataset: {e}")
 
 
+def load_dataset(dataset_path: str, compression=None) -> tf.data.Dataset:
+    
+    tf_dataset = tf.data.Dataset.load(dataset_path, compression=compression)
+    """
+    Loads a previously saved dataset for training
+
+    Parameters:
+    - dataset_path (str): Path to tensorflow dataset.
+    - compression (str) : Either 'gzip' or None. Defaults to None
+    
+    Returns:
+        tf_dataset (tf.data.Dataset): Loaded tf.dataset
+    """
+    return tf_dataset
+
+
+def load_model_dict(file_path):
+    """
+    Load a JSON file and convert all dictionary keys to integers.
+
+    Args:
+        file_path (str): The path to the JSON file to be read.
+
+    Returns:
+        dict: A dictionary with all keys converted to integers where possible. Keys that cannot be converted to integers are omitted.
+
+    Raises:
+        FileNotFoundError: If the specified file does not exist.
+        json.JSONDecodeError: If the file is not a valid JSON file.
+        ValueError: If a key is not a valid string representation of an integer and is thus skipped.
+
+    """
+    with open(file_path, 'r') as json_file:
+        data_dict = json.load(json_file)
+        data_dict = {int(k): v for k, v in data_dict.items()}
+
+    return data_dict
+
+
 def load_biom_table(fp):
     table = load_table(fp)
     return table
