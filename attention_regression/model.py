@@ -4,6 +4,7 @@ from attention_regression.layers import (
     FeatureEmbedding, PCA, ProjectDown, BinaryLoadings
 )
 from aam.metrics import MAE
+import math
 
 
 # temp hacky way to initialize model creation
@@ -70,6 +71,8 @@ def _construct_model(
         )
     ])
     output_regression = regressor(output_regression)
+    output_regression = tf.keras.Dense(2)(output_regression)
+
 
     model = AttentionRegression(
         mean,
@@ -89,6 +92,55 @@ def _construct_model(
     )
     return model
 
+def to_radian(logits):
+    cos_pred = logits[:, 0]
+    sin_pred = logits[:, 1]
+    theta = tf.math.atan(
+        tf.math.divide(
+            sin_pred,
+            cos_pred
+        )
+    )
+    return theta
+
+def cyclic_loss(y_true, y_pred):
+    theta = to_radian(y_pred)
+    return tf.math.square(y_true - theta)
+
+
+def to_month(radian):
+    return (
+        (radian * tf.constant(12,dtype=tf.float32)) /
+        tf.constant(2 *math.PI, dtype=tf.float32)
+    )
+
+def predict_mar(y_true, y_pred):
+    return tf.math.abs(
+        to_month(y_true) -
+        to_month(
+            to_radian(y_pred)
+        )
+    )
+class MAR(tf.keras.metrics.MeanMetricWrapper):
+    def __init__(
+        self,
+        dtype=None,
+        **kwargs
+    ):  
+        super().__init__(
+            fn=predict_mar,
+            dtype=dtype,
+            **kwargs
+        )
+        self._direction = "down"
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "name": self.name,
+            "dtype": self.dtype,
+        }
+        return {**base_config, **config}
 
 @tf.keras.saving.register_keras_serializable(package="AttentionRegression")
 class AttentionRegression(tf.keras.Model):
@@ -105,7 +157,7 @@ class AttentionRegression(tf.keras.Model):
         self.mean = mean
         self.std = std
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.mae_metric = MAE(mean, std, name="mae")
+        self.mar_metric = MAR(name="mar")
         self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.loss_reg = tf.keras.losses.MeanSquaredError()
         self.loss_loadings = tf.keras.losses.SparseCategoricalCrossentropy(
@@ -163,6 +215,7 @@ class AttentionRegression(tf.keras.Model):
         added_embeddings = embeddings[-max_added:]
         added_labels = labels[-max_added:]
 
+        
         true_embeddings = embeddings[:max_added]
         true_labels = labels[:max_added]
         return (
@@ -207,8 +260,8 @@ class AttentionRegression(tf.keras.Model):
             )
 
             # Compute loss
-            loss = self.loss_reg(y, outputs["regression"])
-            conf_loss = tf.reduce_mean(
+            loss = cyclic_loss(y, outputs["regression"])
+            conf_loss = tf.reduce_sum(
                 self.loss_loadings(labels, embeddings),
                 axis=-1
             )
@@ -223,7 +276,7 @@ class AttentionRegression(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         # Compute our own metrics
-        self.mae_metric.update_state(y, outputs["regression"])
+        self.mar_metric.update_state(y, outputs["regression"])
         self.confidence_tracker.update_state(conf_loss)
         return {
             "loss": self.loss_tracker.result(),

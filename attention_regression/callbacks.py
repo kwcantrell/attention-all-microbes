@@ -56,6 +56,43 @@ def mean_absolute_error(dataset, y, hue, hue_label, model, fname, mean, std):
     plt.close()
 
 
+@tf.keras.saving.register_keras_serializable(
+    package="cyclic_plot"
+)
+def cyclic_plot(dataset, y, hue, hue_label, model, fname):
+    output = model.predict(dataset)
+    pred_val = output["regression"]
+
+    # normalize polar cordinates
+    pred_val = tf.divide(
+        pred_val,
+        tf.math.sqrt(
+            tf.reduce_sum(
+                tf.math.square(pred_val)
+            )
+        )
+    )
+    
+    # radians
+    true_val = tf.concat([y["reg_out"] for _, y in dataset], axis=0)
+
+    # convert true_val into polar
+    cos = tf.math.cos(true_val)
+    sin = tf.math.sin(true_val)
+
+    data = {
+        "pred_cos": pred_val[:, 0],
+        "pred_sin": pred_val[:, 1],
+        "true_cos": cos,
+        "true_sin": sin,
+        f"{hue_label}": hue
+    }
+    data = pd.DataFrame(data=data)
+    sns.scatterplot(data, x="pred_cos", y="pred_sin", hue=f"{hue_label}")
+    plt.savefig(fname)
+    plt.close()
+
+
 def violinplot(
     dataset,
     y,
@@ -233,6 +270,69 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
             "hue_label": self.hue_label,
             "mean": self.mean,
             "std": self.std,
+            "out_dir": self.out_dir,
+            "report_back_after": self.report_back_after,
+        }
+        return {**base_config, **config}
+
+
+@tf.keras.saving.register_keras_serializable(
+    package="Cyclic_Scatter"
+)
+class Cyclic_Scatter(tf.keras.callbacks.Callback):
+    def __init__(
+        self,
+        title,
+        dataset,
+        metadata,
+        y_col,
+        hue_col=None,
+        hue_label=None,
+        out_dir='',
+        report_back_after=5,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.title = title
+        self.dataset = dataset
+        self.metadata = metadata
+        self.y_col = y_col
+        self.hue_col = hue_col
+        self.hue_label = hue_label
+        self.out_dir = out_dir
+        self.report_back_after_epochs = report_back_after
+        self.y = metadata[y_col].to_list()
+        if hue_col:
+            self.hue = metadata[hue_col].to_list()
+        else:
+            self.hue = None
+
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % self.report_back_after_epochs == 0:
+            cyclic_plot(
+                self.dataset,
+                self.y,
+                self.hue,
+                self.hue_label,
+                self.model,
+                fname=os.path.join(
+                    self.out_dir, f'MAR-{self.title}.png'
+                    ),
+            )
+        return super().on_epoch_end(epoch, logs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "title": self.title,
+            "dataset": self.dataset,
+            "metadata": self.metadata,
+            "y_col": self.y_col,
+            "hue_col": self.hue_col,
+            "hue_label": self.hue_label,
             "out_dir": self.out_dir,
             "report_back_after": self.report_back_after,
         }

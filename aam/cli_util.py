@@ -4,6 +4,11 @@ import click
 def aam_model_options(func):
     model_options = [
         click.option(
+            '--p-data-norm',
+            default='z',
+            type=click.Choice(['min-max', 'z', 'none'], case_sensitive=False),
+        ),
+        click.option(
             '--p-batch-size',
             default=32,
             show_default=True,

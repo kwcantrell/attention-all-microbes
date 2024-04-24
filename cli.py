@@ -1,5 +1,8 @@
+import os
 import click
 import tensorflow as tf
+os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir= /opt/tensorflow_2.14_3.9/lib/python3.9/site-packages/nvidia/"
+
 import aam._parameter_descriptions as desc
 from aam.cli_util import aam_model_options
 from attention_regression.data_utils import (
@@ -8,11 +11,10 @@ from attention_regression.data_utils import (
     train_val_split
 )
 from attention_regression.model import _construct_model
-from attention_regression.callbacks import MAE_Scatter
+from attention_regression.callbacks import MAE_Scatter, Cyclic_Scatter
 from aam.callbacks import SaveModel
 import pandas as pd
 import numpy as np
-import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -26,6 +28,7 @@ def _create_dataset(
     i_table_path,
     m_metadata_file,
     m_metadata_column,
+    p_data_norm,
     p_missing_samples
 ):
     table = shuffle_table(load_biom_table(i_table_path))
@@ -60,7 +63,8 @@ def _create_dataset(
         output_dtype=np.float32
     )
     regression_dataset, mean, std = convert_to_normalized_dataset(
-        regression_data
+        regression_data,
+        p_data_norm
     )
     full_dataset = tf.data.Dataset.zip((feature_dataset, regression_dataset))
     training, _ = train_val_split(
@@ -111,6 +115,7 @@ def fit_regressor(
     m_metadata_file: str,
     m_metadata_column: str,
     p_missing_samples: str,
+    p_data_norm: str,
     p_batch_size: int,
     p_epochs: int,
     p_repeat: int,
@@ -137,6 +142,7 @@ def fit_regressor(
         i_table_path,
         m_metadata_file,
         m_metadata_column,
+        p_data_norm,
         p_missing_samples
     )
     training = dataset_obj['dataset']
@@ -176,15 +182,13 @@ def fit_regressor(
     )
 
     reg_out_callbacks = [
-        MAE_Scatter(
+        Cyclic_Scatter(
             'training',
             training_no_shuffle,
             metadata[metadata.index.isin(training_ids)],
             m_metadata_column,
-            None,
-            None,
-            mean,
-            std,
+            "month",
+            "What ever you want to call it",
             figure_path,
             report_back_after=p_report_back_after
         )

@@ -43,9 +43,16 @@ def convert_table_to_dataset(table):
     )
 
 
-def convert_to_normalized_dataset(values):
-    mean = min(values)
-    std = max(values) - min(values)
+def convert_to_normalized_dataset(values, data_norm):
+    if data_norm == 'min-max':
+        mean = min(values)
+        std = max(values) - min(values)
+    elif data_norm == 'z':
+        mean = np.mean(values)
+        std = np.std(values)
+    elif data_norm == 'none':
+        mean = 1
+        std = 1
     values_normalized = (values - mean) / std
     dataset = tf.data.Dataset.from_tensor_slices(values_normalized)
     return dataset, mean, std
@@ -53,6 +60,11 @@ def convert_to_normalized_dataset(values):
 
 def convert_to_categorical_dataset(values):
     dataset = tf.data.Dataset.from_tensor_slices(values)
+    return dataset
+
+def convert_to_cyclic_dataset(values):
+    dataset = tf.data.Dataset.from_tensor_slices(values)
+    dataset.map(lambda x: (tf.math.cos(x), tf.math.sin(x)))
     return dataset
 
 
