@@ -4,11 +4,11 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from gotu.gotu_callback import CustomSchedule, CSVCallback
-from aam.model_utils import _construct_base
+from attention_regression.model import _construct_model
 
 NUM_GOTUS = 6838
 
-
+# TODO Currently model is broken until new construct model is added
 def gotu_model_base(
     batch_size: int,
     dropout: float,
