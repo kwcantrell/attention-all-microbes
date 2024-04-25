@@ -2,7 +2,7 @@ import tensorflow as tf
 from attention_regression.losses import FeaturePresent
 from attention_regression.layers import (
     FeatureEmbedding,
-    BinaryLoadings,
+    FeatureLoadings,
     Regressor
 )
 from aam.metrics import MAE
@@ -11,8 +11,8 @@ from aam.metrics import MAE
 # temp hacky way to initialize model creation
 def _construct_model(
     ids,
-    mean,
-    std,
+    shift,
+    scale,
     token_dim,
     p_feature_attention_method,
     features_to_add,
@@ -51,11 +51,15 @@ def _construct_model(
     output_embeddings = emb_outputs[2]
     output_regression = emb_outputs[3]
 
-    binary_loadings = BinaryLoadings(
+    binary_loadings = FeatureLoadings(
         enc_layers=enc_layers,
         enc_heads=enc_heads,
         dff=128,
         dropout=dropout,
+        output_dim=(
+            3 if p_feature_attention_method == 'add_features'
+            else len(ids) + 1
+        ),
         name="FeatureLoadings"
     )
     output_embeddings = binary_loadings(output_embeddings)
@@ -64,16 +68,17 @@ def _construct_model(
         ff_d_model,
         pca_heads,
         2,
-        2,
+        4,
         128,
         0.1
     )
     output_regression = regressor(output_regression)
 
     model = AttentionRegression(
-        mean,
-        std,
+        shift,
+        scale,
         feature_emb,
+        p_feature_attention_method,
         binary_loadings,
         regressor,
     )
@@ -93,28 +98,30 @@ def _construct_model(
 class AttentionRegression(tf.keras.Model):
     def __init__(
             self,
-            mean,
-            std,
+            shift,
+            scale,
             feature_emb,
+            feature_attention_method,
             binary_loadings,
             regressor,
             **kwargs
     ):
         super().__init__(**kwargs)
-        self.mean = mean
-        self.std = std
+        self.shift = shift
+        self.scale = scale
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.mae_metric = MAE(mean, std, name="mae")
+        self.mae_metric = MAE(shift, scale, name="mae")
         self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.loss_reg = tf.keras.losses.MeanSquaredError()
-        self.loss_loadings = tf.keras.losses.SparseCategoricalCrossentropy(
-            ignore_class=0,
-            from_logits=True,
-            reduction="none"
+        self.attention_loss = (
+            tf.keras.losses.SparseCategoricalCrossentropy(
+                ignore_class=0,
+                from_logits=True,
+                reduction="none"
+            )
         )
-        self.loss_feat_pred = FeaturePresent()
-
         self.feature_emb = feature_emb
+        self.feature_attention_method = feature_attention_method
         self.binary_loadings = binary_loadings
         self.regressor = regressor
         self.TRUE_CLASS = tf.constant(2, dtype=tf.int64)
@@ -157,6 +164,7 @@ class AttentionRegression(tf.keras.Model):
         y_pred = self((inputs), training=False)
         return y_pred
 
+    @tf.function
     def select_equal_class(self, inputs):
         embeddings, labels, max_added = inputs
         added_embeddings = embeddings[-max_added:]
@@ -169,6 +177,76 @@ class AttentionRegression(tf.keras.Model):
             tf.concat((true_labels, added_labels), axis=0),
         )
 
+    def _add_feature_loss(self, model_outputs):
+        # extract feature labels
+        _, token_mask, tokens, embeddings = model_outputs
+        labels = tf.add(
+            tf.cast(tf.greater(tokens, 0), dtype=tf.int64),
+            tf.cast(token_mask, dtype=tf.int64)
+        )
+        max_added = tf.repeat(
+            tf.reduce_max(
+                tf.reduce_sum(
+                    tf.cast(
+                        tf.equal(labels, 1),
+                        dtype=tf.int64
+                    ),
+                    axis=1
+                )
+            ),
+            repeats=[tf.shape(tokens)[0]],
+            axis=0
+        )
+
+        embeddings, labels = tf.vectorized_map(
+            self.select_equal_class,
+            [embeddings, labels, max_added]
+        )
+
+        attention_loss = tf.reduce_mean(
+            self.attention_loss(labels, embeddings),
+            axis=-1
+        )
+        return attention_loss
+
+    def _add_mask_loss(self, model_outputs):
+        features, _, sample_tokens, embeddings = model_outputs
+        feature_tokens = self.feature_emb.feature_tokens(features)
+        masked_tokens = tf.math.not_equal(
+            feature_tokens,
+            sample_tokens
+        )
+        labels = tf.multiply(
+            feature_tokens,
+            tf.cast(masked_tokens, dtype=tf.int64)
+        )
+        embedding_mask = tf.cast(
+            tf.greater(
+                labels,
+                0
+            ),
+            dtype=tf.float32
+        )
+        embeddings = tf.multiply(
+            embeddings,
+            tf.expand_dims(embedding_mask, axis=-1)
+        )
+        attention_loss = tf.reduce_sum(
+            self.attention_loss(labels, embeddings),
+            axis=-1
+        )
+        return attention_loss
+
+    def _attention_loss(self, model_outputs):
+        if self.feature_attention_method == 'add_features':
+            return self._add_feature_loss(model_outputs)
+        elif self.feature_attention_method == 'mask_features':
+            return self._add_mask_loss(model_outputs)
+        else:
+            raise Exception(
+                f'Invalid attention method {self.feature_attention_method}'
+            )
+
     def train_step(self, data):
         x, y = data
         inputs = self._get_inputs(x)
@@ -178,40 +256,16 @@ class AttentionRegression(tf.keras.Model):
             # Forward pass
             outputs = self((inputs), training=True)
 
-            # extract feature labels
-            token_mask = outputs["token_mask"]
-            tokens = outputs["tokens"]
-            labels = tf.add(
-                tf.cast(tf.greater(tokens, 0), dtype=tf.int64),
-                tf.cast(token_mask, dtype=tf.int64)
-            )
-            embeddings = outputs["embeddings"]
-            max_added = tf.repeat(
-                tf.reduce_max(
-                    tf.reduce_sum(
-                        tf.cast(
-                            tf.equal(labels, 1),
-                            dtype=tf.int64
-                        ),
-                        axis=1
-                    )
-                ),
-                repeats=[tf.shape(tokens)[0]],
-                axis=0
-            )
-
-            embeddings, labels = tf.vectorized_map(
-                self.select_equal_class,
-                [embeddings, labels, max_added]
-            )
-
-            # Compute loss
+            # Compute regression loss
             loss = self.loss_reg(y, outputs["regression"])
-            conf_loss = tf.reduce_mean(
-                self.loss_loadings(labels, embeddings),
-                axis=-1
+            model_outputs = (
+                inputs[0],
+                outputs["token_mask"],
+                outputs["tokens"],
+                outputs["embeddings"]
             )
-            loss += conf_loss
+            attention_loss = self._attention_loss(model_outputs)
+            loss += attention_loss
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -223,7 +277,7 @@ class AttentionRegression(tf.keras.Model):
 
         # Compute our own metrics
         self.mae_metric.update_state(y, outputs["regression"])
-        self.confidence_tracker.update_state(conf_loss)
+        self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
             "confidence": self.confidence_tracker.result(),
@@ -287,7 +341,7 @@ class AttentionRegression(tf.keras.Model):
                     )
 
         def _normalize_age(tensor):
-            return self.std * tensor + self.mean
+            return self.scale * tensor + self.shift
 
         def _process_class_masks(sample_token_mask, sample_tokens, cls_val):
             class_mask = tf.greater(sample_tokens, 0)
@@ -408,11 +462,12 @@ class AttentionRegression(tf.keras.Model):
     def get_config(self):
         base_config = super().get_config()
         config = {
-            "mean": self.mean,
-            "std": self.std,
+            "shift": self.shift,
+            "scale": self.scale,
             "feature_emb": tf.keras.saving.serialize_keras_object(
                 self.feature_emb
             ),
+            "feature_attention_method": self.feature_attention_method,
             "binary_loadings": tf.keras.saving.serialize_keras_object(
                 self.binary_loadings
             ),

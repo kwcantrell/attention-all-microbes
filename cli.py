@@ -98,6 +98,11 @@ def _create_dataset(
     type=str
 )
 @click.option(
+    '--m-metadata-hue',
+    default='',
+    type=str
+)
+@click.option(
     '--p-normalize',
     default='minmax',
     type=click.Choice(['minmax', 'z', 'none'])
@@ -117,6 +122,7 @@ def fit_regressor(
     i_table_path: str,
     m_metadata_file: str,
     m_metadata_column: str,
+    m_metadata_hue: str,
     p_normalize: str,
     p_missing_samples: str,
     p_batch_size: int,
@@ -185,9 +191,8 @@ def fit_regressor(
         p_enc_heads,
         p_lr
     )
-    for x, y in training_dataset:
+    for x, y in training_dataset.take(1):
         model((x['feature'], x['rclr']))
-        break
     model.summary()
 
     reg_out_callbacks = [
@@ -196,8 +201,8 @@ def fit_regressor(
             training_no_shuffle,
             metadata[metadata.index.isin(training_ids)],
             m_metadata_column,
-            None,
-            None,
+            m_metadata_hue,
+            m_metadata_hue,
             mean,
             std,
             figure_path,

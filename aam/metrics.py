@@ -34,25 +34,25 @@ def pairwise_mae(batch_size):
 class MAE(tf.keras.metrics.MeanMetricWrapper):
     def __init__(
         self,
-        input_mean=None,
-        input_std=None,
+        shift=None,
+        scale=None,
         dtype=None,
         **kwargs
     ):
         super().__init__(
-            fn=mae_loss(input_mean, input_std),
+            fn=mae_loss(shift, scale),
             dtype=dtype,
             **kwargs
         )
-        self.input_mean = input_mean
-        self.input_std = input_std
+        self.shift = shift
+        self.scale = scale
         self._direction = "down"
 
     def get_config(self):
         base_config = super().get_config()
         config = {
-            "input_mean": self.input_mean,
-            "input_std": self.input_std,
+            "shift": self.shift,
+            "scale": self.scale,
             "name": self.name,
             "dtype": self.dtype,
         }

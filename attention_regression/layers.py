@@ -109,114 +109,133 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         )
         return random_tokens
 
-    def _modify_tokens_rclr(self, inputs):
-        if self.attention_method == 'add_features':
-            return self._add_features(inputs)
-        elif self.attention_method == 'mask':
-            return self._mask_features(inputs)
-
-    def _add_features(self, inputs):
+    def _add_features(self, inputs, training=None):
         feature, rclr = inputs
         feature_tokens = self.feature_tokens(feature)
-
-        # extend feature tensor to add random tokens
-        feature_count = tf.multiply(
-            tf.reduce_sum(
-                tf.cast(
-                    feature_tokens > 0,
-                    dtype=tf.float32
-                ),
-                axis=-1,
-                keepdims=True,
-            ),
-            self.features_add_rate
-        )
-
-        feature_size = tf.repeat(
-            tf.cast(
-                tf.shape(feature_tokens)[1],
-                dtype=tf.int64
-            ),
-            repeats=[tf.shape(feature_tokens)[0]],
-            axis=0
-        )
         feature_mask = tf.not_equal(feature_tokens, 0)
 
-        random_tokens = tf.map_fn(
-            self._random_tokens,
-            (
-                feature_tokens,
-                tf.cast(feature_count, dtype=tf.int64),
-                feature_size
-            ),
-            fn_output_signature=tf.int64
-        )
-
-        # get embedding vector
-        sample_tokens = feature_tokens + random_tokens
-
-        # add a 1 to rclr where random tokens
-        sample_rclr = tf.add(
-            rclr,
-            tf.cast(
-                random_tokens > 0,
-                dtype=tf.float32
+        if training:
+            # extend feature tensor to add random tokens
+            feature_count = tf.multiply(
+                tf.reduce_sum(
+                    tf.cast(
+                        feature_tokens > 0,
+                        dtype=tf.float32
+                    ),
+                    axis=-1,
+                    keepdims=True,
+                ),
+                self.features_add_rate
             )
-        )
+
+            feature_size = tf.repeat(
+                tf.cast(
+                    tf.shape(feature_tokens)[1],
+                    dtype=tf.int64
+                ),
+                repeats=[tf.shape(feature_tokens)[0]],
+                axis=0
+            )
+
+            random_tokens = tf.map_fn(
+                self._random_tokens,
+                (
+                    feature_tokens,
+                    tf.cast(feature_count, dtype=tf.int64),
+                    feature_size
+                ),
+                fn_output_signature=tf.int64
+            )
+
+            # get embedding vector
+            sample_tokens = feature_tokens + random_tokens
+
+            # add a 1 to rclr where random tokens
+            sample_rclr = tf.add(
+                rclr,
+                tf.cast(
+                    random_tokens > 0,
+                    dtype=tf.float32
+                )
+            )
+        else:
+            sample_tokens = feature_tokens
+            sample_rclr = rclr
         return (sample_tokens, sample_rclr, feature_mask)
 
-    def call(self, inputs, training=True):
-        # feature, rclr = inputs
-        # feature_tokens = self.feature_tokens(feature)
+    def _random_mask(self, inputs):
+        sample_tokens, mask_rate, feature_mask = inputs
+        feature_count = tf.reduce_sum(
+            tf.cast(
+                feature_mask,
+                dtype=tf.int32
+            )
+        )
 
-        # # extend feature tensor to add random tokens
-        # feature_count = tf.multiply(
-        #     tf.reduce_sum(
-        #         tf.cast(
-        #             feature_tokens > 0,
-        #             dtype=tf.float32
-        #         ),
-        #         axis=-1,
-        #         keepdims=True,
-        #     ),
-        #     self.features_add_rate
-        # )
+        random_mask = tf.cast(
+            tf.math.greater_equal(
+                tf.random.uniform(
+                    shape=[feature_count]
+                ),
+                mask_rate
+            ),
+            dtype=tf.int64
+        )
+        random_mask = tf.pad(
+            random_mask,
+            [[0, tf.shape(sample_tokens)[0] - feature_count]]
+        )
+        sample_tokens = tf.multiply(
+            sample_tokens,
+            random_mask
+        )
+        return sample_tokens
 
-        # feature_size = tf.repeat(
-        #     tf.cast(
-        #         tf.shape(feature_tokens)[1],
-        #         dtype=tf.int64
-        #     ),
-        #     repeats=[tf.shape(feature_tokens)[0]],
-        #     axis=0
-        # )
-        # feature_mask = tf.not_equal(feature_tokens, 0)
+    def _mask_features(self, inputs, training=None):
+        feature, rclr = inputs
+        feature_tokens = self.feature_tokens(feature)
+        feature_mask = tf.not_equal(feature_tokens, 0)
 
-        # random_tokens = tf.map_fn(
-        #     self._random_tokens,
-        #     (
-        #         feature_tokens,
-        #         tf.cast(feature_count, dtype=tf.int64),
-        #         feature_size
-        #     ),
-        #     fn_output_signature=tf.int64
-        # )
+        if training:
+            mask_rate = tf.repeat(
+                tf.cast(
+                    self.features_add_rate,
+                    dtype=tf.float32
+                ),
+                repeats=[tf.shape(feature_tokens)[0]],
+                axis=0
+            )
 
-        # # get embedding vector
-        # sample_tokens = feature_tokens + random_tokens
+            sample_tokens = tf.map_fn(
+                self._random_mask,
+                (
+                    feature_tokens,
+                    mask_rate,
+                    feature_mask
+                ),
+                fn_output_signature=tf.int64
+            )
+        else:
+            sample_tokens = feature_tokens
+
+        return (sample_tokens, rclr, feature_mask)
+
+    def _modify_tokens_rclr(self, inputs, training=None):
+        if self.attention_method == 'add_features':
+            return self._add_features(inputs, training)
+        elif self.attention_method == 'mask_features':
+            return self._mask_features(inputs, training)
+        else:
+            raise Exception(
+                f'Invalid attention method {self.attention_method}'
+            )
+
+    def call(self, inputs, training=None):
         sample_tokens, sample_rclr, feature_mask = self._modify_tokens_rclr(
-            inputs
+            inputs,
+            training
         )
         output = self.embedding_layer(sample_tokens)
-
-        # # add a 1 to rclr where random tokens
-        # sample_rclr = tf.add(
-        #     rclr,
-        #     tf.cast(
-        #         random_tokens > 0,
-        #         dtype=tf.float32
-        #     )
-        # )
 
         # scale embedding tensors by rclr
         output = tf.multiply(
@@ -265,15 +284,16 @@ class FeatureEmbedding(tf.keras.layers.Layer):
 
 
 @tf.keras.saving.register_keras_serializable(
-    package="BinaryLoadings"
+    package="FeatureLoadings"
 )
-class BinaryLoadings(tf.keras.layers.Layer):
+class FeatureLoadings(tf.keras.layers.Layer):
     def __init__(
         self,
         enc_layers,
         enc_heads,
         dff,
         dropout,
+        output_dim,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -281,6 +301,7 @@ class BinaryLoadings(tf.keras.layers.Layer):
         self.enc_heads = enc_heads
         self.dff = dff
         self.dropout = dropout
+        self.output_dim = output_dim
         self.encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=enc_layers,
             num_attention_heads=enc_heads,
@@ -288,7 +309,7 @@ class BinaryLoadings(tf.keras.layers.Layer):
             dropout_rate=dropout,
             norm_first=True,
             activation='relu')
-        self.binary_ff = tf.keras.layers.Dense(3)
+        self.binary_ff = tf.keras.layers.Dense(output_dim)
 
     def call(self, inputs, training=None):
         output = inputs
@@ -302,10 +323,12 @@ class BinaryLoadings(tf.keras.layers.Layer):
             "enc_heads": self.enc_heads,
             "dff": self.dff,
             "dropout": self.dropout,
+            "output_dim": self.output_dim
         }
         return {**base_config, **config}
 
 
+@tf.function(reduce_retracing=True)
 def _pca(tensor):
     non_zeros = tf.math.count_nonzero(
         tensor,
@@ -423,7 +446,6 @@ class PCA(tf.keras.layers.Layer):
             multi_head_tensor,
             tf.sqrt(tf.cast(self.head_size, dtype=tf.float32))
         )
-        multi_head_tensor = self.layer_norm(multi_head_tensor)
 
         return multi_head_tensor
 
