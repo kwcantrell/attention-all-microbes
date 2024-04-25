@@ -1,5 +1,4 @@
 import tensorflow as tf
-from attention_regression.losses import FeaturePresent
 from attention_regression.layers import (
     FeatureEmbedding,
     FeatureLoadings,
