@@ -1,7 +1,9 @@
 import tensorflow as tf
 from attention_regression.losses import FeaturePresent
 from attention_regression.layers import (
-    FeatureEmbedding, PCA, ProjectDown, BinaryLoadings
+    FeatureEmbedding,
+    BinaryLoadings,
+    Regressor
 )
 from aam.metrics import MAE
 
@@ -12,6 +14,7 @@ def _construct_model(
     mean,
     std,
     token_dim,
+    p_feature_attention_method,
     features_to_add,
     dropout,
     ff_clr,
@@ -35,6 +38,7 @@ def _construct_model(
     feature_emb = FeatureEmbedding(
         token_dim,
         ids,
+        p_feature_attention_method,
         features_to_add,
         ff_clr,
         ff_d_model,
@@ -56,19 +60,14 @@ def _construct_model(
     )
     output_embeddings = binary_loadings(output_embeddings)
 
-    regressor = tf.keras.Sequential([
-        PCA(pca_heads),
-        ProjectDown(
-            ff_d_model,
-            3,
-            True,
-        ),
-        ProjectDown(
-            ff_d_model,
-            2,
-            False,
-        )
-    ])
+    regressor = Regressor(
+        ff_d_model,
+        pca_heads,
+        2,
+        2,
+        128,
+        0.1
+    )
     output_regression = regressor(output_regression)
 
     model = AttentionRegression(
