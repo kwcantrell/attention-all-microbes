@@ -43,12 +43,21 @@ def convert_table_to_dataset(table):
     )
 
 
-def convert_to_normalized_dataset(values):
-    mean = min(values)
-    std = max(values) - min(values)
-    values_normalized = (values - mean) / std
+def convert_to_normalized_dataset(values, normalize):
+    if normalize == 'minmax':
+        shift = min(values)
+        scale = max(values) - min(values)
+    elif normalize == 'z':
+        shift = np.mean(values)
+        scale = np.std(values)
+    elif normalize == 'none':
+        shift = 1
+        scale = 1
+    else:
+        raise Exception(f"Invalid data normalization: {normalize}")
+    values_normalized = (values - shift) / scale
     dataset = tf.data.Dataset.from_tensor_slices(values_normalized)
-    return dataset, mean, std
+    return dataset, shift, scale
 
 
 def convert_to_categorical_dataset(values):

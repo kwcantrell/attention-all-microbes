@@ -1,6 +1,15 @@
 import click
 
 
+def _aam_globals():
+    return {
+        'feature-attention-methods': ['add_features', 'mask_features', 'none']
+    }
+
+
+aam_globals = _aam_globals()
+
+
 def aam_model_options(func):
     model_options = [
         click.option(
@@ -34,6 +43,11 @@ def aam_model_options(func):
             type=int
         ),
         click.option(
+            '--p-feature-attention-method',
+            default='add_features',
+            type=click.Choice(aam_globals['feature-attention-methods'])
+        ),
+        click.option(
             '--p-features-to-add-rate',
             default=1.,
             show_default=True,
@@ -53,7 +67,7 @@ def aam_model_options(func):
         ),
         click.option(
             '--p-pca-heads',
-            default=8,
+            default=4,
             show_default=True,
             type=int
         ),

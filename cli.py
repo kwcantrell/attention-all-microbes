@@ -26,6 +26,7 @@ def _create_dataset(
     i_table_path,
     m_metadata_file,
     m_metadata_column,
+    p_normalize,
     p_missing_samples
 ):
     table = shuffle_table(load_biom_table(i_table_path))
@@ -60,7 +61,8 @@ def _create_dataset(
         output_dtype=np.float32
     )
     regression_dataset, mean, std = convert_to_normalized_dataset(
-        regression_data
+        regression_data,
+        p_normalize
     )
     full_dataset = tf.data.Dataset.zip((feature_dataset, regression_dataset))
     training, _ = train_val_split(
@@ -96,6 +98,16 @@ def _create_dataset(
     type=str
 )
 @click.option(
+    '--m-metadata-hue',
+    default='',
+    type=str
+)
+@click.option(
+    '--p-normalize',
+    default='minmax',
+    type=click.Choice(['minmax', 'z', 'none'])
+)
+@click.option(
     '--p-missing-samples',
     default='error',
     type=click.Choice(['error', 'ignore'], case_sensitive=False),
@@ -110,12 +122,15 @@ def fit_regressor(
     i_table_path: str,
     m_metadata_file: str,
     m_metadata_column: str,
+    m_metadata_hue: str,
+    p_normalize: str,
     p_missing_samples: str,
     p_batch_size: int,
     p_epochs: int,
     p_repeat: int,
     p_dropout: float,
     p_token_dim: int,
+    p_feature_attention_method: str,
     p_features_to_add_rate: float,
     p_ff_d_model: int,
     p_ff_clr: int,
@@ -137,6 +152,7 @@ def fit_regressor(
         i_table_path,
         m_metadata_file,
         m_metadata_column,
+        p_normalize,
         p_missing_samples
     )
     training = dataset_obj['dataset']
@@ -165,6 +181,7 @@ def fit_regressor(
         mean,
         std,
         p_token_dim,
+        p_feature_attention_method,
         p_features_to_add_rate,
         p_dropout,
         p_ff_clr,
@@ -174,6 +191,9 @@ def fit_regressor(
         p_enc_heads,
         p_lr
     )
+    for x, y in training_dataset.take(1):
+        model((x['feature'], x['rclr']))
+    model.summary()
 
     reg_out_callbacks = [
         MAE_Scatter(
@@ -181,8 +201,8 @@ def fit_regressor(
             training_no_shuffle,
             metadata[metadata.index.isin(training_ids)],
             m_metadata_column,
-            None,
-            None,
+            m_metadata_hue,
+            m_metadata_hue,
             mean,
             std,
             figure_path,
@@ -237,6 +257,11 @@ def fit_regressor(
     type=str
 )
 @click.option(
+    '--p-normalize',
+    default='minmax',
+    type=click.Choice(['minmax', 'z', 'none'])
+)
+@click.option(
     '--p-missing-samples',
     default='error',
     type=click.Choice(['error', 'ignore'], case_sensitive=False),
@@ -251,6 +276,7 @@ def scatter_plot(
     i_model_path,
     m_metadata_file,
     m_metadata_column,
+    p_normalize,
     p_missing_samples,
     p_output_dir
 ):
@@ -261,6 +287,7 @@ def scatter_plot(
         i_table_path,
         m_metadata_file,
         m_metadata_column,
+        p_normalize,
         p_missing_samples
     )
     training = dataset_obj['dataset']

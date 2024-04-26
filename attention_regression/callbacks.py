@@ -19,18 +19,32 @@ def mean_confidence_interval(data, confidence=0.95):
 @tf.keras.saving.register_keras_serializable(
     package="mean_absolute_error"
 )
-def mean_absolute_error(dataset, y, hue, hue_label, model, fname, mean, std):
-    output = model.predict(dataset)
-    pred_val = tf.concat(output['regression'], axis=0)
-    pred_val = tf.squeeze(pred_val)
-    pred_val = pred_val*std + mean
-    true_val = tf.concat([y["reg_out"] for _, y in dataset], axis=0)
-    true_val = tf.squeeze(true_val)
-    true_val = true_val*std + mean
-    mae = tf.reduce_mean(tf.abs(true_val - pred_val))
+def mean_absolute_error(
+    dataset,
+    y,
+    hue,
+    hue_label,
+    model,
+    fname,
+    shift,
+    scale
+):
+    pred_val = []
+    true_val = []
+    for x, y in dataset:
+        inputs = model._get_inputs(x)
+        output = model(inputs)
+        pred_val.append(output['regression'])
+        true_val.append(y['reg_out'])
 
-    min_x = tf.reduce_min(true_val)
-    max_x = tf.reduce_max(true_val)
+    pred_val = np.concatenate(pred_val)
+    pred_val = pred_val*scale + shift
+    true_val = np.concatenate(true_val)
+    true_val = true_val*scale + shift
+    mae = np.mean(np.abs(true_val - pred_val))
+
+    min_x = np.min(true_val)
+    max_x = np.max(true_val)
     coeff = np.polyfit(true_val, pred_val, deg=1)
     p = np.poly1d(coeff)
     xx = np.linspace(min_x, max_x, 50)
@@ -40,12 +54,14 @@ def mean_absolute_error(dataset, y, hue, hue_label, model, fname, mean, std):
     p = np.poly1d(diag)
     diag_xx = np.linspace(min_x, max_x, 50)
     diag_yy = p(diag_xx)
-    data = {"pred": pred_val.numpy(), "true": true_val.numpy()}
+    data = {"pred": pred_val, "true": true_val}
     if hue is not None:
-        hue_label = hue_label if hue_label else 'groups'
         data[hue_label] = hue
-    data = pd.DataFrame(data=data)
-    plot = sns.scatterplot(data, x="true", y="pred")
+        data = pd.DataFrame(data=data)
+        plot = sns.scatterplot(data, x="true", y="pred", hue=hue_label)
+    else:
+        data = pd.DataFrame(data=data)
+        plot = sns.scatterplot(data, x="true", y="pred")
     plt.plot(xx, yy)
     plt.plot(diag_xx, diag_yy)
     mae = '%.4g' % mae
@@ -180,8 +196,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         y_col,
         hue_col=None,
         hue_label=None,
-        mean=None,
-        std=None,
+        shift=None,
+        scale=None,
         out_dir='',
         report_back_after=5,
         **kwargs
@@ -193,8 +209,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         self.y_col = y_col
         self.hue_col = hue_col
         self.hue_label = hue_label
-        self.mean = mean
-        self.std = std
+        self.shift = shift
+        self.scale = scale
         self.out_dir = out_dir
         self.report_back_after_epochs = report_back_after
         self.y = metadata[y_col].to_list()
@@ -217,8 +233,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
                 fname=os.path.join(
                     self.out_dir, f'MAE-{self.title}.png'
                     ),
-                mean=self.mean,
-                std=self.std
+                shift=self.shift,
+                scale=self.scale
             )
         return super().on_epoch_end(epoch, logs)
 
@@ -231,8 +247,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
             "y_col": self.y_col,
             "hue_col": self.hue_col,
             "hue_label": self.hue_label,
-            "mean": self.mean,
-            "std": self.std,
+            "shift": self.shift,
+            "scale": self.scale,
             "out_dir": self.out_dir,
             "report_back_after": self.report_back_after,
         }
