@@ -103,7 +103,9 @@ def convert_to_tf_dataset(data):
         indices=indices, values=values, dense_shape=data.shape
     )
     sparse_tensor = tf.sparse.reorder(sparse_tensor)
-    get_id = lambda x: tf.gather(o_ids, x.indices)
+    get_id = lambda x: (
+        tf.gather(o_ids, x.indices),
+        tf.cast(PLACEHOLDER))
 
     return (
         tf.data.Dataset.from_tensor_slices(sparse_tensor)
