@@ -44,11 +44,11 @@ class FeatureEmbedding(tf.keras.layers.Layer):
 
         self.embedding_layer = tf.keras.Sequential(
             [
-                tf.keras.layers.Embedding(
-                    input_dim=len(emb_vocab)+1,
-                    output_dim=token_dim,
-                    embeddings_initializer="ones"
-                ),
+                tfm.nlp.layers.FactorizedEmbedding(
+                    vocab_size=len(emb_vocab)+1,
+                    embedding_width=8,
+                    output_dim=32,
+                )
             ]
         )
 
@@ -56,11 +56,6 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             [
                 tf.keras.layers.Dense(
                     ff_clr,
-                    activation='relu',
-                    use_bias=True
-                ),
-                tf.keras.layers.Dense(
-                    ff_d_model,
                     activation='relu',
                     use_bias=True
                 ),
@@ -74,8 +69,6 @@ class FeatureEmbedding(tf.keras.layers.Layer):
                 tf.keras.Sequential(
                     [
                         tf.keras.layers.Dense(ff_d_model),
-                        tf.keras.layers.LayerNormalization(),
-                        tf.keras.layers.Dropout(dropout_rate)
                     ]
                 )
             )
@@ -161,7 +154,7 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         else:
             sample_tokens = feature_tokens
             sample_rclr = rclr
-        return (sample_tokens, sample_rclr, feature_mask)
+        return [sample_tokens, sample_rclr, feature_mask]
 
     def _random_mask(self, inputs):
         sample_tokens, mask_rate, feature_mask = inputs
@@ -218,7 +211,7 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         else:
             sample_tokens = feature_tokens
 
-        return (sample_tokens, rclr, feature_mask)
+        return [sample_tokens, rclr, feature_mask]
 
     def _modify_tokens_rclr(self, inputs, training=None):
         if self.attention_method == 'add_features':
@@ -249,17 +242,6 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         # prep embeddings for objective functions
         output = self.ff(output)
         output_embeddings = self.ff_loadings(output)
-
-        output = tf.multiply(
-            output,
-            tf.expand_dims(
-                tf.cast(
-                    feature_mask,
-                    dtype=tf.float32
-                ),
-                axis=-1
-            )
-        )
         output_regression = self.ff_pca(output)
 
         return [
@@ -311,8 +293,7 @@ class FeatureLoadings(tf.keras.layers.Layer):
             activation='relu')
         self.binary_ff = tf.keras.layers.Dense(output_dim)
 
-    def call(self, inputs, training=None):
-        output = inputs
+    def call(self, inputs, mask=None, training=None):
         output = self.encoder(inputs, training=training)
         return self.binary_ff(output)
 
@@ -328,7 +309,7 @@ class FeatureLoadings(tf.keras.layers.Layer):
         return {**base_config, **config}
 
 
-@tf.function(reduce_retracing=True)
+@tf.function(jit_compile=True, reduce_retracing=True)
 def _pca(tensor):
     non_zeros = tf.math.count_nonzero(
         tensor,
@@ -414,7 +395,7 @@ class PCA(tf.keras.layers.Layer):
         expand_perm = [0, 2, 1, 3]
         self.expand_perm = expand_perm
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         shape = tf.shape(inputs)
         new_shape = tf.reshape(
             tf.stack(
@@ -486,8 +467,7 @@ class Regressor(tf.keras.layers.Layer):
             num_layers=attention_layers,
             num_attention_heads=attention_heads,
             intermediate_size=dff,
-            attention_dropout_rate=0.,
-            intermediate_dropout=dropout,
+            dropout_rate=dropout,
             norm_first=True,
             activation='relu')
         self.regress_ff = tf.keras.layers.Dense(1)
@@ -539,7 +519,7 @@ class ProjectDown(tf.keras.layers.Layer):
         self.proj_down = tf.keras.layers.Dense(1)
         self.reduce_dim = reduce_dim
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         outputs = self.ff(inputs)
         if self.reduce_dim:
             output = tf.squeeze(

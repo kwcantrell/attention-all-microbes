@@ -32,8 +32,7 @@ def mean_absolute_error(
     pred_val = []
     true_val = []
     for x, y in dataset:
-        inputs = model._get_inputs(x)
-        output = model(inputs)
+        output = model(x)
         pred_val.append(output['regression'])
         true_val.append(y['reg_out'])
 

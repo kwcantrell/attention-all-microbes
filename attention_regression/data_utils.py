@@ -51,7 +51,7 @@ def convert_to_normalized_dataset(values, normalize):
         shift = np.mean(values)
         scale = np.std(values)
     elif normalize == 'none':
-        shift = 1
+        shift = 0
         scale = 1
     else:
         raise Exception(f"Invalid data normalization: {normalize}")

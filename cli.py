@@ -15,6 +15,8 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
+from datetime import datetime
+# from attention_regression.nucleotide_model import _construct_model
 
 
 @click.group()
@@ -23,11 +25,11 @@ class cli:
 
 
 def _create_dataset(
-    i_table_path,
-    m_metadata_file,
-    m_metadata_column,
-    p_normalize,
-    p_missing_samples
+    i_table_path: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_normalize: str,
+    p_missing_samples: str
 ):
     table = shuffle_table(load_biom_table(i_table_path))
     metadata = pd.read_csv(
@@ -65,9 +67,9 @@ def _create_dataset(
         p_normalize
     )
     full_dataset = tf.data.Dataset.zip((feature_dataset, regression_dataset))
-    training, _ = train_val_split(
+    training, val = train_val_split(
         full_dataset,
-        train_percent=1.
+        train_percent=.8
     )
     return {
         'dataset': training,
@@ -75,7 +77,8 @@ def _create_dataset(
         'mean': mean,
         'std': std,
         'metadata': metadata,
-        'table': table
+        'table': table,
+        'val': val
     }
 
 
@@ -166,11 +169,17 @@ def fit_regressor(
         repeat=p_repeat,
         shuffle=True
     )
-    training_no_shuffle = batch_dataset(
-        training,
+    val_dataset = batch_dataset(
+        dataset_obj['val'],
         p_batch_size,
+        repeat=1,
         shuffle=False
     )
+    # training_no_shuffle = batch_dataset(
+    #     training,
+    #     p_batch_size,
+    #     shuffle=False
+    # )
 
     table = dataset_obj['table']
     mean = dataset_obj['mean']
@@ -198,7 +207,7 @@ def fit_regressor(
     reg_out_callbacks = [
         MAE_Scatter(
             'training',
-            training_no_shuffle,
+            val_dataset,
             metadata[metadata.index.isin(training_ids)],
             m_metadata_column,
             m_metadata_hue,
@@ -210,7 +219,19 @@ def fit_regressor(
         )
     ]
 
+    # # Create a TensorBoard callback
+    # logs = os.path.join(
+    #     p_output_dir,
+    #     "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    # )
+    # tboard_callback = tf.keras.callbacks.TensorBoard(
+    #     log_dir=logs,
+    #     histogram_freq=1,
+    #     profile_batch=(500, 520)
+    # )
+
     core_callbacks = [
+        # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
             "loss",
             factor=0.5,
@@ -221,10 +242,11 @@ def fit_regressor(
             'loss',
             patience=50
         ),
-        SaveModel(p_output_dir)
+        SaveModel(p_output_dir),
     ]
     model.fit(
         training_dataset,
+        validation_data=val_dataset,
         callbacks=[
             *reg_out_callbacks,
             *core_callbacks
