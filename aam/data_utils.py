@@ -93,25 +93,15 @@ def combine_datasets(
     dist_dataset,
     max_bp,
     add_index=False,
-    contains_rclr=False
 ):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
         max_tokens=7,
         split='character',
         output_mode='int',
-        output_sequence_length=max_bp,
-    )
+        output_sequence_length=max_bp)
+    sequence_tokenizer.adapt(seq_dataset.take(1))
 
-    if not contains_rclr:
-        sequence_tokenizer.adapt(seq_dataset.take(1))
-        seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
-    else:
-        tokens = seq_dataset.map(lambda x, y: x)
-        sequence_tokenizer.adapt(tokens.take(1))
-
-        def tokenize(seq, rclr):
-            return (sequence_tokenizer(seq), rclr)
-        seq_dataset = seq_dataset.map(tokenize)
+    seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
     dataset_size = seq_dataset.cardinality()
 
     if add_index:
@@ -204,5 +194,37 @@ def batch_dataset(
     dataset = dataset.repeat(repeat)
     if not shuffle:
         dataset = dataset.cache()
+
+    return dataset.prefetch(tf.data.AUTOTUNE)
+
+def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
+    dataset = dataset.cache()
+    size = dataset.cardinality()
+
+    if shuffle:
+        dataset = dataset.shuffle(size, reshuffle_each_iteration=True)
+
+    def step_pad(ind, seq, dist):
+        ASV_DIM = 0
+        shape = tf.shape(seq)[ASV_DIM]
+        pad = shape // 8 * 8 + 8 - shape
+        return (ind, tf.pad(seq, [[0, pad], [0, 0]]), dist)
+
+    def get_pairwise_dist(ind, seq, dist):
+        return (seq, tf.gather(dist, ind, axis=1, batch_dims=0))
+
+    dataset = (dataset
+               .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
+               .padded_batch(batch_size,
+                             padded_shapes=([], [None, 100], [None]),
+                             drop_remainder=True)
+               .prefetch(tf.data.AUTOTUNE)
+               .map(get_pairwise_dist)
+               .prefetch(tf.data.AUTOTUNE))
+
+    if not shuffle:
+        dataset = dataset.cache()
+    else:
+        dataset = dataset.repeat(repeat)
 
     return dataset.prefetch(tf.data.AUTOTUNE)
