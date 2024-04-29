@@ -50,15 +50,32 @@ def _pairwise_distances(embeddings, squared=False):
     return distances
 
 
-def pairwise_loss(batch_size):
-    @tf.function(jit_compile=True)
-    def inner(y_true, y_pred):
-        y_true = tf.math.square(y_true)
-        y_pred_dist = _pairwise_distances(y_pred, squared=True)
-        difference = tf.math.square(y_true - y_pred_dist)
-        difference = tf.linalg.band_part(difference, 0, -1)
-        return tf.reduce_sum(difference) / comb(batch_size, 2)
-    return inner
+# @tf.keras.saving.register_keras_serializable(
+#     package="PairwiseLoss"
+# )
+class PairwiseLoss(tf.keras.losses.Loss):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        @tf.py_function(Tout=tf.float32)
+        def nc2(n):
+            return tf.cast(comb(n, 2), dtype=tf.float32)
+
+        @tf.function
+        def pairwise_loss(y_true, y_pred):
+            batch_size = tf.shape(y_pred)[0]
+            y_true = tf.math.square(y_true)
+            y_pred_dist = _pairwise_distances(y_pred, squared=True)
+            difference = tf.math.square(y_true - y_pred_dist)
+            difference = tf.linalg.band_part(difference, 0, -1)
+            return tf.reduce_sum(difference) / nc2(batch_size)
+        self.loss = pairwise_loss
+
+    def call(self, y_true, y_pred):
+        return self.loss(y_true, y_pred),
+
+    def get_config(self):
+        return super().get_config()
 
 
 def pairwise_residual_mse(batch_size, mean=None, std=None):

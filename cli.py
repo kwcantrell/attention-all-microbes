@@ -242,7 +242,10 @@ def fit_regressor(
             'loss',
             patience=50
         ),
-        SaveModel(p_output_dir),
+        SaveModel(
+            p_output_dir,
+            p_report_back_after
+        ),
     ]
     model.fit(
         training_dataset,

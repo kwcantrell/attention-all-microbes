@@ -10,7 +10,7 @@ import skbio.stats.ordination
 from biom import load_table
 from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
-    batch_dataset,
+    # batch_dataset,
 )
 from unifrac import unweighted
 
@@ -88,22 +88,30 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir, **kwargs):
+    def __init__(
+        self,
+        output_dir,
+        report_back,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.output_dir = output_dir
+        self.report_back = report_back
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
     def on_epoch_end(self, epoch, logs=None):
-        self.model.save(
-            os.path.join(self.output_dir, 'model.keras'),
-            save_format='keras'
-        )
+        if epoch % self.report_back == 0:
+            self.model.save(
+                os.path.join(self.output_dir, 'model.keras'),
+                save_format='keras'
+            )
 
     def get_config(self):
         base_config = super().get_config()
         config = {
-            "output_dir": self.output_dir
+            "output_dir": self.output_dir,
+            "report_back": self.report_back
         }
         return {**base_config, **config}
 

@@ -1,6 +1,5 @@
 import tensorflow as tf
 import tensorflow_models as tfm
-from attention_regression.layers import ProjectDown
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -10,7 +9,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
     def __init__(
             self,
             token_dim,
-            ff_clr,
             max_bp,
             pca_hidden_dim,
             pca_heads,
@@ -27,63 +25,63 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         self.pca_hidden_dim = pca_hidden_dim
         self.pca_heads = pca_heads
         self.pca_layers = pca_layers
+        self.attention_heads = attention_heads
+        self.attention_layers = attention_layers
+        self.dff = dff
         self.dropout_rate = dropout_rate
 
-        self.embedding_layer = tf.keras.Sequential(
-            [
-                tfm.nlp.layers.FactorizedEmbedding(
-                    vocab_size=4+1,
-                    embedding_width=8,
-                    output_dim=32,
-                ),
-                tf.keras.layers.Dense(
-                    ff_clr,
-                    activation='relu',
-                    use_bias=True
-                ),
-                tf.keras.layers.LayerNormalization(),
-                tf.keras.layers.Dropout(dropout_rate)
-            ]
+        self.emb_layer = tf.keras.layers.Embedding(
+            5,
+            pca_hidden_dim,
+            embeddings_initializer="ones",
+            input_length=max_bp,
         )
-
-        self.pos_emb_layer = tfm.nlp.layers.PositionEmbedding(
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
                 max_length=max_bp,
                 seq_axis=2
         )
         self.pca_layer = PCAProjector(
             hidden_dim=pca_hidden_dim,
-            num_heads=pca_heads,
-            num_layers=pca_layers
+            num_heads=8,
+            num_layers=pca_layers,
+            dropout=dropout_rate
         )
 
         self.attention_layer = tfm.nlp.models.TransformerEncoder(
-            num_layers=attention_layers,
-            num_attention_heads=attention_heads,
-            intermediate_size=dff,
+            num_layers=6,
+            num_attention_heads=2,
+            intermediate_size=1024,
             dropout_rate=dropout_rate,
             norm_first=True,
             activation='relu',
         )
-    
+
     def call(self, inputs, training=None):
-        output = self.embedding_layer(inputs, training)
-        output = output + self.pos_emb_layer(output)
+        seq, rclr = tf.nest.flatten(inputs, expand_composites=True)
+        output = self.emb_layer(seq)
+        output = output + self.pos_emb(output)
         output = self.pca_layer(output)
-        output = self.attention_layer(output)
+        output = tf.multiply(
+            output,
+            tf.expand_dims(rclr, axis=-1)
+        )
+        output = self.attention_layer(output, training=training)
         return output
 
     def get_config(self):
-        config = super().get_config()
-        config.update({
+        base_config = super().get_config()
+        config = {
             "token_dim": self.token_dim,
             "max_bp": self.max_bp,
             "pca_hidden_dim": self.pca_hidden_dim,
             "pca_heads": self.pca_heads,
             "pca_layers": self.pca_layers,
-            "dropout_rate": self.dropout_rate
-        })
-        return config
-
+            "attention_heads": self.attention_heads,
+            "attention_layers": self.attention_layers,
+            "dff": self.dff,
+            "dropout_rate": self.dropout_rate,
+        }
+        return {**base_config, **config}
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -183,141 +181,137 @@ class NucleotideEinsum(tf.keras.layers.Layer):
 
 
 @tf.keras.saving.register_keras_serializable(
-    package="amplicon_gpt.layer"
+    package="PCAProjector"
 )
 class PCAProjector(tf.keras.layers.Layer):
-    def __init__(self,
-                 hidden_dim,
-                 num_heads,
-                 num_layers,
-                 **kwargs):
+    def __init__(
+            self,
+            hidden_dim,
+            num_heads,
+            num_layers,
+            dropout,
+            **kwargs
+    ):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
-        for i in range(self.num_layers):
-            setattr(self,
-                    f'pca_layer_{i}',
-                    MultiHeadPCAProjection(
-                        self.hidden_dim,
-                        self.num_heads,
-                        name=f'layer-{i}'))
-            setattr(self,
-                    f'ff-{i}',
-                    tf.keras.layers.Dense(self.hidden_dim,
-                                          activation='relu'))
+        self.dropout = dropout
+        self.pca_layer = MultiHeadPCAProjection(
+            hidden_dim,
+            num_heads,
+            dropout
+        )
         self.point = tf.keras.layers.Dense(1)
+
+    def call(self, inputs):
+        outputs = inputs
+        outputs = self.pca_layer(outputs)
+        outputs = tf.squeeze(self.point(outputs), axis=-1)
+        return outputs
+    
+    def get_config(self):
+        base_config = super().get_config()
+
+        config = {
+            "hidden_dim":  self.hidden_dim,
+            "num_heads":  self.num_heads,
+            "num_layers":  self.num_layers,
+            "dropout":  self.dropout,
+        }
+        return {**base_config, **config}
+
+
+@tf.keras.saving.register_keras_serializable(
+    package="MultiHeadPCAProjection"
+)
+class MultiHeadPCAProjection(tf.keras.layers.Layer):
+    def __init__(
+            self,
+            hidden_dim,
+            num_heads,
+            dropout,
+            **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.dropout = dropout
+        self.norm = tf.keras.layers.LayerNormalization()
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
         emb_shape = shape[-1]
-        self.back_proj = tf.keras.layers.Dense(emb_shape,
-                                               activation='relu')
-
-    def call(self, inputs):
-        outputs = inputs
-        for i in range(self.num_layers):
-            outputs = getattr(self,
-                              f'pca_layer_{i}')(outputs)
-            outputs = getattr(self,
-                              f'ff-{i}')(outputs)
-
-        outputs = tf.squeeze(self.point(outputs), axis=-1)
-        outputs = self.back_proj(outputs)
-        return outputs
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "hidden_dim": self.hidden_dim,
-            "num_heads": self.num_heads,
-            "num_layers": self.num_layers
-        })
-        return config
-
-@tf.keras.saving.register_keras_serializable(
-    package="amplicon_gpt.layer"
-)
-class MultiHeadPCAProjection(tf.keras.layers.Layer):
-    def __init__(self,
-                 hidden_dim,
-                 num_heads,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.hidden_dim = hidden_dim
-        self.num_heads = num_heads
-        self.norm = tf.keras.layers.LayerNormalization(axis=-2)
-
-    def build(self, input_shape):
-        shape = [x if x is not None else -1 for x in input_shape]
-        self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim)
+        self.linear_up_scale = tf.keras.layers.Dense(self.hidden_dim,
+                                                     activation='relu',
+                                                     use_bias=False)
         # occurs after up scaling
         head_size = self.hidden_dim // self.num_heads
-        self.dff = tf.keras.layers.Dense(head_size)
-
         reshape = shape[:-1] + [self.num_heads, head_size]
         first_transp = [i for i in range(len(reshape))]
         first_transp = first_transp[:-3] + [first_transp[-2],
-                                            first_transp[-1],
-                                            first_transp[-3]]
+                                            first_transp[-3],
+                                            first_transp[-1]]
         second_transp = [i for i in range(len(reshape))]
         second_transp = second_transp[:-3] + [second_transp[-2],
                                               second_transp[-3],
                                               second_transp[-1]]
-        second_reshape = shape[:-2] + [head_size, self.hidden_dim]
-        eig_trasp = [i for i in range(len(reshape))]
-        eig_trasp = eig_trasp[:-2] + [eig_trasp[-1], eig_trasp[-2]]
-
-        self.compute_proj = MultiHeadPCAProjection.init_proj(reshape,
-                                                             first_transp,
-                                                             eig_trasp,
-                                                             second_transp,
-                                                             second_reshape,
-                                                             self.dff)
+        second_reshape = shape[:-2] + [self.hidden_dim, head_size]
+        self.dff = tf.keras.layers.Dense(head_size,
+                                         activation='relu',
+                                         use_bias=False)
+        self.dropout = tf.keras.layers.Dropout(self.dropout)
+        init_tup = (reshape,
+                    first_transp,
+                    second_transp,
+                    second_reshape,
+                    self.dff)
+        self.second = second_transp
+        self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
 
     def init_proj(reshape,
                   first_transp,
-                  eig_trasp,
                   second_transp,
                   second_reshape,
                   dff):
         @tf.function(jit_compile=True)
         def compute_proj(X):
-            if not tf.is_symbolic_tensor(X):
-                reshape[1] = tf.shape(X)[1]
-            output = tf.reshape(X, shape=reshape)
-            output = tf.transpose(output, perm=first_transp)
-            if not tf.is_symbolic_tensor(X):
-                output = output - tf.math.reduce_mean(output,
-                                                      axis=-1,
-                                                      keepdims=True)
-            cov = tf.linalg.matmul(output, output, transpose_b=True)
-            _, output = tf.linalg.eigh(cov)
-            output = tf.transpose(output, perm=eig_trasp)
-            output = dff(output)
-            output = tf.transpose(output, perm=second_transp)
-            output = tf.reshape(output, shape=second_reshape)
-            return output
+            X = tf.reshape(X, shape=reshape)
+            X = tf.transpose(X, perm=first_transp)
+            # X -= tf.reduce_mean(X, axis=-1, keepdims=True)
+            cov = tf.linalg.matmul(X, X, transpose_a=True)
+            eig_values, eig_vec = tf.linalg.eigh(cov)
+            proj = tf.transpose(
+                tf.matmul(
+                    tf.linalg.diag(
+                        eig_values
+                    ),
+                    eig_vec,
+                ),
+                perm=second_transp
+            )
+            proj = tf.reshape(proj, shape=second_reshape)
+            return proj
         return compute_proj
 
     def call(self, inputs):
-        if not tf.is_symbolic_tensor(inputs):
-            inputs = self.norm(inputs)
         output = self.linear_up_scale(inputs)
         output = self.compute_proj(output)
-        return output
+        # output = self.norm(output)
+        return self.dropout(output)
 
     def get_config(self):
-        config = super().get_config()
-        config.update({
+        base_config = super().get_config()
+        config = {
             "hidden_dim": self.hidden_dim,
             "num_heads": self.num_heads,
-        })
-        return config
+            "dropout": self.dropout
+        }
+        return {**base_config, **config}
 
 
 @tf.keras.saving.register_keras_serializable(
-    package="amplicon_gpt.layers"
+    package="ReadHead"
 )
 class ReadHead(tf.keras.layers.Layer):
     def __init__(
@@ -348,16 +342,15 @@ class ReadHead(tf.keras.layers.Layer):
             tf.keras.layers.Dense(self.output_dim),
         ])
 
-
     def get_config(self):
-        config = super().get_config()
-        config.update({
+        base_config = super().get_config()
+        config = {
             "hidden_dim": self.hidden_dim,
             "num_heads": self.num_heads,
             "num_layers": self.num_layers,
             "output_dim": self.output_dim,
-        })
-        return config
+        }
+        return {**base_config, **config}
 
     def call(self, inputs, training=None):
         output = inputs[:, -1, :]
