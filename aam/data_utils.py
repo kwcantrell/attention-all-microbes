@@ -125,7 +125,7 @@ def combine_count_datasets(
     add_index=False,
 ):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens=7,
+        max_tokens=8,
         split='character',
         output_mode='int',
         output_sequence_length=max_bp)

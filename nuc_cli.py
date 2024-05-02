@@ -69,6 +69,7 @@ def _aam_globals():
 
 aam_globals = _aam_globals()
 
+
 @cli.command()
 @click.option(
     '--i-table-path',
@@ -171,7 +172,7 @@ aam_globals = _aam_globals()
 )
 @click.option(
     '--p-lr',
-    default=0.001,
+    default=0.0001,
     show_default=True,
     type=float
 )
@@ -405,7 +406,7 @@ def fit_regressor(
 )
 @click.option(
     '--p-enc-layers',
-    default=6,
+    default=2,
     show_default=True,
     type=int
 )
