@@ -29,13 +29,15 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         self.attention_layers = attention_layers
         self.dff = dff
         self.dropout_rate = dropout_rate
+        self.random_generator = (
+            tf.random.Generator.from_non_deterministic_state()
+        )
 
         self.emb_layer = tf.keras.layers.Embedding(
             8,
             512,
             input_length=max_bp,
-            embeddings_initializer=tf.keras.initializers.GlorotNormal(),
-            mask_zero=True
+            embeddings_initializer=tf.keras.initializers.GlorotNormal()
         )
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
                 max_length=max_bp,
@@ -90,13 +92,32 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             ),
             dtype=tf.bool
         )
+
+        if training:
+            # randomly mask nucleotides
+            random_mask = tf.cast(
+                tf.math.greater(
+                    self.random_generator.uniform(
+                        tf.shape(seq),
+                        minval=0,
+                        maxval=1
+                    ),
+                    0.1
+                ),
+                dtype=tf.int64
+            )
+            seq = tf.multiply(
+                seq,
+                random_mask
+            )
+
         output = self.emb_layer(seq)
         output = output + self.pos_emb(output)
 
         output = self.pca_layer(output, training=training, mask=mask)
-        output = tf.multiply(
+        output = tf.add(
             output,
-            tf.expand_dims(rclr, axis=-1)
+            tf.expand_dims(rclr, axis=-1),
         )
 
         output = self.attention_layer(

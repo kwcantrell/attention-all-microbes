@@ -303,7 +303,7 @@ class NucModel(tf.keras.Model):
             reg_out, logits = tf.nest.flatten(outputs)
             # Compute regression loss
             loss = self.pair_loss(y, reg_out)
-            attention_loss = tf.reduce_sum(
+            attention_loss = tf.reduce_mean(
                 self.attention_loss(
                     seq,
                     logits
@@ -340,7 +340,7 @@ class NucModel(tf.keras.Model):
 
         # Compute regression loss
         loss = self.pair_loss(y, reg_out)
-        attention_loss = tf.reduce_sum(
+        attention_loss = tf.reduce_mean(
             self.attention_loss(
                 seq,
                 logits

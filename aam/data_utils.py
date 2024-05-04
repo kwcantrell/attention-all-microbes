@@ -184,7 +184,6 @@ def combine_datasets(
         tf.data.Dataset
         .zip(zip)
     )
-            # .prefetch(tf.data.AUTOTUNE))
 
 
 def batch_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
@@ -194,7 +193,7 @@ def batch_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
         shape = tf.shape(seq)[ASV_DIM]
         pad = shape // 8 * 8 + 8 - shape
 
-        gx = tf.exp(tf.reduce_mean(tf.math.log(rclr)))
+        gx = tf.reduce_sum(rclr, axis=-1, keepdims=True)
         return (
             (
                 ind,
