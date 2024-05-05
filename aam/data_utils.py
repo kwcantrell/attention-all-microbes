@@ -186,7 +186,7 @@ def combine_datasets(
     )
 
 
-def batch_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
+def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs):
 
     def step_pad(ind, seq, rclr, dist):
         ASV_DIM = 0
@@ -194,6 +194,7 @@ def batch_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
         pad = shape // 8 * 8 + 8 - shape
 
         gx = tf.reduce_sum(rclr, axis=-1, keepdims=True)
+        # gx = tf.exp(tf.reduce_mean(tf.math.log(rclr)))
         return (
             (
                 ind,
@@ -218,7 +219,7 @@ def batch_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
                 padded_shapes=(
                     (
                         [],
-                        [None, 150],
+                        [None, max_bp],
                         [None]
                     ),
                     []
@@ -237,7 +238,7 @@ def batch_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
                 padded_shapes=(
                     (
                         [],
-                        [None, 150],
+                        [None, max_bp],
                         [None]
                     ),
                     []

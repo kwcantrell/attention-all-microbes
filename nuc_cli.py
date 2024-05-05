@@ -262,9 +262,12 @@ def fit_regressor(
         full_dataset,
         train_percent=.8
     )
+    training_size = training.cardinality().numpy()
+    training_ids = ids[:training_size]
     training_dataset = batch_dataset(
         training,
         p_batch_size,
+        i_max_bp,
         shuffle=True,
         repeat=1,
     )
@@ -272,6 +275,7 @@ def fit_regressor(
     validation_dataset = batch_dataset(
         val,
         p_batch_size,
+        i_max_bp,
         shuffle=False,
         repeat=1,
     )
@@ -294,6 +298,21 @@ def fit_regressor(
         std
     )
 
+    reg_out_callbacks = [
+        MAE_Scatter(
+            'training',
+            validation_dataset,
+            metadata[metadata.index.isin(training_ids)],
+            'month',
+            None,
+            None,
+            mean,
+            std,
+            figure_path,
+            report_back_after=p_report_back_after
+        )
+    ]
+
     core_callbacks = [
         # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
@@ -315,7 +334,7 @@ def fit_regressor(
         training_dataset,
         validation_data=validation_dataset,
         callbacks=[
-            # *reg_out_callbacks,
+            *reg_out_callbacks,
             *core_callbacks
         ],
         epochs=p_epochs

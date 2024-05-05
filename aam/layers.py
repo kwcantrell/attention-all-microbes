@@ -58,29 +58,175 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             activation='relu',
         )
 
+    def build(self, input_shape):
+        self.nucleotides = tf.Variable(
+            tf.zeros(
+                shape=(self.max_bp, 6),
+                dtype=tf.float32
+            ),
+            trainable=False,
+            dtype=tf.float32
+        )
+
+        def _add_random_sequences_and_mask(
+            seq,
+            seeds,
+            rclr,
+            unormalized_log_prob,
+            range
+        ):
+            seq_mask = tf.cast(
+                tf.math.equal(
+                    seq,
+                    0
+                ),
+                dtype=tf.int32
+            )
+
+            uniform_mask = tf.random.stateless_uniform(
+                tf.shape(seq),
+                tf.cast(seeds[:, 0], dtype=tf.int32),
+                minval=0.,
+                maxval=1.,
+                dtype=tf.float32
+            )
+            nucleotides = tf.reduce_sum(
+                tf.multiply(
+                    tf.one_hot(
+                        seq,
+                        depth=6,
+                        axis=-1,
+                        dtype=tf.float32
+                    ),
+                    tf.expand_dims(uniform_mask, axis=-1)
+                ),
+                axis=[0, 1]
+            )
+            unormalized_log_prob = tf.add(
+                tf.nn.softmax(unormalized_log_prob, axis=0),
+                tf.nn.softmax(nucleotides, axis=0)
+            )
+            # unormalized_log_prob += nucleotides
+
+            nuc_strings = tf.multiply(
+                tf.reshape(
+                    tf.transpose(
+                        tf.random.stateless_categorical(
+                            unormalized_log_prob,
+                            tf.cast(range, dtype=tf.int32),
+                            tf.cast(seeds[:, 1], dtype=tf.int32),
+                            dtype=tf.int32
+                        )
+                    ),
+                    tf.shape(seq)
+                ),
+                seq_mask
+            )
+            seq = tf.concat([seq, nuc_strings[:, -15:, :]], axis=1)
+            # seq = tf.add(
+            #     seq,
+            #     nuc_strings
+            # )
+            seq = tf.pad(
+                seq,
+                [
+                    [0, 0],
+                    [0, 1],
+                    [0, 0]
+                ],
+                constant_values=6
+            )
+
+            rclr_noise = tf.divide(
+                tf.random.stateless_normal(
+                    tf.shape(nuc_strings[:, -15:, 0]),
+                    tf.cast(seeds[:, 2], dtype=tf.int32),
+                ),
+                range
+            )
+            rclr = tf.concat([rclr, rclr_noise], axis=1)
+            rclr = tf.pad(
+                rclr,
+                paddings=[
+                    [0, 0],
+                    [0, 1]
+                ],
+                constant_values=0
+            )
+            # rclr = tf.add(
+            #     rclr,
+            #     rclr_noise
+            # )
+
+            random_mask = tf.random.stateless_binomial(
+                tf.shape(seq),
+                seeds[:, 3],
+                tf.ones_like(
+                    seq,
+                    dtype=tf.float32
+                ),
+                [1 - .1],
+                output_dtype=tf.int32
+            )
+            unmasked_sequence = seq
+            seq = tf.multiply(
+                seq,
+                random_mask
+            )
+            return (seq, unmasked_sequence, rclr, unormalized_log_prob)
+        self._add_random_sequences_and_mask = tf.function(
+            _add_random_sequences_and_mask,
+        )
+
     def call(self, inputs, training=None):
         seq, rclr = tf.nest.flatten(inputs, expand_composites=True)
-        seq = tf.pad(
-            seq,
-            [
-                [0, 0],
-                [0, 1],
-                [0, 0]
-            ],
-            constant_values=6
-        )
-        rclr = tf.pad(
-            rclr,
-            paddings=[
-                [0, 0],
-                [0, 1]
-            ],
-            constant_values=1
-        )
+        if training:
+            range = tf.cast(
+                tf.reduce_prod(
+                    tf.shape(seq)[:-1],
+                ),
+                dtype=tf.float32
+            )
+            seeds = self.random_generator.make_seeds(4)
+            unormalized_log_prob = self.nucleotides.read_value()
+            seq = tf.cast(seq, dtype=tf.int32)
+            seq, unmasked_sequences, rclr, unormalized_log_prob = self._add_random_sequences_and_mask(
+                seq,
+                seeds,
+                rclr,
+                unormalized_log_prob,
+                range
+            )
+            seq = tf.cast(seq, dtype=tf.int64)
+            self.nucleotides.assign(
+                unormalized_log_prob,
+                read_value=False
+            )
+        else:
+            seq = tf.pad(
+                seq,
+                [
+                    [0, 0],
+                    [0, 1],
+                    [0, 0]
+                ],
+                constant_values=6
+            )
+            unmasked_sequences = seq
+
+            rclr = tf.pad(
+                rclr,
+                paddings=[
+                    [0, 0],
+                    [0, 1]
+                ],
+                constant_values=0
+            )
+
         mask = tf.cast(
-            tf.expand_dims(
-                tf.not_equal(rclr, 0),
-                axis=-1
+            tf.not_equal(
+                seq,
+                0
             ),
             dtype=tf.float32
         )
@@ -92,25 +238,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             ),
             dtype=tf.bool
         )
-
-        if training:
-            # randomly mask nucleotides
-            random_mask = tf.cast(
-                tf.math.greater(
-                    self.random_generator.uniform(
-                        tf.shape(seq),
-                        minval=0,
-                        maxval=1
-                    ),
-                    0.1
-                ),
-                dtype=tf.int64
-            )
-            seq = tf.multiply(
-                seq,
-                random_mask
-            )
-
         output = self.emb_layer(seq)
         output = output + self.pos_emb(output)
 
@@ -125,7 +252,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             attention_mask=attention_mask,
             training=training
         )
-        return output
+        return (output, unmasked_sequences[:, :-1, :])
 
     def get_config(self):
         base_config = super().get_config()
@@ -186,19 +313,9 @@ class PCAProjector(tf.keras.layers.Layer):
 
     def call(self, inputs, mask=None):
         inputs = self.ff(inputs)
-
         pca_output = self.pca_layer(inputs)
         pca_output = tf.squeeze(self.point(pca_output), axis=-1)
-
-        residual_output = tf.squeeze(self.point(inputs), axis=-1)
-        residual_output = self.ff2(residual_output)
-        output = self.norm(residual_output + pca_output)
-        if mask is not None:
-            output = tf.multiply(
-                output,
-                mask
-            )
-        output = self.dropout_layer(output)
+        output = self.dropout_layer(pca_output)
         return output
 
     def get_config(self):
@@ -229,16 +346,26 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.dropout = dropout
         self.norm = tf.keras.layers.LayerNormalization(axis=-2)
+        self.norm2 = tf.keras.layers.LayerNormalization()
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
-        self.linear_up_scale = tf.keras.layers.Dense(
-            self.hidden_dim,
-            activation='relu',
-            use_bias=True
-        )
         # occurs after up scaling
         head_size = self.hidden_dim // self.num_heads
+
+        self.linear_up_scale = tf.keras.Sequential([
+            tf.keras.layers.Dense(
+                self.hidden_dim,
+                activation='relu',
+                use_bias=True
+            ),
+            tf.keras.layers.Dense(
+                head_size,
+                activation='relu',
+                use_bias=True
+            )
+        ])
+
         reshape = shape[:-1] + [self.num_heads, head_size]
         first_transp = [i for i in range(len(reshape))]
         first_transp = first_transp[:-3] + [first_transp[-2],
@@ -270,17 +397,18 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             X = tf.transpose(X, perm=first_transp)
             cov = tf.linalg.matmul(X, X, transpose_a=True)
             eig_values, eig_vec = tf.linalg.eigh(cov)
+            pca = tf.transpose(
+                tf.matmul(
+                    tf.linalg.diag(
+                        eig_values
+                    ),
+                    eig_vec,
+                ),
+                perm=second_transp
+            )
             proj = tf.math.softmax(
                 tf.divide(
-                    tf.transpose(
-                        tf.matmul(
-                            tf.linalg.diag(
-                                eig_values
-                            ),
-                            eig_vec,
-                        ),
-                        perm=second_transp
-                    ),
+                    pca,
                     tf.math.sqrt(
                         tf.cast(
                             tf.shape(X)[-2],
@@ -292,13 +420,15 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
             )
 
             proj = tf.reshape(proj, shape=second_reshape)
-            return proj
+            pca = tf.reshape(pca, shape=second_reshape)
+            return (proj, pca)
         return compute_proj
 
     def call(self, inputs):
         output = self.norm(inputs)
-        output = self.compute_proj(output)
+        output, pca = self.compute_proj(output)
         output = self.linear_up_scale(output)
+        output = self.norm2(output + pca)
         return output
 
     def get_config(self):
@@ -317,6 +447,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
 class ReadHead(tf.keras.layers.Layer):
     def __init__(
             self,
+            max_bp,
             hidden_dim,
             num_heads,
             num_layers,
@@ -324,6 +455,7 @@ class ReadHead(tf.keras.layers.Layer):
             **kwargs
     ):
         super().__init__(**kwargs)
+        self.max_bp = max_bp
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
@@ -346,7 +478,7 @@ class ReadHead(tf.keras.layers.Layer):
             use_bias=True
         )
         self.attention_out = tf.keras.layers.Dense(
-            150,
+            max_bp,
             use_bias=True
         )
         self.nuc_out = tf.keras.layers.Dense(
@@ -357,6 +489,7 @@ class ReadHead(tf.keras.layers.Layer):
     def get_config(self):
         base_config = super().get_config()
         config = {
+            "max_bp": self.max_bp,
             "hidden_dim": self.hidden_dim,
             "num_heads": self.num_heads,
             "num_layers": self.num_layers,
@@ -365,7 +498,7 @@ class ReadHead(tf.keras.layers.Layer):
         return {**base_config, **config}
 
     def call(self, inputs, training=None):
-        output = self.read_head(inputs, training=training)
+        output = self.read_head(inputs)
         reg_out = self.reg_out(output[:, -1, :])
         attention_out = self.nuc_out(
             tf.expand_dims(
