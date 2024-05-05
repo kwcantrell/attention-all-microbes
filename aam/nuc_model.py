@@ -96,6 +96,7 @@ def _construct_regressor(
     )
     # output = nuc_emb(input)
     readhead = ReadHead(
+        max_bp=max_bp,
         hidden_dim=pca_hidden_dim,
         num_heads=pca_heads,
         num_layers=pca_layers,
@@ -262,9 +263,9 @@ class NucModel(tf.keras.Model):
         @tf.autograph.experimental.do_not_convert
         def one_step(inputs, training=None):
             ind, seq, rclr = inputs
-            output = self.feature_emb((seq, rclr), training=training)
+            output, seq = self.feature_emb((seq, rclr), training=training)
             output = self.readhead(output)
-            return output
+            return (output, seq)
         self.call_function = tf.function(one_step, reduce_retracing=True)
 
     def call(self, inputs, training=None):
@@ -281,16 +282,17 @@ class NucModel(tf.keras.Model):
             batch_size=self.batch_size,
             dtype=tf.float32
         )
-        output = self.feature_emb((input_seq, input_rclr))
+        output, _ = self.feature_emb((input_seq, input_rclr))
         output = self.readhead(output)
 
     def predict_step(self, data):
         x, y = data
-        y_pred = self(x, training=False)
-        return (
-            y_pred*self.scale + self.shift,
-            y*self.scale + self.shift
-        )
+        ind, seq, rclr = tf.nest.flatten(x)
+        ind = tf.squeeze(ind)
+        outputs, seq = self((ind, seq, rclr), training=True)
+        reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
+
+        return reg_out
 
     def train_step(self, data):
         x, y = data
@@ -299,8 +301,8 @@ class NucModel(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             # Forward pass
-            outputs = self((ind, seq, rclr), training=True)
-            reg_out, logits = tf.nest.flatten(outputs)
+            outputs, seq = self((ind, seq, rclr), training=True)
+            reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
             # Compute regression loss
             loss = self.pair_loss(y, reg_out)
             attention_loss = tf.reduce_mean(
@@ -335,8 +337,8 @@ class NucModel(tf.keras.Model):
         ind = tf.squeeze(ind)
 
         # Forward pass
-        outputs = self((ind, seq, rclr), training=False)
-        reg_out, logits = tf.nest.flatten(outputs)
+        outputs, seq = self((ind, seq, rclr), training=False)
+        reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
 
         # Compute regression loss
         loss = self.pair_loss(y, reg_out)
