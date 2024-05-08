@@ -2,10 +2,13 @@ import click
 import tensorflow as tf
 import aam._parameter_descriptions as desc
 from aam.common.cli_util import aam_model_options
+from aam.common.data_utils import(
+    load_biom_table, shuffle_table,train_val_split
+)
 from attention_regression.data_utils import (
-    load_biom_table, shuffle_table, filter_and_reorder, extract_col,
+    filter_and_reorder, extract_col,
     convert_table_to_dataset, batch_dataset, convert_to_normalized_dataset,
-    train_val_split
+    
 )
 # from attention_regression.model import _construct_model
 from attention_regression.randomized_model import _construct_model
