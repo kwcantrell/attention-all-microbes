@@ -1,32 +1,28 @@
 import tensorflow as tf
 import tensorflow_models as tfm
-from aam.common.losses import PairwiseLoss
-from aam.layers.encoders.nucleotides import ReadHead, NucleotideEmbedding
-from aam.common.metrics import PairwiseMAE, MAE
 
+from aam.common.losses import PairwiseLoss
+from aam.common.metrics import MAE, PairwiseMAE
+from aam.layers.encoders.nucleotides import NucleotideEmbedding, ReadHead
 
 
 def _construct_base(
-        batch_size: int,
-        dropout_rate: float,
-        pca_hidden_dim: int,
-        pca_heads: int,
-        pca_layers: int,
-        dff: int,
-        token_dim: int,
-        ff_clr,
-        attention_layers: int,
-        attention_heads: int,
-        output_dim: int,
-        max_bp: int,
-        shift=None,
-        scale=None
+    batch_size: int,
+    dropout_rate: float,
+    pca_hidden_dim: int,
+    pca_heads: int,
+    pca_layers: int,
+    dff: int,
+    token_dim: int,
+    ff_clr,
+    attention_layers: int,
+    attention_heads: int,
+    output_dim: int,
+    max_bp: int,
+    shift=None,
+    scale=None,
 ):
-    input = tf.keras.Input(
-        shape=[None, max_bp],
-        batch_size=batch_size,
-        dtype=tf.int64
-    )
+    input = tf.keras.Input(shape=[None, max_bp], batch_size=batch_size, dtype=tf.int64)
     nuc_emb = NucleotideEmbedding(
         pca_hidden_dim,
         max_bp,
@@ -36,53 +32,44 @@ def _construct_base(
         attention_heads,
         attention_layers,
         dff,
-        dropout_rate
+        dropout_rate,
     )
     output = nuc_emb(input)
     readhead = ReadHead(
         hidden_dim=pca_hidden_dim,
         num_heads=pca_heads,
         num_layers=pca_layers,
-        output_dim=output_dim
+        output_dim=output_dim,
     )
     output = readhead(output)
-    model = UnifracModel(
-        max_bp,
-        batch_size,
-        nuc_emb,
-        readhead
-    )
+    model = UnifracModel(max_bp, batch_size, nuc_emb, readhead)
     # model = NucModel(
     #     max_bp,
     #     batch_size,
     #     nuc_emb,
     #     readhead,
-        
+
     # )
     return model
 
 
 def _construct_regressor(
-        batch_size: int,
-        dropout_rate: float,
-        pca_hidden_dim: int,
-        pca_heads: int,
-        pca_layers: int,
-        dff: int,
-        token_dim: int,
-        ff_clr,
-        attention_layers: int,
-        attention_heads: int,
-        output_dim: int,
-        max_bp: int,
-        shift=None,
-        scale=None
+    batch_size: int,
+    dropout_rate: float,
+    pca_hidden_dim: int,
+    pca_heads: int,
+    pca_layers: int,
+    dff: int,
+    token_dim: int,
+    ff_clr,
+    attention_layers: int,
+    attention_heads: int,
+    output_dim: int,
+    max_bp: int,
+    shift=None,
+    scale=None,
 ):
-    input = tf.keras.Input(
-        shape=[None, max_bp],
-        batch_size=batch_size,
-        dtype=tf.int64
-    )
+    input = tf.keras.Input(shape=[None, max_bp], batch_size=batch_size, dtype=tf.int64)
     nuc_emb = NucleotideEmbedding(
         pca_hidden_dim,
         max_bp,
@@ -92,7 +79,7 @@ def _construct_regressor(
         attention_heads,
         attention_layers,
         dff,
-        dropout_rate
+        dropout_rate,
     )
     # output = nuc_emb(input)
     readhead = ReadHead(
@@ -100,30 +87,16 @@ def _construct_regressor(
         hidden_dim=pca_hidden_dim,
         num_heads=pca_heads,
         num_layers=pca_layers,
-        output_dim=1
+        output_dim=1,
     )
     # output = readhead(output)
-    model = NucModel(
-        max_bp,
-        batch_size,
-        nuc_emb,
-        readhead,
-        shift,
-        scale
-    )
+    model = NucModel(max_bp, batch_size, nuc_emb, readhead, shift, scale)
     return model
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracModel")
 class UnifracModel(tf.keras.Model):
-    def __init__(
-        self,
-        max_bp,
-        batch_size,
-        feature_emb,
-        readhead,
-        **kwargs
-    ):
+    def __init__(self, max_bp, batch_size, feature_emb, readhead, **kwargs):
         super().__init__(**kwargs)
         self.max_bp = max_bp
         self.batch_size = batch_size
@@ -141,6 +114,7 @@ class UnifracModel(tf.keras.Model):
             output = self.feature_emb(seq, training=training)
             output = self.readhead(output)
             return output
+
         self.call_function = tf.function(one_step, reduce_retracing=True)
 
     def call(self, inputs, training=None):
@@ -148,9 +122,7 @@ class UnifracModel(tf.keras.Model):
 
     def build(self, input_shape):
         input = tf.keras.Input(
-            shape=[None, self.max_bp],
-            batch_size=self.batch_size,
-            dtype=tf.int64
+            shape=[None, self.max_bp], batch_size=self.batch_size, dtype=tf.int64
         )
         output = self.feature_emb(input)
         output = self.readhead(output)
@@ -207,12 +179,8 @@ class UnifracModel(tf.keras.Model):
         config = {
             "max_bp": self.max_bp,
             "batch_size": self.batch_size,
-            "feature_emb": tf.keras.saving.serialize_keras_object(
-                self.feature_emb
-            ),
-            "readhead": tf.keras.saving.serialize_keras_object(
-                self.readhead
-            ),
+            "feature_emb": tf.keras.saving.serialize_keras_object(self.feature_emb),
+            "readhead": tf.keras.saving.serialize_keras_object(self.readhead),
         }
         return {**base_config, **config}
 
@@ -230,14 +198,7 @@ class UnifracModel(tf.keras.Model):
 @tf.keras.saving.register_keras_serializable(package="NucModel")
 class NucModel(tf.keras.Model):
     def __init__(
-        self,
-        max_bp,
-        batch_size,
-        feature_emb,
-        readhead,
-        shift,
-        scale,
-        **kwargs
+        self, max_bp, batch_size, feature_emb, readhead, shift, scale, **kwargs
     ):
         super().__init__(**kwargs)
         self.max_bp = max_bp
@@ -248,12 +209,8 @@ class NucModel(tf.keras.Model):
         self.scale = scale
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.pair_loss = tf.keras.losses.MeanSquaredError()
-        self.attention_loss = (
-            tf.keras.losses.SparseCategoricalCrossentropy(
-                ignore_class=0,
-                from_logits=True,
-                reduction="none"
-            )
+        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(
+            ignore_class=0, from_logits=True, reduction="none"
         )
         self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.metric_traker = MAE(shift, scale, name="mae")
@@ -266,6 +223,7 @@ class NucModel(tf.keras.Model):
             output, seq = self.feature_emb((seq, rclr), training=training)
             output = self.readhead(output)
             return (output, seq)
+
         self.call_function = tf.function(one_step, reduce_retracing=True)
 
     def call(self, inputs, training=None):
@@ -273,14 +231,10 @@ class NucModel(tf.keras.Model):
 
     def build(self, input_shape):
         input_seq = tf.keras.Input(
-            shape=[None, self.max_bp],
-            batch_size=self.batch_size,
-            dtype=tf.int64
+            shape=[None, self.max_bp], batch_size=self.batch_size, dtype=tf.int64
         )
         input_rclr = tf.keras.Input(
-            shape=[None],
-            batch_size=self.batch_size,
-            dtype=tf.float32
+            shape=[None], batch_size=self.batch_size, dtype=tf.float32
         )
         output, _ = self.feature_emb((input_seq, input_rclr))
         output = self.readhead(output)
@@ -305,13 +259,7 @@ class NucModel(tf.keras.Model):
             reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
             # Compute regression loss
             loss = self.pair_loss(y, reg_out)
-            attention_loss = tf.reduce_mean(
-                self.attention_loss(
-                    seq,
-                    logits
-                ),
-                axis=-1
-            )
+            attention_loss = tf.reduce_mean(self.attention_loss(seq, logits), axis=-1)
             loss += attention_loss
             self.loss_tracker.update_state(loss)
 
@@ -342,13 +290,7 @@ class NucModel(tf.keras.Model):
 
         # Compute regression loss
         loss = self.pair_loss(y, reg_out)
-        attention_loss = tf.reduce_mean(
-            self.attention_loss(
-                seq,
-                logits
-            ),
-            axis=-1
-        )
+        attention_loss = tf.reduce_mean(self.attention_loss(seq, logits), axis=-1)
         loss += attention_loss
         self.loss_tracker.update_state(loss)
 
@@ -366,12 +308,8 @@ class NucModel(tf.keras.Model):
         config = {
             "max_bp": self.max_bp,
             "batch_size": self.batch_size,
-            "feature_emb": tf.keras.saving.serialize_keras_object(
-                self.feature_emb
-            ),
-            "readhead": tf.keras.saving.serialize_keras_object(
-                self.readhead
-            ),
+            "feature_emb": tf.keras.saving.serialize_keras_object(self.feature_emb),
+            "readhead": tf.keras.saving.serialize_keras_object(self.readhead),
             "shift": self.shift,
             "scale": self.scale,
         }
