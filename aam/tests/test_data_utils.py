@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from biom.table import Table
-from aam.data_utils import get_sequencing_dataset
+from aam.common.data_utils import get_sequencing_dataset
 
 
 class TestSequencingData(unittest.TestCase):

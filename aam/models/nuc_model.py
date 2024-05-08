@@ -1,8 +1,8 @@
 import tensorflow as tf
 import tensorflow_models as tfm
-from aam.losses import PairwiseLoss
+from aam.common.losses import PairwiseLoss
 from aam.layers import ReadHead, NucleotideEmbedding
-from aam.metrics import PairwiseMAE, MAE
+from aam.common.metrics import PairwiseMAE, MAE
 
 
 

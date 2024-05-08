@@ -1,7 +1,7 @@
 import click
 import tensorflow as tf
 import aam._parameter_descriptions as desc
-from aam.cli_util import aam_model_options
+from aam.common.cli_util import aam_model_options
 from attention_regression.data_utils import (
     load_biom_table, shuffle_table, filter_and_reorder, extract_col,
     convert_table_to_dataset, batch_dataset, convert_to_normalized_dataset,
@@ -10,7 +10,7 @@ from attention_regression.data_utils import (
 # from attention_regression.model import _construct_model
 from attention_regression.randomized_model import _construct_model
 from attention_regression.callbacks import MAE_Scatter
-from aam.callbacks import SaveModel
+from aam.common.callbacks import SaveModel
 import pandas as pd
 import numpy as np
 import os

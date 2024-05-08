@@ -1,17 +1,17 @@
 import click
 import tensorflow as tf
 import aam._parameter_descriptions as desc
-from aam.cli_util import aam_model_options
-from aam.data_utils import (
+from aam.common.cli_util import aam_model_options
+from aam.common.data_utils import (
     convert_table_to_dataset, batch_dist_dataset, batch_dataset,
     get_unifrac_dataset, combine_datasets, get_sequencing_dataset, get_sequencing_count_dataset,combine_count_datasets
 )
 from attention_regression.data_utils import (
     load_biom_table, shuffle_table, train_val_split
 )
-from aam.model_utils_current import pretrain_unifrac, regressor
+from aam.common.model_utils import pretrain_unifrac, regressor
 from attention_regression.callbacks import MAE_Scatter
-from aam.callbacks import SaveModel
+from aam.common.callbacks import SaveModel
 import pandas as pd
 import numpy as np
 import os

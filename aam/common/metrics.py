@@ -1,5 +1,5 @@
 import tensorflow as tf
-from aam.losses import _pairwise_distances, mae_loss
+from aam.common.losses import _pairwise_distances, mae_loss
 
 
 # @tf.keras.saving.register_keras_serializable(

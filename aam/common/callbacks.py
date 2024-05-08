@@ -4,11 +4,11 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import sklearn
-from aam.losses import _pairwise_distances
+from aam.common.losses import _pairwise_distances
 from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
 from biom import load_table
-from aam.data_utils import (
+from aam.common.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     # batch_dataset,
 )

@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import seaborn as sns
-from aam.losses import denormalize
+from aam.common.losses import denormalize
 
 
 def mean_confidence_interval(data, confidence=0.95):

@@ -4,7 +4,7 @@ from attention_regression.layers import (
     FeatureLoadings,
     Regressor
 )
-from aam.metrics import MAE
+from aam.common.metrics import MAE
 
 
 # temp hacky way to initialize model creation
