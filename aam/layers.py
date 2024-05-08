@@ -123,10 +123,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 seq_mask
             )
             seq = tf.concat([seq, nuc_strings[:, -15:, :]], axis=1)
-            # seq = tf.add(
-            #     seq,
-            #     nuc_strings
-            # )
             seq = tf.pad(
                 seq,
                 [
@@ -142,7 +138,10 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                     tf.shape(nuc_strings[:, -15:, 0]),
                     tf.cast(seeds[:, 2], dtype=tf.int32),
                 ),
-                range
+                tf.cast(
+                    tf.reduce_prod(tf.shape(rclr)[1]),
+                    dtype=tf.float32
+                )
             )
             rclr = tf.concat([rclr, rclr_noise], axis=1)
             rclr = tf.pad(
@@ -153,11 +152,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 ],
                 constant_values=0
             )
-            # rclr = tf.add(
-            #     rclr,
-            #     rclr_noise
-            # )
-
             random_mask = tf.random.stateless_binomial(
                 tf.shape(seq),
                 seeds[:, 3],

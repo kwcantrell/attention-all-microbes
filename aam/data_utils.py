@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import load_table
-from unifrac import unweighted
+# from unifrac import unweighted
 
 
 def align_table_and_metadata(table_path,

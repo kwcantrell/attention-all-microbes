@@ -7,7 +7,8 @@ from attention_regression.data_utils import (
     convert_table_to_dataset, batch_dataset, convert_to_normalized_dataset,
     train_val_split
 )
-from attention_regression.model import _construct_model
+# from attention_regression.model import _construct_model
+from attention_regression.randomized_model import _construct_model
 from attention_regression.callbacks import MAE_Scatter
 from aam.callbacks import SaveModel
 import pandas as pd

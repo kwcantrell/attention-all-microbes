@@ -303,7 +303,7 @@ def fit_regressor(
             'training',
             validation_dataset,
             metadata[metadata.index.isin(training_ids)],
-            'month',
+            'host_age',
             None,
             None,
             mean,

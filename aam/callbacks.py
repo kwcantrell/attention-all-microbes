@@ -12,7 +12,7 @@ from aam.data_utils import (
     get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
     # batch_dataset,
 )
-from unifrac import unweighted
+# from unifrac import unweighted
 
 
 def mean_confidence_interval(data, confidence=0.95):
