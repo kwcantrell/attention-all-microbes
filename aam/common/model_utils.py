@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 from aam.common.losses import PairwiseLoss
-from aam.layers import ReadHead, NucleotideEmbedding
+from aam.layers.encoders.nucleotides import ReadHead, NucleotideEmbedding
 from aam.common.metrics import PairwiseMAE
 from aam.models.nuc_model import _construct_base, _construct_regressor
 
