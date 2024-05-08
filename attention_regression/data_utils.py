@@ -3,15 +3,6 @@ import tensorflow as tf
 from biom import load_table
 
 
-def load_biom_table(fp):
-    table = load_table(fp)
-    return table
-
-
-def shuffle_table(table):
-    ids = table.ids(axis='sample')
-    np.random.shuffle(ids)
-    return table.sort_order(ids)
 
 
 def convert_table_to_dataset(table):
@@ -135,22 +126,4 @@ def batch_dataset(dataset, batch_size, repeat=None, shuffle=False):
     return dataset
 
 
-def train_val_split(
-    dataset: tf.data.Dataset,
-    train_percent: float
-):
-    size = dataset.cardinality().numpy()
-    train_size = int(size*train_percent)
-    training_dataset = (
-        dataset
-        .take(train_size)
-        .cache()
-        .prefetch(tf.data.AUTOTUNE)
-    )
-    validation_dataset = (
-        dataset
-        .skip(train_size)
-        .cache()
-        .prefetch(tf.data.AUTOTUNE)
-    )
-    return training_dataset, validation_dataset
+

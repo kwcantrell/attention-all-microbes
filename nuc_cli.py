@@ -4,9 +4,7 @@ import aam._parameter_descriptions as desc
 from aam.common.cli_util import aam_model_options
 from aam.common.data_utils import (
     convert_table_to_dataset, batch_dist_dataset, batch_dataset,
-    get_unifrac_dataset, combine_datasets, get_sequencing_dataset, get_sequencing_count_dataset,combine_count_datasets
-)
-from attention_regression.data_utils import (
+    get_unifrac_dataset, combine_datasets, get_sequencing_dataset, get_sequencing_count_dataset,combine_count_datasets,
     load_biom_table, shuffle_table, train_val_split
 )
 from aam.common.model_utils import pretrain_unifrac, regressor
