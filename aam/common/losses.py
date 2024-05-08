@@ -1,5 +1,6 @@
-import tensorflow as tf
 from math import comb
+
+import tensorflow as tf
 
 
 @tf.function(jit_compile=True)
@@ -27,8 +28,11 @@ def _pairwise_distances(embeddings, squared=False):
     # Compute the pairwise distance matrix as we have:
     # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
     # shape (batch_size, batch_size)
-    distances = (tf.expand_dims(square_norm, 1) - 2.0 * dot_product +
-                 tf.expand_dims(square_norm, 0))
+    distances = (
+        tf.expand_dims(square_norm, 1)
+        - 2.0 * dot_product
+        + tf.expand_dims(square_norm, 0)
+    )
 
     # Because of computation errors, some distances might be negative so we
     # put everything >= 0.0
@@ -69,10 +73,11 @@ class PairwiseLoss(tf.keras.losses.Loss):
             difference = tf.math.square(y_true - y_pred_dist)
             difference = tf.linalg.band_part(difference, 0, -1)
             return tf.reduce_sum(difference) / nc2(batch_size)
+
         self.loss = pairwise_loss
 
     def call(self, y_true, y_pred):
-        return self.loss(y_true, y_pred),
+        return (self.loss(y_true, y_pred),)
 
     def get_config(self):
         return super().get_config()
@@ -101,11 +106,12 @@ def pairwise_residual_mse(batch_size, mean=None, std=None):
         rse = tf.linalg.band_part(tf.square(r_yt - r_yp), 0, -1)
         mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
         return mse + mrse
+
     return inner
 
 
 def denormalize(tensor, mean, std):
-    return tensor*std + mean
+    return tensor * std + mean
 
 
 def mae_loss(mean=None, std=None):
@@ -114,6 +120,7 @@ def mae_loss(mean=None, std=None):
             y_true = denormalize(y_true, mean, std)
             y_pred = denormalize(y_pred, mean, std)
         return tf.abs(y_true - y_pred)
+
     return mae
 
 
@@ -122,6 +129,7 @@ def mse_loss(mean=None, std=None):
         y_true = denormalize(y_true, mean, std)
         y_pred = denormalize(y_pred, mean, std)
         return tf.square(y_true - y_pred)
+
     return mse
 
 
@@ -133,10 +141,7 @@ def real_feature_mask(total_features, size):
 
 
 class MeanSquaredError(tf.keras.losses.Loss):
-    def __init__(self,
-                 mean=None,
-                 std=None,
-                 **kwargs):
+    def __init__(self, mean=None, std=None, **kwargs):
         super().__init__(**kwargs)
         self.fn = mse_loss(mean, std)
 
@@ -159,44 +164,28 @@ class BaseLoss(tf.keras.losses.Loss):
         self.loss_fn = loss_fn
 
     def call(self, y_true, y_pred):
-        return tf.reduce_mean(
-            self.loss_fn(y_true, y_pred),
-            axis=-1
-        )
+        return tf.reduce_mean(self.loss_fn(y_true, y_pred), axis=-1)
 
     def get_config(self):
         base_config = super().get_config()
-        config = {
-            "loss_fn": self.loss_fn
-        }
+        config = {"loss_fn": self.loss_fn}
         return {**base_config, **config}
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="FeaturePresent"
-)
-
-
+@tf.keras.saving.register_keras_serializable(package="FeaturePresent")
 class FeaturePresent(tf.keras.losses.Loss):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.loss = tf.keras.losses.sparse_categorical_crossentropy
 
     def call(self, mask, y_pred):
-
         mask = tf.cast(mask, dtype=tf.int64)
-        return tf.reduce_mean(
-            self.loss(mask, y_pred, from_logits=True),
-            axis=-1
-        )
+        return tf.reduce_mean(self.loss(mask, y_pred, from_logits=True), axis=-1)
 
     def get_input(self, model_outputs, dataset_outputs=None):
         token_mask = model_outputs["token_mask"]
         embeddings = model_outputs["embeddings"]
-        return [
-            token_mask,
-            embeddings
-        ]
+        return [token_mask, embeddings]
 
     def get_config(self):
         return super().get_config()

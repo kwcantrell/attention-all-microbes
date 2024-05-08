@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import load_table
+
+
 # from unifrac import unweighted
 def load_biom_table(fp):
     table = load_table(fp)
@@ -9,29 +11,18 @@ def load_biom_table(fp):
 
 
 def shuffle_table(table):
-    ids = table.ids(axis='sample')
+    ids = table.ids(axis="sample")
     np.random.shuffle(ids)
     return table.sort_order(ids)
 
-def train_val_split(
-    dataset: tf.data.Dataset,
-    train_percent: float
-):
+
+def train_val_split(dataset: tf.data.Dataset, train_percent: float):
     size = dataset.cardinality().numpy()
-    train_size = int(size*train_percent)
-    training_dataset = (
-        dataset
-        .take(train_size)
-        .cache()
-        .prefetch(tf.data.AUTOTUNE)
-    )
-    validation_dataset = (
-        dataset
-        .skip(train_size)
-        .cache()
-        .prefetch(tf.data.AUTOTUNE)
-    )
+    train_size = int(size * train_percent)
+    training_dataset = dataset.take(train_size).cache().prefetch(tf.data.AUTOTUNE)
+    validation_dataset = dataset.skip(train_size).cache().prefetch(tf.data.AUTOTUNE)
     return training_dataset, validation_dataset
+
 
 def filter_and_reorder(metadata, ids):
     metadata = metadata[metadata.index.isin(ids)]
@@ -46,20 +37,20 @@ def extract_col(metadata, col, output_dtype=None):
     return metadata_col
 
 
-def align_table_and_metadata(table_path,
-                             metadata_path,
-                             metadata_col=None,
-                             is_regressor=True):
-    metadata = pd.read_csv(metadata_path, sep='\t', index_col=0)
+def align_table_and_metadata(
+    table_path, metadata_path, metadata_col=None, is_regressor=True
+):
+    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
     if is_regressor:
-        metadata = metadata[pd.to_numeric(metadata[metadata_col],
-                                          errors='coerce').notnull()]
+        metadata = metadata[
+            pd.to_numeric(metadata[metadata_col], errors="coerce").notnull()
+        ]
         metadata[metadata_col] = metadata[metadata_col].astype(np.float32)
     else:
-        metadata[metadata_col] = metadata[metadata_col].astype('category')
-        metadata[metadata_col] = metadata[metadata_col].cat.codes.astype('int')
+        metadata[metadata_col] = metadata[metadata_col].astype("category")
+        metadata[metadata_col] = metadata[metadata_col].cat.codes.astype("int")
     table = load_table(table_path)
-    return table.align_to_dataframe(metadata, axis='sample')
+    return table.align_to_dataframe(metadata, axis="sample")
 
 
 def get_sequencing_dataset(table_path):
@@ -67,22 +58,23 @@ def get_sequencing_dataset(table_path):
         table = load_table(table_path)
     else:
         table = table_path
-    o_ids = tf.constant(table.ids(axis='observation'))
+    o_ids = tf.constant(table.ids(axis="observation"))
     table = table.transpose()
     data = table.matrix_data.tocoo()
     row_ind = data.row
     col_ind = data.col
     values = data.data
     indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    table_data = tf.sparse.SparseTensor(indices=indices, values=values,
-                                        dense_shape=table.shape)
+    table_data = tf.sparse.SparseTensor(
+        indices=indices, values=values, dense_shape=table.shape
+    )
     table_data = tf.sparse.reorder(table_data)
 
     def get_asv_id(x):
         return tf.gather(o_ids, x.indices)
+
     return (
-        tf.data.Dataset
-        .from_tensor_slices(table_data)
+        tf.data.Dataset.from_tensor_slices(table_data)
         .map(get_asv_id, num_parallel_calls=tf.data.AUTOTUNE)
         .prefetch(tf.data.AUTOTUNE)
     )
@@ -93,29 +85,30 @@ def get_sequencing_count_dataset(table_path):
         table = load_table(table_path)
     else:
         table = table_path
-    o_ids = tf.constant(table.ids(axis='observation'))
+    o_ids = tf.constant(table.ids(axis="observation"))
     table = table.transpose()
     data = table.matrix_data.tocoo()
     row_ind = data.row
     col_ind = data.col
     values = data.data
     indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    table_data = tf.sparse.SparseTensor(indices=indices, values=values,
-                                        dense_shape=table.shape)
+    table_data = tf.sparse.SparseTensor(
+        indices=indices, values=values, dense_shape=table.shape
+    )
     table_data = tf.sparse.reorder(table_data)
 
     def get_asv_id(x):
         return tf.cast(x.values, dtype=tf.float32)
+
     return (
-        tf.data.Dataset
-        .from_tensor_slices(table_data)
+        tf.data.Dataset.from_tensor_slices(table_data)
         .map(get_asv_id, num_parallel_calls=tf.data.AUTOTUNE)
         .prefetch(tf.data.AUTOTUNE)
     )
 
 
 def convert_table_to_dataset(table, include_count=True):
-    o_ids = tf.constant(table.ids(axis='observation'))
+    o_ids = tf.constant(table.ids(axis="observation"))
     table = table.transpose()
     table_coo = table.matrix_data.tocoo()
     row_ind = table_coo.row
@@ -123,16 +116,13 @@ def convert_table_to_dataset(table, include_count=True):
     values = table_coo.data
     indices = [[r, c] for r, c in zip(row_ind, col_ind)]
     sparse_tensor = tf.sparse.SparseTensor(
-        indices=indices,
-        values=values,
-        dense_shape=table.shape
+        indices=indices, values=values, dense_shape=table.shape
     )
     sparse_tensor = tf.sparse.reorder(sparse_tensor)
 
     def get_inputs(x):
         if include_count:
-            return (tf.gather(o_ids, x.indices),
-                    tf.cast(x.values, dtype=tf.float32))
+            return (tf.gather(o_ids, x.indices), tf.cast(x.values, dtype=tf.float32))
         else:
             return tf.gather(o_ids, x.indices)
 
@@ -144,13 +134,13 @@ def convert_table_to_dataset(table, include_count=True):
 
 
 def convert_to_normalized_dataset(values, normalize):
-    if normalize == 'minmax':
+    if normalize == "minmax":
         shift = min(values)
         scale = max(values) - min(values)
-    elif normalize == 'z':
+    elif normalize == "z":
         shift = np.mean(values)
         scale = np.std(values)
-    elif normalize == 'none':
+    elif normalize == "none":
         shift = 0
         scale = 1
     else:
@@ -162,9 +152,7 @@ def convert_to_normalized_dataset(values, normalize):
 
 def get_unifrac_dataset(table_path, tree_path):
     distance = unweighted(table_path, tree_path).data
-    return (
-        tf.data.Dataset.from_tensor_slices(distance)
-    )
+    return tf.data.Dataset.from_tensor_slices(distance)
 
 
 def combine_count_datasets(
@@ -176,9 +164,10 @@ def combine_count_datasets(
 ):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
         max_tokens=8,
-        split='character',
-        output_mode='int',
-        output_sequence_length=max_bp)
+        split="character",
+        output_mode="int",
+        output_sequence_length=max_bp,
+    )
     sequence_tokenizer.adapt(seq_dataset.take(1))
 
     seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
@@ -189,18 +178,11 @@ def combine_count_datasets(
             tf.data.Dataset.range(dataset_size),
             seq_dataset,
             feature_count_dataset,
-            dist_dataset
+            dist_dataset,
         )
     else:
-        zip = (
-            seq_dataset,
-            feature_count_dataset,
-            dist_dataset
-        )
-    return (
-        tf.data.Dataset
-        .zip(zip)
-    )
+        zip = (seq_dataset, feature_count_dataset, dist_dataset)
+    return tf.data.Dataset.zip(zip)
 
 
 def combine_datasets(
@@ -211,33 +193,23 @@ def combine_datasets(
 ):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
         max_tokens=7,
-        split='character',
-        output_mode='int',
-        output_sequence_length=max_bp)
+        split="character",
+        output_mode="int",
+        output_sequence_length=max_bp,
+    )
     sequence_tokenizer.adapt(seq_dataset.take(1))
 
     seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
     dataset_size = seq_dataset.cardinality()
 
     if add_index:
-        zip = (
-            tf.data.Dataset.range(dataset_size),
-            seq_dataset,
-            dist_dataset
-        )
+        zip = (tf.data.Dataset.range(dataset_size), seq_dataset, dist_dataset)
     else:
-        zip = (
-            seq_dataset,
-            dist_dataset
-        )
-    return (
-        tf.data.Dataset
-        .zip(zip)
-    )
+        zip = (seq_dataset, dist_dataset)
+    return tf.data.Dataset.zip(zip)
 
 
 def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs):
-
     def step_pad(ind, seq, rclr, dist):
         ASV_DIM = 0
         shape = tf.shape(seq)[ASV_DIM]
@@ -246,12 +218,8 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
         gx = tf.reduce_sum(rclr, axis=-1, keepdims=True)
         # gx = tf.exp(tf.reduce_mean(tf.math.log(rclr)))
         return (
-            (
-                ind,
-                tf.pad(seq, [[0, pad], [0, 0]]),
-                tf.pad(rclr / gx, [[0, pad]])
-            ),
-            dist
+            (ind, tf.pad(seq, [[0, pad], [0, 0]]), tf.pad(rclr / gx, [[0, pad]])),
+            dist,
         )
 
     # def get_pairwise_dist(ind, seq, dist):
@@ -260,40 +228,24 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
 
     if shuffle:
         dataset = (
-            dataset
-            .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
+            dataset.map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
             # .map(get_pairwise_dist)
             .shuffle(size, reshuffle_each_iteration=True)
             .padded_batch(
                 batch_size,
-                padded_shapes=(
-                    (
-                        [],
-                        [None, max_bp],
-                        [None]
-                    ),
-                    []
-                ),
-                drop_remainder=True
+                padded_shapes=(([], [None, max_bp], [None]), []),
+                drop_remainder=True,
             )
             .prefetch(tf.data.AUTOTUNE)
         )
     else:
         dataset = (
-            dataset
-            .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
+            dataset.map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
             # .map(get_pairwise_dist)
             .padded_batch(
                 batch_size,
-                padded_shapes=(
-                    (
-                        [],
-                        [None, max_bp],
-                        [None]
-                    ),
-                    []
-                ),
-                drop_remainder=True
+                padded_shapes=(([], [None, max_bp], [None]), []),
+                drop_remainder=True,
             )
             .prefetch(tf.data.AUTOTUNE)
         )
@@ -301,18 +253,11 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
 
 
 def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
-
     def step_pad(ind, seq, dist):
         ASV_DIM = 0
         shape = tf.shape(seq)[ASV_DIM]
         pad = shape // 8 * 8 + 8 - shape
-        return (
-            (
-                ind,
-                tf.pad(seq, [[0, pad], [0, 0]])
-            ),
-            dist
-        )
+        return ((ind, tf.pad(seq, [[0, pad], [0, 0]])), dist)
 
     # def get_pairwise_dist(ind, seq, dist):
     #     return (seq, tf.gather(dist, ind, axis=0, batch_dims=0))
@@ -320,38 +265,24 @@ def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
 
     if shuffle:
         dataset = (
-            dataset
-            .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
+            dataset.map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
             # .map(get_pairwise_dist)
             .shuffle(size, reshuffle_each_iteration=True)
             .padded_batch(
                 batch_size,
-                padded_shapes=(
-                    (
-                        [],
-                        [None, 150]
-                    ),
-                    [None]
-                ),
-                drop_remainder=True
+                padded_shapes=(([], [None, 150]), [None]),
+                drop_remainder=True,
             )
             .prefetch(tf.data.AUTOTUNE)
         )
     else:
         dataset = (
-            dataset
-            .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
+            dataset.map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
             # .map(get_pairwise_dist)
             .padded_batch(
                 batch_size,
-                padded_shapes=(
-                    (
-                        [],
-                        [None, 150]
-                    ),
-                    [None]
-                ),
-                drop_remainder=True
+                padded_shapes=(([], [None, 150]), [None]),
+                drop_remainder=True,
             )
             .prefetch(tf.data.AUTOTUNE)
         )
