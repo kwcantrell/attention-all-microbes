@@ -33,6 +33,18 @@ def train_val_split(
     )
     return training_dataset, validation_dataset
 
+def filter_and_reorder(metadata, ids):
+    metadata = metadata[metadata.index.isin(ids)]
+    metadata = metadata.reindex(ids)
+    return metadata
+
+
+def extract_col(metadata, col, output_dtype=None):
+    metadata_col = metadata[col]
+    if output_dtype is not None:
+        metadata_col = metadata_col.astype(output_dtype)
+    return metadata_col
+
 
 def align_table_and_metadata(table_path,
                              metadata_path,
@@ -131,12 +143,21 @@ def convert_table_to_dataset(table, include_count=True):
     )
 
 
-def convert_to_normalized_dataset(values):
-    mean = min(values)
-    std = (max(values) - min(values))
-    values_normalized = (values - mean) / std
+def convert_to_normalized_dataset(values, normalize):
+    if normalize == 'minmax':
+        shift = min(values)
+        scale = max(values) - min(values)
+    elif normalize == 'z':
+        shift = np.mean(values)
+        scale = np.std(values)
+    elif normalize == 'none':
+        shift = 0
+        scale = 1
+    else:
+        raise Exception(f"Invalid data normalization: {normalize}")
+    values_normalized = (values - shift) / scale
     dataset = tf.data.Dataset.from_tensor_slices(values_normalized)
-    return dataset, mean, std
+    return dataset, shift, scale
 
 
 def get_unifrac_dataset(table_path, tree_path):

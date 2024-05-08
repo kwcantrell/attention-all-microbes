@@ -3,15 +3,16 @@ import tensorflow as tf
 import aam._parameter_descriptions as desc
 from aam.common.cli_util import aam_model_options
 from aam.common.data_utils import(
-    load_biom_table, shuffle_table,train_val_split
+    load_biom_table, shuffle_table, train_val_split,
+    filter_and_reorder, extract_col, convert_to_normalized_dataset
 )
-from attention_regression.data_utils import (
-    filter_and_reorder, extract_col,
-    convert_table_to_dataset, batch_dataset, convert_to_normalized_dataset,
+from aam.common.regression_data_utils import (
+    
+    convert_table_to_dataset, batch_dataset, 
     
 )
 # from attention_regression.model import _construct_model
-from attention_regression.randomized_model import _construct_model
+from attention_regression.model import _construct_model
 from attention_regression.callbacks import MAE_Scatter
 from aam.common.callbacks import SaveModel
 import pandas as pd

@@ -1,22 +1,23 @@
+import os
+from datetime import datetime
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import click
 import tensorflow as tf
+
 import aam._parameter_descriptions as desc
 from aam.common.cli_util import aam_model_options
+from aam.common.callbacks import SaveModel
+from aam.common.model_utils import pretrain_unifrac, regressor
 from aam.common.data_utils import (
     convert_table_to_dataset, batch_dist_dataset, batch_dataset,
     get_unifrac_dataset, combine_datasets, get_sequencing_dataset, get_sequencing_count_dataset,combine_count_datasets,
-    load_biom_table, shuffle_table, train_val_split
+    load_biom_table, shuffle_table, train_val_split, filter_and_reorder, extract_col, convert_to_normalized_dataset
 )
-from aam.common.model_utils import pretrain_unifrac, regressor
 from attention_regression.callbacks import MAE_Scatter
-from aam.common.callbacks import SaveModel
-import pandas as pd
-import numpy as np
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datetime import datetime
-from attention_regression.data_utils import filter_and_reorder, extract_col, convert_to_normalized_dataset
 
 
 @click.group()
