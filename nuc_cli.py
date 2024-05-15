@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 
 import click
 import matplotlib.pyplot as plt
@@ -10,13 +9,11 @@ import tensorflow as tf
 
 import aam._parameter_descriptions as desc
 from aam.common.callbacks import SaveModel
-from aam.common.cli_util import aam_model_options
 from aam.common.data_utils import (
     batch_dataset,
     batch_dist_dataset,
     combine_count_datasets,
     combine_datasets,
-    convert_table_to_dataset,
     convert_to_normalized_dataset,
     extract_col,
     filter_and_reorder,
