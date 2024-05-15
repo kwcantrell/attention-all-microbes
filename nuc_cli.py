@@ -11,7 +11,6 @@ import aam._parameter_descriptions as desc
 from aam.common.callbacks import SaveModel
 from aam.common.data_utils import (
     batch_dataset,
-    batch_dist_dataset,
     combine_count_datasets,
     combine_datasets,
     convert_to_normalized_dataset,
@@ -24,7 +23,7 @@ from aam.common.data_utils import (
     shuffle_table,
     train_val_split,
 )
-from aam.common.model_utils import pretrain_unifrac, regressor
+from aam.common.model_utils import regressor
 from attention_regression.callbacks import MAE_Scatter
 
 
@@ -235,106 +234,105 @@ def fit_regressor(
         epochs=p_epochs,
     )
 
+    # @cli.command()
+    # @click.option(
+    #     "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+    # )
+    # @click.option(
+    #     "--i-tree-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+    # )
+    # @click.option("--i-max-bp", required=True, type=int)
+    # @click.option(
+    #     "--p-missing-samples",
+    #     default="error",
+    #     type=click.Choice(["error", "ignore"], case_sensitive=False),
+    #     help=desc.MISSING_SAMPLES_DESC,
+    # )
+    # @click.option("--p-batch-size", default=8, show_default=True, type=int)
+    # @click.option("--p-epochs", default=1000, show_default=True, type=int)
+    # @click.option("--p-repeat", default=5, show_default=True, type=int)
+    # @click.option("--p-dropout", default=0.1, show_default=True, type=float)
+    # @click.option("--p-token-dim", default=512, show_default=True, type=int)
+    # @click.option(
+    #     "--p-feature-attention-method",
+    #     default="add_features",
+    #     type=click.Choice(aam_globals["feature-attention-methods"]),
+    # )
+    # @click.option("--p-features-to-add-rate", default=1.0, show_default=True, type=float)
+    # @click.option("--p-ff-d-model", default=128, show_default=True, type=int)
+    # @click.option("--p-ff-clr", default=64, show_default=True, type=int)
+    # @click.option("--p-pca-heads", default=8, show_default=True, type=int)
+    # @click.option("--p-enc-layers", default=2, show_default=True, type=int)
+    # @click.option("--p-enc-heads", default=8, show_default=True, type=int)
+    # @click.option("--p-lr", default=0.001, show_default=True, type=float)
+    # @click.option("--p-report-back-after", default=5, show_default=True, type=int)
+    # @click.option("--p-output-dir", required=True)
+    # def unifrac_regressor(
+    #     i_table_path: str,
+    #     i_tree_path: str,
+    #     i_max_bp: int,
+    #     p_missing_samples: str,
+    #     p_batch_size: int,
+    #     p_epochs: int,
+    #     p_repeat: int,
+    #     p_dropout: float,
+    #     p_token_dim: int,
+    #     p_feature_attention_method: str,
+    #     p_features_to_add_rate: float,
+    #     p_ff_d_model: int,
+    #     p_ff_clr: int,
+    #     p_pca_heads: int,
+    #     p_enc_layers: int,
+    #     p_enc_heads: int,
+    #     p_lr: float,
+    #     p_report_back_after: int,
+    #     p_output_dir: str,
+    # ):
+    #     if not os.path.exists(p_output_dir):
+    #         os.makedirs(p_output_dir)
 
-@cli.command()
-@click.option(
-    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
-)
-@click.option(
-    "--i-tree-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
-)
-@click.option("--i-max-bp", required=True, type=int)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC,
-)
-@click.option("--p-batch-size", default=8, show_default=True, type=int)
-@click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-repeat", default=5, show_default=True, type=int)
-@click.option("--p-dropout", default=0.1, show_default=True, type=float)
-@click.option("--p-token-dim", default=512, show_default=True, type=int)
-@click.option(
-    "--p-feature-attention-method",
-    default="add_features",
-    type=click.Choice(aam_globals["feature-attention-methods"]),
-)
-@click.option("--p-features-to-add-rate", default=1.0, show_default=True, type=float)
-@click.option("--p-ff-d-model", default=128, show_default=True, type=int)
-@click.option("--p-ff-clr", default=64, show_default=True, type=int)
-@click.option("--p-pca-heads", default=8, show_default=True, type=int)
-@click.option("--p-enc-layers", default=2, show_default=True, type=int)
-@click.option("--p-enc-heads", default=8, show_default=True, type=int)
-@click.option("--p-lr", default=0.001, show_default=True, type=float)
-@click.option("--p-report-back-after", default=5, show_default=True, type=int)
-@click.option("--p-output-dir", required=True)
-def unifrac_regressor(
-    i_table_path: str,
-    i_tree_path: str,
-    i_max_bp: int,
-    p_missing_samples: str,
-    p_batch_size: int,
-    p_epochs: int,
-    p_repeat: int,
-    p_dropout: float,
-    p_token_dim: int,
-    p_feature_attention_method: str,
-    p_features_to_add_rate: float,
-    p_ff_d_model: int,
-    p_ff_clr: int,
-    p_pca_heads: int,
-    p_enc_layers: int,
-    p_enc_heads: int,
-    p_lr: float,
-    p_report_back_after: int,
-    p_output_dir: str,
-):
-    if not os.path.exists(p_output_dir):
-        os.makedirs(p_output_dir)
+    #     figure_path = os.path.join(p_output_dir, "figures")
+    #     if not os.path.exists(figure_path):
+    #         os.makedirs(figure_path)
 
-    figure_path = os.path.join(p_output_dir, "figures")
-    if not os.path.exists(figure_path):
-        os.makedirs(figure_path)
+    #     dataset_obj = _create_dataset(i_table_path, i_tree_path, i_max_bp, p_batch_size)
+    #     training = dataset_obj["training"]
+    #     val = dataset_obj["val"]
+    #     ids = dataset_obj["sample_ids"]
+    #     training_size = training.cardinality().numpy()
+    #     training_ids = ids[:training_size]
 
-    dataset_obj = _create_dataset(i_table_path, i_tree_path, i_max_bp, p_batch_size)
-    training = dataset_obj["training"]
-    val = dataset_obj["val"]
-    ids = dataset_obj["sample_ids"]
-    training_size = training.cardinality().numpy()
-    training_ids = ids[:training_size]
+    #     training_dataset = batch_dist_dataset(
+    #         training,
+    #         p_batch_size,
+    #         shuffle=True,
+    #         repeat=1,
+    #     )
 
-    training_dataset = batch_dist_dataset(
-        training,
-        p_batch_size,
-        shuffle=True,
-        repeat=1,
-    )
+    #     validation_dataset = batch_dist_dataset(
+    #         val,
+    #         p_batch_size,
+    #         shuffle=False,
+    #         repeat=1,
+    #     )
+    #     training_no_shuffle = batch_dist_dataset(training, p_batch_size, shuffle=False)
 
-    validation_dataset = batch_dist_dataset(
-        val,
-        p_batch_size,
-        shuffle=False,
-        repeat=1,
-    )
-    training_no_shuffle = batch_dist_dataset(training, p_batch_size, shuffle=False)
-
-    table = dataset_obj["table"]
-    model = pretrain_unifrac(
-        p_batch_size,
-        p_lr,
-        p_dropout,
-        p_ff_d_model,
-        p_pca_heads,
-        1,
-        1024,
-        p_token_dim,
-        p_ff_clr,
-        p_enc_layers,
-        p_enc_heads,
-        32,
-        i_max_bp,
-    )
+    #     table = dataset_obj["table"]
+    #     model = pretrain_unifrac(
+    #         p_batch_size,
+    #         p_lr,
+    #         p_dropout,
+    #         p_ff_d_model,
+    #         p_pca_heads,
+    #         1,
+    #         1024,
+    #         p_token_dim,
+    #         p_ff_clr,
+    #         p_enc_layers,
+    #         p_enc_heads,
+    #         32,
+    #         i_max_bp,
+    #     )
 
     core_callbacks = [
         # tboard_callback,
