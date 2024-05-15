@@ -1,13 +1,18 @@
 import tensorflow as tf
-import tensorflow_models as tfm
 
-from aam.layers.encoders.nucleotides import ReadHead
-from aam.models.nuc_model import NucModel
+from aam.common.callbacks import SaveModel
 
 
-def regressor(batch_size: int, lr: float, *args):
-    model = NucModel(batch_size, *args)
-
+def train(
+    model: tf.keras.Model,
+    reg_out_callbacks: list,
+    lr: float,
+    output_dir: str,
+    report_back_after: int,
+    training_dataset,
+    validation_dataset,
+    epochs: int,
+):
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9
     )
@@ -15,7 +20,21 @@ def regressor(batch_size: int, lr: float, *args):
         optimizer=optimizer,
         jit_compile=False,
     )
-    return model
+    core_callbacks = [
+        # tboard_callback,
+        tf.keras.callbacks.ReduceLROnPlateau(
+            "loss", factor=0.5, patients=2, min_lr=0.000001
+        ),
+        tf.keras.callbacks.EarlyStopping("loss", patience=50),
+        SaveModel(output_dir, report_back_after),
+    ]
+    model.fit(
+        training_dataset,
+        validation_data=validation_dataset,
+        callbacks=[*reg_out_callbacks, *core_callbacks],
+        epochs=epochs,
+    )
+    return model.summary()
 
 
 # def pretrain_unifrac(batch_size: int, lr: float, *args):

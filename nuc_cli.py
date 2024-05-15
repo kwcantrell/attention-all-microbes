@@ -23,7 +23,8 @@ from aam.common.data_utils import (
     shuffle_table,
     train_val_split,
 )
-from aam.common.model_utils import regressor
+from aam.common.model_utils import train
+from aam.models.nuc_model import NucModel
 from attention_regression.callbacks import MAE_Scatter
 
 
@@ -186,9 +187,26 @@ def fit_regressor(
         repeat=1,
     )
 
-    model = regressor(
+    # model = train(
+    #     p_batch_size,
+    #     p_lr,
+    #     p_dropout,
+    #     p_ff_d_model,
+    #     p_pca_heads,
+    #     1,
+    #     1024,
+    #     p_token_dim,
+    #     p_ff_clr,
+    #     p_enc_layers,
+    #     p_enc_heads,
+    #     32,
+    #     i_max_bp,
+    #     mean,
+    #     std,
+    # )
+
+    model = NucModel(
         p_batch_size,
-        p_lr,
         p_dropout,
         p_ff_d_model,
         p_pca_heads,
@@ -218,20 +236,16 @@ def fit_regressor(
             report_back_after=p_report_back_after,
         )
     ]
-
-    core_callbacks = [
-        # tboard_callback,
-        tf.keras.callbacks.ReduceLROnPlateau(
-            "loss", factor=0.5, patients=2, min_lr=0.000001
-        ),
-        tf.keras.callbacks.EarlyStopping("loss", patience=50),
-        SaveModel(p_output_dir, p_report_back_after),
-    ]
-    model.fit(
+    
+    train(
+        model,
+        reg_out_callbacks,
+        p_lr,
+        p_output_dir,
+        p_report_back_after,
         training_dataset,
-        validation_data=validation_dataset,
-        callbacks=[*reg_out_callbacks, *core_callbacks],
-        epochs=p_epochs,
+        validation_dataset,
+        p_epochs
     )
 
     # @cli.command()
