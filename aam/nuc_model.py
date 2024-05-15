@@ -305,14 +305,14 @@ class NucModel(tf.keras.Model):
             reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
             # Compute regression loss
             loss = self.pair_loss(y, reg_out)
-            attention_loss = tf.reduce_mean(
-                self.attention_loss(
-                    seq,
-                    logits
-                ),
-                axis=-1
-            )
-            loss += attention_loss
+            # attention_loss = tf.reduce_mean(
+            #     self.attention_loss(
+            #         seq,
+            #         logits
+            #     ),
+            #     axis=-1
+            # )
+            # loss += attention_loss
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -324,10 +324,10 @@ class NucModel(tf.keras.Model):
 
         # Compute our own metrics
         self.metric_traker.update_state(y, reg_out)
-        self.confidence_tracker.update_state(attention_loss)
+        # self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
-            "confidence": self.confidence_tracker.result(),
+            # "confidence": self.confidence_tracker.result(),
             "mae": self.metric_traker.result(),
         }
 
@@ -342,22 +342,22 @@ class NucModel(tf.keras.Model):
 
         # Compute regression loss
         loss = self.pair_loss(y, reg_out)
-        attention_loss = tf.reduce_mean(
-            self.attention_loss(
-                seq,
-                logits
-            ),
-            axis=-1
-        )
-        loss += attention_loss
+        # attention_loss = tf.reduce_mean(
+        #     self.attention_loss(
+        #         seq,
+        #         logits
+        #     ),
+        #     axis=-1
+        # )
+        # loss += attention_loss
         self.loss_tracker.update_state(loss)
 
         # Compute our own metrics
         self.metric_traker.update_state(y, reg_out)
-        self.confidence_tracker.update_state(attention_loss)
+        # self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
-            "confidence": self.confidence_tracker.result(),
+            # "confidence": self.confidence_tracker.result(),
             "mae": self.metric_traker.result(),
         }
 

@@ -16,7 +16,6 @@ def mean_confidence_interval(data, confidence=0.95):
     return m, h
 
 
-
 @tf.keras.saving.register_keras_serializable(
     package="mean_absolute_error"
 )
@@ -35,8 +34,11 @@ def mean_absolute_error(
     for x, y in dataset:
         outputs, _ = model.call(x, training=False)
         reg, _ = tf.nest.flatten(outputs, expand_composites=True)
+        # outputs = model.call(x, training=False)
+        # reg = outputs["regression"]
         pred_val.append(tf.squeeze(reg))
         true_val.append(tf.squeeze(y))
+        # true_val.append(tf.squeeze(y['reg_out']))
 
     pred_val = np.concatenate(pred_val)
     pred_val = pred_val*scale + shift

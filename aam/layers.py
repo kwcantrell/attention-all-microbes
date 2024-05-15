@@ -49,6 +49,9 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             num_layers=pca_layers,
             dropout=dropout_rate
         )
+        self.ff_clr = tf.keras.layers.Dense(
+            128, 'relu', use_bias=True
+        )
         self.attention_layer = tfm.nlp.models.TransformerEncoder(
             num_layers=6,
             num_attention_heads=8,
@@ -122,7 +125,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 ),
                 seq_mask
             )
-            seq = tf.concat([seq, nuc_strings[:, -15:, :]], axis=1)
+            seq = tf.concat([seq, nuc_strings[:, -8:, :]], axis=1)
             seq = tf.pad(
                 seq,
                 [
@@ -135,11 +138,11 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
 
             rclr_noise = tf.divide(
                 tf.random.stateless_normal(
-                    tf.shape(nuc_strings[:, -15:, 0]),
+                    tf.shape(nuc_strings[:, -8:, 0]),
                     tf.cast(seeds[:, 2], dtype=tf.int32),
                 ),
                 tf.cast(
-                    tf.reduce_prod(tf.shape(rclr)[1]),
+                    tf.reduce_prod(tf.shape(rclr)[:2]),
                     dtype=tf.float32
                 )
             )
@@ -152,29 +155,29 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 ],
                 constant_values=0
             )
-            random_mask = tf.random.stateless_binomial(
-                tf.shape(seq),
-                seeds[:, 3],
-                tf.ones_like(
-                    seq,
-                    dtype=tf.float32
-                ),
-                [1 - .1],
-                output_dtype=tf.int32
-            )
+            # random_mask = tf.random.stateless_binomial(
+            #     tf.shape(seq),
+            #     seeds[:, 3],
+            #     tf.ones_like(
+            #         seq,
+            #         dtype=tf.float32
+            #     ),
+            #     [1 - .1],
+            #     output_dtype=tf.int32
+            # )
             unmasked_sequence = seq
-            seq = tf.multiply(
-                seq,
-                random_mask
-            )
+            # seq = tf.multiply(
+            #     seq,
+            #     random_mask
+            # )
             return (seq, unmasked_sequence, rclr, unormalized_log_prob)
         self._add_random_sequences_and_mask = tf.function(
             _add_random_sequences_and_mask,
         )
-
-    def call(self, inputs, training=None):
+    
+    def call(self, inputs, mask=None, training=None):
         seq, rclr = tf.nest.flatten(inputs, expand_composites=True)
-        if training:
+        if False:
             range = tf.cast(
                 tf.reduce_prod(
                     tf.shape(seq)[:-1],
@@ -240,7 +243,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             output,
             tf.expand_dims(rclr, axis=-1),
         )
-
+        output = self.ff_clr(output)
         output = self.attention_layer(
             output,
             attention_mask=attention_mask,
@@ -308,9 +311,9 @@ class PCAProjector(tf.keras.layers.Layer):
     def call(self, inputs, mask=None):
         inputs = self.ff(inputs)
         pca_output = self.pca_layer(inputs)
+        pca_output = self.dropout_layer(pca_output)
         pca_output = tf.squeeze(self.point(pca_output), axis=-1)
-        output = self.dropout_layer(pca_output)
-        return output
+        return pca_output
 
     def get_config(self):
         base_config = super().get_config()

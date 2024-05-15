@@ -119,7 +119,7 @@ aam_globals = _aam_globals()
 )
 @click.option(
     '--p-dropout',
-    default=0.1,
+    default=0.01,
     show_default=True,
     type=float
 )
@@ -172,7 +172,7 @@ aam_globals = _aam_globals()
 )
 @click.option(
     '--p-lr',
-    default=0.0001,
+    default=0.01,
     show_default=True,
     type=float
 )
@@ -269,7 +269,7 @@ def fit_regressor(
         p_batch_size,
         i_max_bp,
         shuffle=True,
-        repeat=1,
+        repeat=5,
     )
 
     validation_dataset = batch_dataset(
@@ -303,7 +303,7 @@ def fit_regressor(
             'training',
             validation_dataset,
             metadata[metadata.index.isin(training_ids)],
-            'host_age',
+            i_metadata_col,
             None,
             None,
             mean,
@@ -339,6 +339,7 @@ def fit_regressor(
         ],
         epochs=p_epochs
     )
+
 
 @cli.command()
 @click.option(
@@ -495,7 +496,7 @@ def unifrac_regressor(
         training,
         p_batch_size,
         shuffle=True,
-        repeat=1,
+        repeat=5,
     )
 
     validation_dataset = batch_dist_dataset(

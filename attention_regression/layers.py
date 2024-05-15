@@ -25,9 +25,12 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         self.ff_clr = ff_clr
         self.ff_d_model = ff_d_model
         self.dropout_rate = dropout_rate
+        self.random_generator = (
+            tf.random.Generator.from_non_deterministic_state()
+        )
         self.tokens = tf.range(
             tf.constant(
-                len(emb_vocab) + 1,
+                len(emb_vocab) + 2,
                 dtype=tf.int64
             )
         )
@@ -72,7 +75,7 @@ class FeatureEmbedding(tf.keras.layers.Layer):
                     ]
                 )
             )
-        self.ff_pca = _component_block()
+        # self.ff_pca = _component_block()
         self.ff_loadings = _component_block()
 
     def _random_tokens(self, inputs):
@@ -156,33 +159,38 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             sample_rclr = rclr
         return [sample_tokens, sample_rclr, feature_mask]
 
-    def _random_mask(self, inputs):
-        sample_tokens, mask_rate, feature_mask = inputs
-        feature_count = tf.reduce_sum(
-            tf.cast(
-                feature_mask,
-                dtype=tf.int32
-            )
-        )
+    def build(self, input_shape):
 
-        random_mask = tf.cast(
-            tf.math.greater_equal(
-                tf.random.uniform(
-                    shape=[feature_count]
+        def _random_mask(inputs, rclr, seeds):
+            random_mask = tf.cast(
+                tf.math.greater(
+                    tf.random.stateless_uniform(
+                        tf.shape(inputs),
+                        seeds[:, 0],
+                        minval=0.,
+                        maxval=1.
+                    ),
+                    self.features_add_rate
                 ),
-                mask_rate
-            ),
-            dtype=tf.int64
+                dtype=tf.int64
+            )
+            inputs = tf.multiply(
+                inputs,
+                random_mask
+            )
+            rclr_noise = tf.random.stateless_normal(
+                tf.shape(rclr),
+                tf.cast(seeds[:, 1], dtype=tf.int32),
+                stddev=0.05
+            )
+            rclr = tf.add(
+                rclr,
+                rclr_noise
+            )
+            return inputs, rclr
+        self._random_mask = tf.function(
+            _random_mask
         )
-        random_mask = tf.pad(
-            random_mask,
-            [[0, tf.shape(sample_tokens)[0] - feature_count]]
-        )
-        sample_tokens = tf.multiply(
-            sample_tokens,
-            random_mask
-        )
-        return sample_tokens
 
     def _mask_features(self, inputs, training=None):
         feature, rclr = inputs
@@ -190,23 +198,10 @@ class FeatureEmbedding(tf.keras.layers.Layer):
         feature_mask = tf.not_equal(feature_tokens, 0)
 
         if training:
-            mask_rate = tf.repeat(
-                tf.cast(
-                    self.features_add_rate,
-                    dtype=tf.float32
-                ),
-                repeats=[tf.shape(feature_tokens)[0]],
-                axis=0
-            )
-
-            sample_tokens = tf.map_fn(
-                self._random_mask,
-                (
-                    feature_tokens,
-                    mask_rate,
-                    feature_mask
-                ),
-                fn_output_signature=tf.int64
+            sample_tokens, rclr = self._random_mask(
+                feature_tokens,
+                rclr,
+                self.random_generator.make_seeds(2)
             )
         else:
             sample_tokens = feature_tokens
@@ -228,10 +223,26 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             inputs,
             training
         )
+        sample_tokens = tf.pad(
+            sample_tokens,
+            [
+                [0, 0],
+                [0, 1],
+            ],
+            constant_values=self.tokens[-1]
+        )
+        sample_rclr = tf.pad(
+            sample_rclr,
+            [
+                [0, 0],
+                [0, 1],
+            ],
+            constant_values=0
+        )
         output = self.embedding_layer(sample_tokens)
 
         # scale embedding tensors by rclr
-        output = tf.multiply(
+        output = tf.add(
             output,
             tf.expand_dims(
                 sample_rclr,
@@ -241,14 +252,14 @@ class FeatureEmbedding(tf.keras.layers.Layer):
 
         # prep embeddings for objective functions
         output = self.ff(output)
-        output_embeddings = self.ff_loadings(output)
-        output_regression = self.ff_pca(output)
+        output_embeddings = self.ff_loadings(output, training=training)
+        # output_regression = self.ff_pca(output)
 
         return [
             feature_mask,
-            sample_tokens,
+            sample_tokens[:, :-1],
             output_embeddings,
-            output_regression
+            # output_regression
         ]
 
     def get_config(self):
@@ -292,10 +303,15 @@ class FeatureLoadings(tf.keras.layers.Layer):
             norm_first=True,
             activation='relu')
         self.binary_ff = tf.keras.layers.Dense(output_dim)
+        self.regression = tf.keras.layers.Dense(1, use_bias=True)
 
-    def call(self, inputs, mask=None, training=None):
-        output = self.encoder(inputs, training=training)
-        return self.binary_ff(output)
+    def call(self, inputs, attention_mask=None, training=None):
+        output = self.encoder(
+            inputs,
+            attention_mask=attention_mask,
+            training=training
+        )
+        return self.binary_ff(output[:, :-1, :]), self.regression(output[:, -1, :])
 
     def get_config(self):
         base_config = super().get_config()
