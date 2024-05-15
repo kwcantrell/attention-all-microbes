@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow_models as tfm
 
 from aam.common.losses import PairwiseLoss
 from aam.common.metrics import MAE, PairwiseMAE
@@ -43,13 +42,7 @@ def _construct_base(
     )
     output = readhead(output)
     model = UnifracModel(max_bp, batch_size, nuc_emb, readhead)
-    # model = NucModel(
-    #     max_bp,
-    #     batch_size,
-    #     nuc_emb,
-    #     readhead,
 
-    # )
     return model
 
 
@@ -69,7 +62,6 @@ def _construct_regressor(
     shift=None,
     scale=None,
 ):
-    input = tf.keras.Input(shape=[None, max_bp], batch_size=batch_size, dtype=tf.int64)
     nuc_emb = NucleotideEmbedding(
         pca_hidden_dim,
         max_bp,
