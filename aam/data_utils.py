@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import load_table
-# from unifrac import unweighted
+from unifrac import unweighted
 
 
 def align_table_and_metadata(table_path,
@@ -222,7 +222,7 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
                         [None, max_bp],
                         [None]
                     ),
-                    []
+                    [None]
                 ),
                 drop_remainder=True
             )
@@ -241,7 +241,7 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
                         [None, max_bp],
                         [None]
                     ),
-                    []
+                    [None]
                 ),
                 drop_remainder=True
             )

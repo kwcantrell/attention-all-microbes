@@ -3,8 +3,9 @@ import tensorflow as tf
 import aam._parameter_descriptions as desc
 from aam.cli_util import aam_model_options
 from aam.data_utils import (
-    convert_table_to_dataset, batch_dist_dataset, batch_dataset,
-    get_unifrac_dataset, combine_datasets, get_sequencing_dataset, get_sequencing_count_dataset,combine_count_datasets
+    batch_dist_dataset, batch_dataset,
+    get_unifrac_dataset, combine_datasets, get_sequencing_dataset,
+    get_sequencing_count_dataset, combine_count_datasets
 )
 from attention_regression.data_utils import (
     load_biom_table, shuffle_table, train_val_split
@@ -298,6 +299,10 @@ def fit_regressor(
         std
     )
 
+    for x, y in validation_dataset.take(1):
+        model(x)
+    model.summary()
+
     reg_out_callbacks = [
         MAE_Scatter(
             'training',
@@ -385,7 +390,7 @@ def fit_regressor(
 )
 @click.option(
     '--p-dropout',
-    default=0.1,
+    default=0.01,
     show_default=True,
     type=float
 )
@@ -438,7 +443,7 @@ def fit_regressor(
 )
 @click.option(
     '--p-lr',
-    default=0.001,
+    default=0.01,
     show_default=True,
     type=float
 )
@@ -480,38 +485,44 @@ def unifrac_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    dataset_obj = _create_dataset(
+    table = shuffle_table(load_biom_table(i_table_path))
+
+    feature_dataset = get_sequencing_dataset(table)
+    feature_count_dataset = get_sequencing_count_dataset(table)
+
+    regression_dataset = get_unifrac_dataset(
         i_table_path,
         i_tree_path,
-        i_max_bp,
-        p_batch_size
     )
-    training = dataset_obj['training']
-    val = dataset_obj['val']
-    ids = dataset_obj['sample_ids']
-    training_size = training.cardinality().numpy()
-    training_ids = ids[:training_size]
-
-    training_dataset = batch_dist_dataset(
+    mean, std = 0., 1.
+    full_dataset = combine_count_datasets(
+        feature_dataset,
+        feature_count_dataset,
+        regression_dataset,
+        i_max_bp,
+        add_index=True
+    )
+    training, val = train_val_split(
+        full_dataset,
+        train_percent=.8
+    )
+    training_dataset = batch_dataset(
         training,
         p_batch_size,
+        i_max_bp,
         shuffle=True,
         repeat=5,
     )
 
-    validation_dataset = batch_dist_dataset(
+    validation_dataset = batch_dataset(
         val,
         p_batch_size,
+        i_max_bp,
         shuffle=False,
         repeat=1,
     )
-    training_no_shuffle = batch_dist_dataset(
-        training,
-        p_batch_size,
-        shuffle=False
-    )
 
-    table = dataset_obj['table']
+    # model = tf.keras.models.load_model('/home/kcantrel/amplicon-gpt/unifrac-model/model.keras')
     model = pretrain_unifrac(
         p_batch_size,
         p_lr,
@@ -526,7 +537,13 @@ def unifrac_regressor(
         p_enc_heads,
         32,
         i_max_bp,
+        mean,
+        std
     )
+
+    for x, y in validation_dataset.take(1):
+        model(x)
+    model.summary()
 
     core_callbacks = [
         # tboard_callback,
@@ -549,7 +566,6 @@ def unifrac_regressor(
         training_dataset,
         validation_data=validation_dataset,
         callbacks=[
-            # *reg_out_callbacks,
             *core_callbacks
         ],
         epochs=p_epochs

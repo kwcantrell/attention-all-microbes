@@ -3,50 +3,11 @@ import tensorflow_models as tfm
 from aam.losses import PairwiseLoss
 from aam.layers import ReadHead, NucleotideEmbedding
 from aam.metrics import PairwiseMAE
-from aam.nuc_model import _construct_base, _construct_regressor
-
-
-# def _construct_base(
-#         batch_size: int,
-#         dropout_rate: float,
-#         pca_hidden_dim: int,
-#         pca_heads: int,
-#         pca_layers: int,
-#         dff: int,
-#         token_dim: int,
-#         ff_clr,
-#         attention_layers: int,
-#         attention_heads: int,
-#         output_dim: int,
-#         max_bp: int
-# ):
-#     input = tf.keras.Input(
-#         shape=[None, max_bp],
-#         batch_size=batch_size,
-#         dtype=tf.int64
-#     )
-#     output = NucleotideEmbedding(
-#         pca_hidden_dim,
-#         max_bp,
-#         pca_hidden_dim,
-#         pca_heads,
-#         pca_layers,
-#         attention_heads,
-#         attention_layers,
-#         dff,
-#         dropout_rate
-#     )(input)
-#     output = ReadHead(
-#         hidden_dim=pca_hidden_dim,
-#         num_heads=pca_heads,
-#         num_layers=pca_layers,
-#         output_dim=output_dim
-#     )(output)
-#     return tf.keras.Model(inputs=input, outputs=output)
+from aam.nuc_model import _construct_base, _construct_regressor, NucModel
 
 
 def pretrain_unifrac(batch_size: int, lr: float, *args):
-    model = _construct_base(batch_size, *args)
+    model = _construct_regressor(batch_size, *args, include_count=False)
 
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=lr,
@@ -56,8 +17,6 @@ def pretrain_unifrac(batch_size: int, lr: float, *args):
     )
     model.compile(
         optimizer=optimizer,
-        # loss=PairwiseLoss(),
-        # metrics=[PairwiseMAE()],
         jit_compile=False
     )
     return model
@@ -74,8 +33,6 @@ def regressor(batch_size: int, lr: float, *args):
     )
     model.compile(
         optimizer=optimizer,
-        # loss=PairwiseLoss(),
-        # metrics=[PairwiseMAE()],
         jit_compile=False
     )
     return model

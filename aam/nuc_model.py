@@ -76,7 +76,8 @@ def _construct_regressor(
         output_dim: int,
         max_bp: int,
         shift=None,
-        scale=None
+        scale=None,
+        include_count=True
 ):
     input = tf.keras.Input(
         shape=[None, max_bp],
@@ -92,25 +93,41 @@ def _construct_regressor(
         attention_heads,
         attention_layers,
         dff,
-        dropout_rate
+        dropout_rate,
     )
-    # output = nuc_emb(input)
-    readhead = ReadHead(
-        max_bp=max_bp,
-        hidden_dim=pca_hidden_dim,
-        num_heads=pca_heads,
-        num_layers=pca_layers,
-        output_dim=1
-    )
-    # output = readhead(output)
-    model = NucModel(
-        max_bp,
-        batch_size,
-        nuc_emb,
-        readhead,
-        shift,
-        scale
-    )
+    if include_count:
+        readhead = ReadHead(
+            max_bp=max_bp,
+            hidden_dim=pca_hidden_dim,
+            num_heads=pca_heads,
+            num_layers=pca_layers,
+            output_dim=1
+        )
+        model = NucModel(
+            max_bp,
+            batch_size,
+            nuc_emb,
+            readhead,
+            shift,
+            scale
+        )
+    else:
+        readhead = ReadHead(
+            max_bp=max_bp,
+            hidden_dim=pca_hidden_dim,
+            num_heads=pca_heads,
+            num_layers=pca_layers,
+            output_dim=32
+        )
+        model = UnifracModel(
+            max_bp,
+            batch_size,
+            nuc_emb,
+            readhead,
+            shift,
+            scale
+        )
+
     return model
 
 
@@ -122,6 +139,8 @@ class UnifracModel(tf.keras.Model):
         batch_size,
         feature_emb,
         readhead,
+        shift,
+        scale,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -129,44 +148,81 @@ class UnifracModel(tf.keras.Model):
         self.batch_size = batch_size
         self.feature_emb = feature_emb
         self.readhead = readhead
+        self.shift = shift
+        self.scale = scale
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.pair_loss = PairwiseLoss()
         self.metric_traker = PairwiseMAE()
+        self.attention_loss = (
+            tf.keras.losses.SparseCategoricalCrossentropy(
+                ignore_class=0,
+                from_logits=True,
+                reduction="none"
+            )
+        )
+        self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.make_call_function()
 
     def make_call_function(self):
         @tf.autograph.experimental.do_not_convert
         def one_step(inputs, training=None):
-            ind, seq = inputs
-            output = self.feature_emb(seq, training=training)
+            ind, seq, rclr = inputs
+            output, seq = self.feature_emb(
+                (seq, rclr),
+                training=training,
+                include_random=False,
+                include_count=False
+            )
             output = self.readhead(output)
-            return output
+            return (output, seq)
         self.call_function = tf.function(one_step, reduce_retracing=True)
 
     def call(self, inputs, training=None):
         return self.call_function(inputs, training=training)
 
     def build(self, input_shape):
-        input = tf.keras.Input(
+        input_seq = tf.keras.Input(
             shape=[None, self.max_bp],
             batch_size=self.batch_size,
             dtype=tf.int64
         )
-        output = self.feature_emb(input)
+        input_rclr = tf.keras.Input(
+            shape=[None],
+            batch_size=self.batch_size,
+            dtype=tf.float32
+        )
+        output, _ = self.feature_emb((input_seq, input_rclr))
         output = self.readhead(output)
 
+    def predict_step(self, data):
+        x, y = data
+        ind, seq, rclr = tf.nest.flatten(x)
+        ind = tf.squeeze(ind)
+        outputs, seq = self((ind, seq, rclr), training=True)
+        reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
+
+        return reg_out
+    
     def train_step(self, data):
         x, y = data
-        ind, seq = tf.nest.flatten(x)
+        ind, seq, rclr = tf.nest.flatten(x)
         ind = tf.squeeze(ind)
         y = tf.gather(y, ind, axis=1, batch_dims=0)
 
         with tf.GradientTape() as tape:
             # Forward pass
-            outputs = self((ind, seq), training=True)
-
+            outputs, seq = self((ind, seq, rclr), training=True)
+            reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
             # Compute regression loss
-            loss = self.pair_loss(y, outputs)
+            loss = self.pair_loss(y, reg_out)
+            attention_loss = tf.reduce_mean(
+                self.attention_loss(
+                    seq,
+                    logits
+                ),
+                axis=-1
+            )
+            loss += attention_loss
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -177,28 +233,42 @@ class UnifracModel(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         # Compute our own metrics
-        self.metric_traker.update_state(y, outputs)
+        self.metric_traker.update_state(y, reg_out)
+        self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
+            "confidence": self.confidence_tracker.result(),
             "mae": self.metric_traker.result(),
         }
 
     def test_step(self, data):
         x, y = data
-        ind, seq = tf.nest.flatten(x)
+        ind, seq, rclr = tf.nest.flatten(x)
         ind = tf.squeeze(ind)
         y = tf.gather(y, ind, axis=1, batch_dims=0)
+
         # Forward pass
-        outputs = self((ind, seq), training=False)
+        outputs, seq = self((ind, seq, rclr), training=False)
+        reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
 
         # Compute regression loss
-        loss = self.pair_loss(y, outputs)
+        loss = self.pair_loss(y, reg_out)
+        attention_loss = tf.reduce_mean(
+            self.attention_loss(
+                seq,
+                logits
+            ),
+            axis=-1
+        )
+        loss += attention_loss
         self.loss_tracker.update_state(loss)
 
         # Compute our own metrics
-        self.metric_traker.update_state(y, outputs)
+        self.metric_traker.update_state(y, reg_out)
+        self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
+            "confidence": self.confidence_tracker.result(),
             "mae": self.metric_traker.result(),
         }
 
@@ -213,6 +283,8 @@ class UnifracModel(tf.keras.Model):
             "readhead": tf.keras.saving.serialize_keras_object(
                 self.readhead
             ),
+            "shift": self.shift,
+            "scale": self.scale,
         }
         return {**base_config, **config}
 
@@ -305,14 +377,14 @@ class NucModel(tf.keras.Model):
             reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
             # Compute regression loss
             loss = self.pair_loss(y, reg_out)
-            # attention_loss = tf.reduce_mean(
-            #     self.attention_loss(
-            #         seq,
-            #         logits
-            #     ),
-            #     axis=-1
-            # )
-            # loss += attention_loss
+            attention_loss = tf.reduce_mean(
+                self.attention_loss(
+                    seq,
+                    logits
+                ),
+                axis=-1
+            )
+            loss += attention_loss
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -324,10 +396,10 @@ class NucModel(tf.keras.Model):
 
         # Compute our own metrics
         self.metric_traker.update_state(y, reg_out)
-        # self.confidence_tracker.update_state(attention_loss)
+        self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
-            # "confidence": self.confidence_tracker.result(),
+            "confidence": self.confidence_tracker.result(),
             "mae": self.metric_traker.result(),
         }
 
@@ -342,22 +414,22 @@ class NucModel(tf.keras.Model):
 
         # Compute regression loss
         loss = self.pair_loss(y, reg_out)
-        # attention_loss = tf.reduce_mean(
-        #     self.attention_loss(
-        #         seq,
-        #         logits
-        #     ),
-        #     axis=-1
-        # )
-        # loss += attention_loss
+        attention_loss = tf.reduce_mean(
+            self.attention_loss(
+                seq,
+                logits
+            ),
+            axis=-1
+        )
+        loss += attention_loss
         self.loss_tracker.update_state(loss)
 
         # Compute our own metrics
         self.metric_traker.update_state(y, reg_out)
-        # self.confidence_tracker.update_state(attention_loss)
+        self.confidence_tracker.update_state(attention_loss)
         return {
             "loss": self.loss_tracker.result(),
-            # "confidence": self.confidence_tracker.result(),
+            "confidence": self.confidence_tracker.result(),
             "mae": self.metric_traker.result(),
         }
 
