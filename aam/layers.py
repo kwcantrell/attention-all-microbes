@@ -49,6 +49,18 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             num_layers=pca_layers,
             dropout=dropout_rate
         )
+        self.count_ff = tf.keras.Sequential([
+            tf.keras.layers.Dense(
+                1024,
+                activation='relu',
+                use_bias=True
+            ),
+            tf.keras.layers.Dense(
+                128,
+                activation='relu',
+                use_bias=True
+            ),
+        ])
         self.ff_clr = tf.keras.layers.Dense(
             128, 'relu', use_bias=True
         )
@@ -255,14 +267,14 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         output = output + self.pos_emb(output)
 
         output = self.pca_layer(output)
-
         if include_count:
+            rclr = self.count_ff(tf.expand_dims(rclr, axis=-1))
             output = tf.add(
                 output,
-                tf.expand_dims(rclr, axis=-1),
+                rclr,
             )
 
-        output = self.ff_clr(output)
+        # output = self.ff_clr(output)
         output = self.attention_layer(
             output,
             attention_mask=attention_mask,

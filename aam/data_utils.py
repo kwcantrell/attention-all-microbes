@@ -186,7 +186,7 @@ def combine_datasets(
     )
 
 
-def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs):
+def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, dist=False, **kwargs):
 
     def step_pad(ind, seq, rclr, dist):
         ASV_DIM = 0
@@ -222,7 +222,7 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
                         [None, max_bp],
                         [None]
                     ),
-                    [None]
+                    [] if not dist else [None]
                 ),
                 drop_remainder=True
             )
@@ -241,7 +241,7 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, **kwargs
                         [None, max_bp],
                         [None]
                     ),
-                    [None]
+                    [] if not dist else [None]
                 ),
                 drop_remainder=True
             )

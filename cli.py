@@ -8,7 +8,6 @@ from attention_regression.data_utils import (
     train_val_split
 )
 # from attention_regression.model import _construct_model
-from attention_regression.randomized_model import _construct_model
 from attention_regression.callbacks import MAE_Scatter
 from aam.callbacks import SaveModel
 import pandas as pd
