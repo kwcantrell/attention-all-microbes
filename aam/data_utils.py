@@ -191,7 +191,7 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, dist=Fal
     def step_pad(ind, seq, rclr, dist):
         ASV_DIM = 0
         shape = tf.shape(seq)[ASV_DIM]
-        pad = shape // 8 * 8 + 8 - shape
+        pad = shape // 32 * 32 + 32 - shape
 
         gx = tf.reduce_sum(rclr, axis=-1, keepdims=True)
         # gx = tf.exp(tf.reduce_mean(tf.math.log(rclr)))

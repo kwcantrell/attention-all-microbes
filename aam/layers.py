@@ -2,6 +2,20 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 
+@tf.function
+def to_logit(tensor):
+    tensor = tf.divide(
+        tensor,
+        tf.math.reduce_max(tensor, axis=-1, keepdims=True)
+    )
+    return tf.math.log(
+        tf.math.divide_no_nan(
+            tensor,
+            tf.ones_like(tensor) - tensor
+        ),
+    )
+
+
 @tf.keras.saving.register_keras_serializable(
     package="NucleotideEmbedding"
 )
@@ -99,45 +113,31 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 dtype=tf.int32
             )
 
-            uniform_mask = tf.random.stateless_uniform(
-                tf.shape(seq),
-                tf.cast(seeds[:, 0], dtype=tf.int32),
-                minval=0.,
-                maxval=1.,
-                dtype=tf.float32
-            )
             nucleotides = tf.reduce_sum(
-                tf.multiply(
-                    tf.one_hot(
+                tf.one_hot(
                         seq,
                         depth=6,
                         axis=-1,
                         dtype=tf.float32
-                    ),
-                    tf.expand_dims(uniform_mask, axis=-1)
                 ),
                 axis=[0, 1]
             )
-            # unormalized_log_prob = tf.add(
-            #     tf.nn.softmax(unormalized_log_prob, axis=0),
-            #     tf.nn.softmax(nucleotides, axis=0)
-            # )
             unormalized_log_prob = tf.add(unormalized_log_prob, nucleotides)
-
-            # unormalized_log_prob += nucleotides
-
+            unormalized_log_prob = tf.divide(
+                unormalized_log_prob,
+                tf.math.reduce_max(unormalized_log_prob, axis=-1, keepdims=True)
+            )
+            unormalized_log_prob = tf.math.log(
+                tf.math.divide_no_nan(
+                    unormalized_log_prob,
+                    tf.ones_like(unormalized_log_prob) - unormalized_log_prob
+                ),
+            )
             nuc_strings = tf.multiply(
                 tf.reshape(
                     tf.transpose(
                         tf.random.stateless_categorical(
-                            tf.divide(
-                                unormalized_log_prob,
-                                tf.math.reduce_max(
-                                    unormalized_log_prob,
-                                    axis=-1,
-                                    keepdims=True
-                                )
-                            ),
+                            to_logit(unormalized_log_prob),
                             tf.cast(range, dtype=tf.int32),
                             tf.cast(seeds[:, 1], dtype=tf.int32),
                             dtype=tf.int32
@@ -147,6 +147,8 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 ),
                 seq_mask
             )
+            unormalized_log_prob = nucleotides
+
             seq = tf.concat([seq, nuc_strings[:, -8:, :]], axis=1)
             seq = tf.pad(
                 seq,
@@ -178,19 +180,19 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 constant_values=0
             )
             random_mask = tf.random.stateless_binomial(
-                tf.shape(seq),
+                tf.shape(seq)[1:],
                 seeds[:, 3],
-                tf.ones_like(
-                    seq,
+                tf.ones(
+                    tf.shape(seq)[1:],
                     dtype=tf.float32
                 ),
-                [1 - .1],
+                [1 - .01],
                 output_dtype=tf.int32
             )
             unmasked_sequence = seq
             seq = tf.multiply(
                 seq,
-                random_mask
+                tf.expand_dims(random_mask, axis=0)
             )
             return (seq, unmasked_sequence, rclr, unormalized_log_prob)
         self._add_random_sequences_and_mask = tf.function(
@@ -481,23 +483,17 @@ class ReadHead(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        self.read_head = tf.keras.Sequential([
+        self.reg_out = tf.keras.Sequential([
             tf.keras.layers.Dense(
-                128,
+                1024,
                 activation='relu',
                 use_bias=True
             ),
             tf.keras.layers.Dense(
-                32,
-                activation='relu',
+                output_dim,
                 use_bias=True
             ),
-            tf.keras.layers.LayerNormalization(),
         ])
-        self.reg_out = tf.keras.layers.Dense(
-            self.output_dim,
-            use_bias=True
-        )
         self.attention_out = tf.keras.Sequential([
             tf.keras.layers.Dense(
                 1024,
@@ -527,11 +523,10 @@ class ReadHead(tf.keras.layers.Layer):
         return {**base_config, **config}
 
     def call(self, inputs):
-        output = self.read_head(inputs)
-        reg_out = self.reg_out(output[:, -1, :])
+        reg_out = self.reg_out(inputs[:, -1, :])
         attention_out = self.nuc_out(
             tf.reshape(
-                self.attention_out(output[:, :-1, :]),
+                self.attention_out(inputs[:, :-1, :]),
                 shape=[8, -1, 150, 6]
             )
         )

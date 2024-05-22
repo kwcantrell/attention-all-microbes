@@ -446,6 +446,12 @@ def fit_regressor(
     type=int
 )
 @click.option(
+    '--p-include-random',
+    default=True,
+    show_default=True,
+    type=bool
+)
+@click.option(
     '--p-lr',
     default=0.01,
     show_default=True,
@@ -478,6 +484,7 @@ def unifrac_regressor(
     p_pca_heads: int,
     p_enc_layers: int,
     p_enc_heads: int,
+    p_include_random: bool,
     p_lr: float,
     p_report_back_after: int,
     p_output_dir: str
@@ -508,7 +515,7 @@ def unifrac_regressor(
     )
     training, val = train_val_split(
         full_dataset,
-        train_percent=.8
+        train_percent=.9
     )
     training_dataset = batch_dataset(
         training,
@@ -528,7 +535,6 @@ def unifrac_regressor(
         dist=True
     )
 
-    # model = tf.keras.models.load_model('/home/kcantrel/amplicon-gpt/unifrac-model/model.keras')
     model = pretrain_unifrac(
         p_batch_size,
         p_lr,
@@ -544,7 +550,9 @@ def unifrac_regressor(
         32,
         i_max_bp,
         mean,
-        std
+        std,
+        include_count=False,
+        include_random=p_include_random
     )
 
     for x, y in validation_dataset.take(1):
@@ -555,13 +563,13 @@ def unifrac_regressor(
         # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
             "loss",
-            factor=0.5,
-            patients=2,
-            min_lr=0.000001
+            factor=0.8,
+            patients=20,
+            min_lr=0.0001
         ),
         tf.keras.callbacks.EarlyStopping(
             'loss',
-            patience=50
+            patience=500
         ),
         SaveModel(
             p_output_dir,
@@ -679,6 +687,12 @@ def unifrac_regressor(
     type=int
 )
 @click.option(
+    '--p-include-random',
+    default=True,
+    show_default=True,
+    type=bool
+)
+@click.option(
     '--p-lr',
     default=0.01,
     show_default=True,
@@ -717,6 +731,7 @@ def transfer_learn_fit_regressor(
     p_pca_heads: int,
     p_enc_layers: int,
     p_enc_heads: int,
+    p_include_random: bool,
     p_lr: float,
     p_report_back_after: int,
     p_base_model_path: str,
@@ -799,7 +814,9 @@ def transfer_learn_fit_regressor(
     model = TransferLearnNucleotideModel(
         base_model,
         mean,
-        std
+        std,
+        include_random=p_include_random,
+        include_count=True
     )
 
     optimizer = tf.keras.optimizers.Adam(

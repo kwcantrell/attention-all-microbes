@@ -6,8 +6,8 @@ from aam.metrics import PairwiseMAE
 from aam.nuc_model import _construct_regressor, NucModel
 
 
-def pretrain_unifrac(batch_size: int, lr: float, *args):
-    model = _construct_regressor(batch_size, *args, include_count=False)
+def pretrain_unifrac(batch_size: int, lr: float, *args, **kwargs):
+    model = _construct_regressor(batch_size, *args, **kwargs)
 
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=lr,
