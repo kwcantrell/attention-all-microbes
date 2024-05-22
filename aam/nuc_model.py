@@ -276,7 +276,11 @@ class UnifracModel(BaseNucleotideModel):
             batch_size=self.batch_size,
             dtype=tf.float32
         )
-        output, _ = self.feature_emb((input_seq, input_rclr))
+        output, _ = self.feature_emb(
+            (input_seq, input_rclr),
+            include_random=False,
+            include_count=False
+        )
         output = self.readhead(output)
 
     def _extract_data(self, data):

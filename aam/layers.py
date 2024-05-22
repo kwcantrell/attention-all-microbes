@@ -61,6 +61,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 use_bias=True
             ),
         ])
+        self.count_ff.build([None, 1, 1])
         self.ff_clr = tf.keras.layers.Dense(
             128, 'relu', use_bias=True
         )
@@ -268,11 +269,14 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
 
         output = self.pca_layer(output)
         if include_count:
+            self.count_ff.trainable = True
             rclr = self.count_ff(tf.expand_dims(rclr, axis=-1))
             output = tf.add(
                 output,
                 rclr,
             )
+        else:
+            self.count_ff.trainable = False
 
         # output = self.ff_clr(output)
         output = self.attention_layer(
