@@ -496,44 +496,104 @@ def unifrac_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    table = shuffle_table(load_biom_table(i_table_path))
+    # table = shuffle_table(load_biom_table(i_table_path))
 
-    feature_dataset = get_sequencing_dataset(table)
-    feature_count_dataset = get_sequencing_count_dataset(table)
+    # feature_dataset = get_sequencing_dataset(table)
+    # feature_count_dataset = get_sequencing_count_dataset(table)
 
-    regression_dataset = get_unifrac_dataset(
-        i_table_path,
-        i_tree_path,
+    # regression_dataset = get_unifrac_dataset(
+    #     i_table_path,
+    #     i_tree_path,
+    # )
+    # mean, std = 0., 1.
+    # full_dataset, sequence_tokenizer = combine_count_datasets(
+    #     feature_dataset,
+    #     feature_count_dataset,
+    #     regression_dataset,
+    #     i_max_bp,
+    #     add_index=True
+    # )
+    # training, val = train_val_split(
+    #     full_dataset,
+    #     train_percent=.9
+    # )
+    # training_dataset = batch_dataset(
+    #     training,
+    #     p_batch_size,
+    #     i_max_bp,
+    #     shuffle=True,
+    #     repeat=p_repeat,
+    #     dist=True
+    # )
+
+    # validation_dataset = batch_dataset(
+    #     val,
+    #     p_batch_size,
+    #     i_max_bp,
+    #     shuffle=False,
+    #     repeat=1,
+    #     dist=True
+    # )
+
+    # model = pretrain_unifrac(
+    #     p_batch_size,
+    #     p_lr,
+    #     p_dropout,
+    #     p_ff_d_model,
+    #     p_pca_heads,
+    #     1,
+    #     1024,
+    #     p_token_dim,
+    #     p_ff_clr,
+    #     p_enc_layers,
+    #     p_enc_heads,
+    #     32,
+    #     i_max_bp,
+    #     mean,
+    #     std,
+    #     include_count=False,
+    #     include_random=p_include_random,
+    #     sequence_tokenizer=sequence_tokenizer
+    # )
+
+    # for x, y in validation_dataset.take(1):
+    #     ind, seq, rclr = x
+    #     model(x)
+    # model.summary()
+
+    table = load_biom_table(i_table_path)
+    o_ids = tf.constant(table.ids(axis='observation'))
+    table = table.transpose()
+    data = table.matrix_data.tocoo()
+    row_ind = data.row
+    col_ind = data.col
+    values = data.data
+    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
+    table_data = tf.sparse.SparseTensor(indices=indices, values=values,
+                                        dense_shape=table.shape)
+    table_data = tf.sparse.reorder(table_data)
+    table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
+    sequence_tokenizer = tf.keras.layers.TextVectorization(
+        max_tokens=8,
+        split='character',
+        output_mode='int',
+        output_sequence_length=i_max_bp
     )
-    mean, std = 0., 1.
-    full_dataset, sequence_tokenizer = combine_count_datasets(
-        feature_dataset,
-        feature_count_dataset,
-        regression_dataset,
-        i_max_bp,
-        add_index=True
-    )
-    training, val = train_val_split(
-        full_dataset,
-        train_percent=.9
-    )
-    training_dataset = batch_dataset(
-        training,
-        p_batch_size,
-        i_max_bp,
-        shuffle=True,
-        repeat=p_repeat,
-        dist=True
+    sequence_tokenizer.adapt(o_ids[:10])
+    unifrac_dataset = get_unifrac_dataset(i_table_path, i_tree_path)
+
+    dataset = (
+        tf.data.Dataset.zip(
+            tf.data.Dataset.range(unifrac_dataset.cardinality()),
+            table_dataset,
+            unifrac_dataset
+        )
+        .shuffle(unifrac_dataset.cardinality(), reshuffle_each_iteration=True)
+        .batch(8, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE)
     )
 
-    validation_dataset = batch_dataset(
-        val,
-        p_batch_size,
-        i_max_bp,
-        shuffle=False,
-        repeat=1,
-        dist=True
-    )
+    mean = 0
+    std = 1
 
     model = pretrain_unifrac(
         p_batch_size,
@@ -553,12 +613,13 @@ def unifrac_regressor(
         std,
         include_count=False,
         include_random=p_include_random,
+        o_ids=o_ids,
         sequence_tokenizer=sequence_tokenizer
     )
 
-    for x, y in validation_dataset.take(1):
-        ind, seq, rclr = x
-        model(x)
+    for data in dataset.take(1):
+        inputs, outputs = model._extract_data(data)
+        model(inputs)
     model.summary()
 
     core_callbacks = [
@@ -579,8 +640,8 @@ def unifrac_regressor(
         ),
     ]
     model.fit(
-        training_dataset,
-        validation_data=validation_dataset,
+        dataset,
+        # validation_data=validation_dataset,
         callbacks=[
             *core_callbacks
         ],

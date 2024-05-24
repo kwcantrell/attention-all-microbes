@@ -23,6 +23,7 @@ def _construct_regressor(
         scale=None,
         include_count=True,
         include_random=True,
+        o_ids=None,
         sequence_tokenizer=None
 ):
     if include_count:
@@ -58,6 +59,7 @@ def _construct_regressor(
             scale=scale,
             include_random=include_random,
             include_count=include_count,
+            o_ids=o_ids,
             sequence_tokenizer=sequence_tokenizer
         )
 
@@ -74,6 +76,7 @@ class BaseNucleotideModel(tf.keras.Model):
         include_random=True,
         include_count=True,
         use_attention_loss=True,
+        o_ids=None,
         sequence_tokenizer=None,
         **kwargs
     ):
@@ -84,9 +87,10 @@ class BaseNucleotideModel(tf.keras.Model):
         self.include_random = include_random
         self.include_count = include_count
         self.use_attention_loss = use_attention_loss
+        self.o_ids = o_ids
+        self.sequence_tokenizer = sequence_tokenizer
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.regresssion_loss = None
-        self.sequence_tokenizer = sequence_tokenizer
         self.attention_loss = (
             tf.keras.losses.SparseCategoricalCrossentropy(
                 ignore_class=0,
@@ -99,6 +103,38 @@ class BaseNucleotideModel(tf.keras.Model):
         self.make_call_function()
 
     @abc.abstractmethod
+    def model_step(self, inputs, training=None):
+        return
+
+    def get_max_unique_asv(self, sparse_tensor):
+        max_features = tf.reduce_max(
+            tf.reduce_sum(
+                tf.sparse.to_dense(
+                    tf.sparse.map_values(
+                        lambda x: tf.ones_like(x, dtype=tf.int32),
+                        sparse_tensor
+                    )
+                ),
+                axis=-1
+            )
+        )
+        return max_features // 32 * 32 + 32
+
+    def get_table_data(self, sparse_row, pad_size, o_ids):
+        # count
+        dense = tf.cast(sparse_row.values, dtype=tf.float32)
+        gx = tf.exp(tf.reduce_mean(tf.math.log(dense)))
+        dense = tf.math.log(dense / gx)
+        non_zero = tf.shape(dense)[0]
+        zeros = tf.zeros(pad_size - non_zero, dtype=tf.float32)
+        count_info = tf.concat([dense, zeros], axis=0)
+
+        # ids
+        features = tf.gather(o_ids, sparse_row.indices)
+        masks = tf.zeros((pad_size - non_zero, 1), dtype=tf.string)
+        feature_info = tf.concat([features, masks], axis=0)
+        return (feature_info, count_info)
+
     def make_call_function(self):
         """
         handles model exectution
@@ -107,17 +143,43 @@ class BaseNucleotideModel(tf.keras.Model):
             component of type tf.float32 and the second representing the
             nucleotide sequences of type tf.int64
         """
-        return
+        @tf.autograph.experimental.do_not_convert
+        def one_step(inputs, training=None):
+            table_info = inputs
+            pad_size = self.get_max_unique_asv(table_info)
+            features, rclr = tf.map_fn(
+                lambda x: self.get_table_data(x, pad_size, self.o_ids),
+                table_info,
+                fn_output_signature=(tf.string, tf.float32)
+            )
+            features = self.sequence_tokenizer(features)
+            output = self.model_step((features, rclr), training=training)
+            return output
+        self.call_function = tf.function(one_step)
 
     def call(self, inputs, training=None):
         return self.call_function(inputs, training=training)
 
-    @abc.abstractmethod
-    def build(self, input_shape):
+    def build(self, input_shape=None):
         """
         simulate model execution using symbolic tensors
         """
-        return
+        input_seq = tf.keras.Input(
+            shape=[None, self.max_bp],
+            batch_size=self.batch_size,
+            dtype=tf.int64
+        )
+        input_rclr = tf.keras.Input(
+            shape=[None],
+            batch_size=self.batch_size,
+            dtype=tf.float32
+        )
+        self.model_step((input_seq, input_rclr))
+
+    def compile(self, o_ids=None, **kwargs):
+        super().compile(**kwargs)
+        if o_ids is not None:
+            self.o_ids = o_ids
 
     def predict_step(self, data):
         raise NotImplementedError("Please Implement this method")
@@ -255,7 +317,7 @@ class UnifracModel(BaseNucleotideModel):
         attention_layers,
         dff,
         dropout_rate,
-        use_attention_loss=False,
+        use_attention_loss=True,
         **kwargs
     ):
         super().__init__(use_attention_loss=use_attention_loss, **kwargs)
@@ -289,53 +351,21 @@ class UnifracModel(BaseNucleotideModel):
             output_dim=32
         )
 
-    def make_call_function(self):
-        """
-        handles model exectution
-        returns:
-            a tuple of tf.tensors with first tensor being the "regression"
-            component of type tf.float32 and the second representing the
-            nucleotide sequences of type tf.int64
-        """
-        @tf.autograph.experimental.do_not_convert
-        def one_step(inputs, training=None):
-            ind, seq, rclr = inputs
-            seq = self.sequence_tokenizer(seq)
-            output, seq = self.feature_emb(
-                (seq, rclr),
-                training=training,
-                include_random=self.include_random,
-                include_count=self.include_count
-            )
-            output = self.readhead(output)
-            return (output, seq)
-
-        self.call_function = tf.function(one_step)
-
-    def build(self, input_shape):
-        input_seq = tf.keras.Input(
-            shape=[None, self.max_bp],
-            batch_size=self.batch_size,
-            dtype=tf.int64
-        )
-        input_rclr = tf.keras.Input(
-            shape=[None],
-            batch_size=self.batch_size,
-            dtype=tf.float32
-        )
-        output, _ = self.feature_emb(
-            (input_seq, input_rclr),
+    def model_step(self, inputs, training=None):
+        output, seq = self.feature_emb(
+            inputs,
+            training=training,
             include_random=self.include_random,
             include_count=self.include_count
         )
         output = self.readhead(output)
+        return (output, seq)
 
     def _extract_data(self, data):
-        x, y = data
-        ind, seq, rclr = tf.nest.flatten(x)
-        ind = tf.squeeze(ind)
-        y = tf.gather(y, ind, axis=1, batch_dims=0)
-        return ((ind, seq, rclr), y)
+        sample_indices, table_info, y = data
+        sample_indices = tf.squeeze(sample_indices)
+        y = tf.gather(y, sample_indices, axis=1, batch_dims=0)
+        return (table_info, y)
 
     def get_config(self):
         base_config = super().get_config()
@@ -400,35 +430,10 @@ class NucModel(BaseNucleotideModel):
             output_dim=1
         )
 
-    def make_call_function(self):
-        """
-        handles model exectution
-        returns:
-            a tuple of tf.tensors with first tensor being the "regression"
-            component of type tf.float32 and the second representing the
-            nucleotide sequences of type tf.int64
-        """
-        @tf.autograph.experimental.do_not_convert
-        def one_step(inputs, training=None):
-            ind, seq, rclr = inputs
-            output, seq = self.feature_emb((seq, rclr), training=training)
-            output = self.readhead(output)
-            return (output, seq)
-        self.call_function = tf.function(one_step)
-
-    def build(self, input_shape):
-        input_seq = tf.keras.Input(
-            shape=[None, self.max_bp],
-            batch_size=self.batch_size,
-            dtype=tf.int64
-        )
-        input_rclr = tf.keras.Input(
-            shape=[None],
-            batch_size=self.batch_size,
-            dtype=tf.float32
-        )
-        output, _ = self.feature_emb((input_seq, input_rclr))
+    def model_step(self, inputs, training=None):
+        output, seq = self.feature_emb(inputs, training=training)
         output = self.readhead(output)
+        return (output, seq)
 
     def _extract_data(self, data):
         x, y = data
@@ -473,6 +478,8 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         self.base_model.feature_emb.trainable = False
         self.shift = shift
         self.scale = scale
+        self.max_bp = self.base_model.max_bp
+        self.sequence_tokenizer = self.base_model.sequence_tokenizer
         self.count_ff = tf.keras.Sequential([
             tf.keras.layers.Dense(
                 1024,
@@ -515,88 +522,11 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         self.regresssion_loss = tf.keras.losses.MeanSquaredError()
         self.metric_traker = MAE(shift, scale, name="mae")
 
-    def make_call_function(self):
-        """
-        handles model exectution
-        returns:
-            a tuple of tf.tensors with first tensor being the "regression"
-            component of type tf.float32 and the second representing the
-            nucleotide sequences of type tf.int64
-        """
-        @tf.autograph.experimental.do_not_convert
-        def one_step(inputs, training=None):
-            _, seq, rclr = inputs
-            seq = self.base_model.sequence_tokenizer(seq)
-            output, seq = self.base_model.feature_emb(
-                (seq, rclr),
-                training=training,
-                include_random=self.include_random,
-                include_count=self.base_model.include_count
-            )
-            if not self.base_model.include_count:
-                rclr = tf.pad(
-                    rclr,
-                    paddings=[
-                        [0, 0],
-                        [0, tf.shape(output)[1] - tf.shape(rclr)[1]]
-                    ],
-                    constant_values=0
-                )
-                rclr = self.count_ff(
-                    tf.expand_dims(
-                        rclr,
-                        axis=-1
-                    )
-                )
-                # output = output + rclr
-                rclr = tf.linalg.matmul(
-                    output,
-                    rclr,
-                    transpose_b=True
-                )
-                rclr = tf.linalg.matmul(
-                    rclr,
-                    output,
-
-                )
-                output = self.ff(rclr)
-            mask = tf.cast(
-                tf.not_equal(
-                    tf.pad(seq, [[0, 0], [0, 1], [0, 0]], constant_values=1),
-                    0
-                ),
-                dtype=tf.float32
-            )
-            attention_mask = tf.cast(
-                tf.matmul(
-                    mask,
-                    mask,
-                    transpose_b=True
-                ),
-                dtype=tf.bool
-            )
-            output = self.attention_layer(
-                output,
-                attention_mask=attention_mask,
-                training=training
-            )
-            output = self.readhead(output)
-            return (output, seq)
-        self.call_function = tf.function(one_step)
-
-    def build(self, input_shape):
-        seq = tf.keras.Input(
-            shape=[None, self.base_model.max_bp],
-            batch_size=self.base_model.batch_size,
-            dtype=tf.int64
-        )
-        rclr = tf.keras.Input(
-            shape=[None],
-            batch_size=self.base_model.batch_size,
-            dtype=tf.float32
-        )
+    def model_step(self, inputs, training=None):
+        seq, rclr = inputs
         output, seq = self.base_model.feature_emb(
             (seq, rclr),
+            training=training,
             include_random=self.include_random,
             include_count=self.base_model.include_count
         )
@@ -624,10 +554,31 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
             rclr = tf.linalg.matmul(
                 rclr,
                 output,
+
             )
             output = self.ff(rclr)
-        output = self.attention_layer(output)
+        mask = tf.cast(
+            tf.not_equal(
+                tf.pad(seq, [[0, 0], [0, 1], [0, 0]], constant_values=1),
+                0
+            ),
+            dtype=tf.float32
+        )
+        attention_mask = tf.cast(
+            tf.matmul(
+                mask,
+                mask,
+                transpose_b=True
+            ),
+            dtype=tf.bool
+        )
+        output = self.attention_layer(
+            output,
+            attention_mask=attention_mask,
+            training=training
+        )
         output = self.readhead(output)
+        return (output, seq)
 
     def _extract_data(self, data):
         x, y = data

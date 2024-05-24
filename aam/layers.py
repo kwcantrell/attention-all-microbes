@@ -39,10 +39,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             input_length=max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal()
         )
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-                max_length=max_bp,
-                seq_axis=2
-        )
         self.pca_layer = PCAProjector(
             hidden_dim=128,
             num_heads=8,
@@ -253,7 +249,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             dtype=tf.bool
         )
         output = self.emb_layer(seq)
-        output = output + self.pos_emb(output)
 
         output = self.pca_layer(output)
         if include_count:
@@ -312,17 +307,21 @@ class PCAProjector(tf.keras.layers.Layer):
             num_heads,
             dropout
         )
-        self.ff = tf.keras.layers.Dense(
-            hidden_dim,
-            use_bias=True
-        )
+        self.ff = tf.keras.layers.Dense(hidden_dim)
         self.norm = tf.keras.layers.LayerNormalization()
         self.dropout_layer = tf.keras.layers.Dropout(dropout)
         self.point = tf.keras.layers.Dense(1)
 
+    def build(self, input_shape):
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+                max_length=input_shape[-2],
+                seq_axis=2
+        )
+
     def call(self, inputs):
-        inputs = self.ff(inputs)
-        pca_output = self.pca_layer(inputs)
+        output = self.ff(inputs)
+        output = output + self.pos_emb(output)
+        pca_output = self.pca_layer(output)
         pca_output = self.dropout_layer(pca_output)
         pca_output = tf.squeeze(self.point(pca_output), axis=-1)
         return pca_output
@@ -400,6 +399,10 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
     ):
         @tf.function(jit_compile=True)
         def compute_proj(X):
+            X = tf.subtract(
+                X,
+                tf.reduce_mean(X, axis=-2, keepdims=True)
+            )
             X = tf.divide(
                 X,
                 tf.math.sqrt(
