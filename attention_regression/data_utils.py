@@ -146,12 +146,10 @@ def train_val_split(
         dataset
         .take(train_size)
         .cache()
-        .prefetch(tf.data.AUTOTUNE)
     )
     validation_dataset = (
         dataset
         .skip(train_size)
         .cache()
-        .prefetch(tf.data.AUTOTUNE)
     )
     return training_dataset, validation_dataset

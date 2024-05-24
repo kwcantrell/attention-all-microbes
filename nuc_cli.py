@@ -3,7 +3,7 @@ import tensorflow as tf
 import aam._parameter_descriptions as desc
 from aam.cli_util import aam_model_options
 from aam.data_utils import (
-    batch_dist_dataset, batch_dataset,
+    batch_dataset,
     get_unifrac_dataset, combine_datasets, get_sequencing_dataset,
     get_sequencing_count_dataset, combine_count_datasets
 )
@@ -506,7 +506,7 @@ def unifrac_regressor(
         i_tree_path,
     )
     mean, std = 0., 1.
-    full_dataset = combine_count_datasets(
+    full_dataset, sequence_tokenizer = combine_count_datasets(
         feature_dataset,
         feature_count_dataset,
         regression_dataset,
@@ -522,7 +522,7 @@ def unifrac_regressor(
         p_batch_size,
         i_max_bp,
         shuffle=True,
-        repeat=5,
+        repeat=p_repeat,
         dist=True
     )
 
@@ -552,10 +552,12 @@ def unifrac_regressor(
         mean,
         std,
         include_count=False,
-        include_random=p_include_random
+        include_random=p_include_random,
+        sequence_tokenizer=sequence_tokenizer
     )
 
     for x, y in validation_dataset.take(1):
+        ind, seq, rclr = x
         model(x)
     model.summary()
 
@@ -564,8 +566,8 @@ def unifrac_regressor(
         tf.keras.callbacks.ReduceLROnPlateau(
             "loss",
             factor=0.8,
-            patients=20,
-            min_lr=0.0001
+            patients=5,
+            min_lr=0.00001
         ),
         tf.keras.callbacks.EarlyStopping(
             'loss',
@@ -785,7 +787,8 @@ def transfer_learn_fit_regressor(
         feature_count_dataset,
         regression_dataset,
         i_max_bp,
-        add_index=True
+        add_index=True,
+        return_tokenizer=False
     )
     training, val = train_val_split(
         full_dataset,
@@ -854,9 +857,9 @@ def transfer_learn_fit_regressor(
         # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
             "loss",
-            factor=0.5,
-            patients=50,
-            min_lr=0.00001
+            factor=0.8,
+            patients=10,
+            min_lr=0.0001
         ),
         tf.keras.callbacks.EarlyStopping(
             'loss',

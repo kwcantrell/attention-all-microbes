@@ -2,20 +2,6 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 
-@tf.function
-def to_logit(tensor):
-    tensor = tf.divide(
-        tensor,
-        tf.math.reduce_max(tensor, axis=-1, keepdims=True)
-    )
-    return tf.math.log(
-        tf.math.divide_no_nan(
-            tensor,
-            tf.ones_like(tensor) - tensor
-        ),
-    )
-
-
 @tf.keras.saving.register_keras_serializable(
     package="NucleotideEmbedding"
 )
@@ -137,7 +123,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                 tf.reshape(
                     tf.transpose(
                         tf.random.stateless_categorical(
-                            to_logit(unormalized_log_prob),
+                            unormalized_log_prob,
                             tf.cast(range, dtype=tf.int32),
                             tf.cast(seeds[:, 1], dtype=tf.int32),
                             dtype=tf.int32
@@ -186,7 +172,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
                     tf.shape(seq)[1:],
                     dtype=tf.float32
                 ),
-                [1 - .01],
+                [1 - .03],
                 output_dtype=tf.int32
             )
             unmasked_sequence = seq
@@ -328,7 +314,6 @@ class PCAProjector(tf.keras.layers.Layer):
         )
         self.ff = tf.keras.layers.Dense(
             hidden_dim,
-            activation='relu',
             use_bias=True
         )
         self.norm = tf.keras.layers.LayerNormalization()
@@ -370,24 +355,23 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.dropout = dropout
         self.norm = tf.keras.layers.LayerNormalization(axis=-2)
-        self.norm2 = tf.keras.layers.LayerNormalization()
 
     def build(self, input_shape):
         shape = [x if x is not None else -1 for x in input_shape]
         # occurs after up scaling
         head_size = self.hidden_dim // self.num_heads
 
-        self.linear_up_scale = tf.keras.Sequential([
-            tf.keras.layers.Dense(
-                self.hidden_dim,
-                use_bias=True
-            ),
-            tf.keras.layers.Dense(
-                head_size,
-                activation='relu',
-                use_bias=True
-            )
-        ])
+        # self.linear_up_scale = tf.keras.Sequential([
+        #     tf.keras.layers.Dense(
+        #         self.hidden_dim,
+        #         use_bias=True
+        #     ),
+        #     tf.keras.layers.Dense(
+        #         head_size,
+        #         activation='relu',
+        #         use_bias=True
+        #     )
+        # ])
 
         reshape = shape[:-1] + [self.num_heads, head_size]
         first_transp = [i for i in range(len(reshape))]
@@ -416,6 +400,15 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
     ):
         @tf.function(jit_compile=True)
         def compute_proj(X):
+            X = tf.divide(
+                X,
+                tf.math.sqrt(
+                    tf.cast(
+                        tf.shape(X)[-2],
+                        dtype=tf.float32
+                    )
+                )
+            )
             X = tf.reshape(X, shape=reshape)
             X = tf.transpose(X, perm=first_transp)
             cov = tf.linalg.matmul(X, X, transpose_a=True)
@@ -429,30 +422,16 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
                 ),
                 perm=second_transp
             )
-            proj = tf.math.softmax(
-                tf.divide(
-                    pca,
-                    tf.math.sqrt(
-                        tf.cast(
-                            tf.shape(X)[-2],
-                            dtype=tf.float32
-                        )
-                    )
-                ),
-                axis=-1
-            )
-
-            proj = tf.reshape(proj, shape=second_reshape)
             pca = tf.reshape(pca, shape=second_reshape)
-            return (proj, pca)
+            return pca
         return compute_proj
 
     def call(self, inputs):
-        output = self.norm(inputs)
-        output, pca = self.compute_proj(output)
-        output = self.linear_up_scale(output)
-        output = self.norm2(output + pca)
-        return output
+        # output = self.norm(inputs)
+        output = inputs
+        pca = self.compute_proj(output)
+        # output = self.linear_up_scale(output)
+        return pca
 
     def get_config(self):
         base_config = super().get_config()
@@ -527,7 +506,7 @@ class ReadHead(tf.keras.layers.Layer):
         attention_out = self.nuc_out(
             tf.reshape(
                 self.attention_out(inputs[:, :-1, :]),
-                shape=[8, -1, 150, 6]
+                shape=[8, -1, self.max_bp, 6]
             )
         )
 

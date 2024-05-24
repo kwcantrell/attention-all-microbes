@@ -123,6 +123,7 @@ def combine_count_datasets(
     dist_dataset,
     max_bp,
     add_index=False,
+    return_tokenizer=True
 ):
     sequence_tokenizer = tf.keras.layers.TextVectorization(
         max_tokens=8,
@@ -131,7 +132,7 @@ def combine_count_datasets(
         output_sequence_length=max_bp)
     sequence_tokenizer.adapt(seq_dataset.take(1))
 
-    seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
+    # seq_dataset = seq_dataset.map(lambda x: sequence_tokenizer(x))
     dataset_size = seq_dataset.cardinality()
 
     if add_index:
@@ -147,10 +148,12 @@ def combine_count_datasets(
             feature_count_dataset,
             dist_dataset
         )
-    return (
-        tf.data.Dataset
-        .zip(zip)
-    )
+    if return_tokenizer:
+        return (
+            tf.data.Dataset.zip(zip), sequence_tokenizer
+        )
+    else:
+        return tf.data.Dataset.zip(zip)
 
 
 def combine_datasets(
@@ -192,34 +195,37 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, dist=Fal
         ASV_DIM = 0
         shape = tf.shape(seq)[ASV_DIM]
         pad = shape // 32 * 32 + 32 - shape
-
-        gx = tf.reduce_sum(rclr, axis=-1, keepdims=True)
-        # gx = tf.exp(tf.reduce_mean(tf.math.log(rclr)))
+        pad_stings = tf.reshape(
+            tf.repeat(tf.constant([""], dtype=tf.string),  [pad], axis=0),
+            shape=(-1, 1)
+        )
+        # gx = tf.reduce_sum(rclr, axis=-1, keepdims=True)
+        gx = tf.exp(tf.reduce_mean(tf.math.log(rclr)))
         return (
             (
                 ind,
-                tf.pad(seq, [[0, pad], [0, 0]]),
-                tf.pad(rclr / gx, [[0, pad]])
+                tf.concat(
+                    [seq, pad_stings],
+                    axis=0
+                ),
+                tf.pad(tf.math.log(rclr / gx), [[0, pad]])
             ),
             dist
         )
 
-    # def get_pairwise_dist(ind, seq, dist):
-    #     return (seq, tf.gather(dist, ind, axis=0, batch_dims=0))
     size = dataset.cardinality()
 
     if shuffle:
         dataset = (
             dataset
             .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
-            # .map(get_pairwise_dist)
             .shuffle(size, reshuffle_each_iteration=True)
             .padded_batch(
                 batch_size,
                 padded_shapes=(
                     (
                         [],
-                        [None, max_bp],
+                        [None, 1],
                         [None]
                     ),
                     [] if not dist else [None]
@@ -232,13 +238,12 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, dist=Fal
         dataset = (
             dataset
             .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
-            # .map(get_pairwise_dist)
             .padded_batch(
                 batch_size,
                 padded_shapes=(
                     (
                         [],
-                        [None, max_bp],
+                        [None, 1],
                         [None]
                     ),
                     [] if not dist else [None]
@@ -247,62 +252,6 @@ def batch_dataset(dataset, batch_size, max_bp, shuffle=False, repeat=1, dist=Fal
             )
             .prefetch(tf.data.AUTOTUNE)
         )
-    return dataset
-
-
-def batch_dist_dataset(dataset, batch_size, shuffle=False, repeat=1, **kwargs):
-
-    def step_pad(ind, seq, dist):
-        ASV_DIM = 0
-        shape = tf.shape(seq)[ASV_DIM]
-        pad = shape // 8 * 8 + 8 - shape
-        return (
-            (
-                ind,
-                tf.pad(seq, [[0, pad], [0, 0]])
-            ),
-            dist
-        )
-
-    # def get_pairwise_dist(ind, seq, dist):
-    #     return (seq, tf.gather(dist, ind, axis=0, batch_dims=0))
-    size = dataset.cardinality()
-
-    if shuffle:
-        dataset = (
-            dataset
-            .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
-            # .map(get_pairwise_dist)
-            .shuffle(size, reshuffle_each_iteration=True)
-            .padded_batch(
-                batch_size,
-                padded_shapes=(
-                    (
-                        [],
-                        [None, 150]
-                    ),
-                    [None]
-                ),
-                drop_remainder=True
-            )
-            .prefetch(tf.data.AUTOTUNE)
-        )
-    else:
-        dataset = (
-            dataset
-            .map(step_pad, num_parallel_calls=tf.data.AUTOTUNE)
-            # .map(get_pairwise_dist)
-            .padded_batch(
-                batch_size,
-                padded_shapes=(
-                    (
-                        [],
-                        [None, 150]
-                    ),
-                    [None]
-                ),
-                drop_remainder=True
-            )
-            .prefetch(tf.data.AUTOTUNE)
-        )
+    if repeat > 1:
+        dataset = dataset.repeat(repeat)
     return dataset

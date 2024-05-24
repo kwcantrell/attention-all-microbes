@@ -2,9 +2,6 @@ import tensorflow as tf
 from aam.losses import _pairwise_distances, mae_loss
 
 
-# @tf.keras.saving.register_keras_serializable(
-#     package="PairwiseMAE"
-# )
 class PairwiseMAE(tf.keras.metrics.Metric):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -32,7 +29,7 @@ class PairwiseMAE(tf.keras.metrics.Metric):
 
     def result(self):
         return self.loss / self.i
-    
+
     def get_config(self):
         return super().get_config()
 
