@@ -30,20 +30,12 @@ def mean_absolute_error(
     scale
 ):
     pred_val = []
-    true_val = []
-    for x, y in dataset:
-        outputs, _ = model.call(x, training=False)
-        reg, _ = tf.nest.flatten(outputs, expand_composites=True)
-        # outputs = model.call(x, training=False)
-        # reg = outputs["regression"]
-        pred_val.append(tf.squeeze(reg))
-        true_val.append(tf.squeeze(y))
-        # true_val.append(tf.squeeze(y['reg_out']))
+    pred_val = tf.squeeze(model.predict(dataset))*model.scale + model.shift
+    pred_val = pred_val.numpy()
 
-    pred_val = np.concatenate(pred_val)
-    pred_val = pred_val*scale + shift
-    true_val = np.concatenate(true_val)
-    true_val = true_val*scale + shift
+    true_val = []
+    true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
+    true_val = true_val*model.scale + model.shift
     mae = np.mean(np.abs(true_val - pred_val))
 
     min_x = np.min(true_val)

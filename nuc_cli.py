@@ -2,11 +2,7 @@ import click
 import tensorflow as tf
 import aam._parameter_descriptions as desc
 from aam.cli_util import aam_model_options
-from aam.data_utils import (
-    batch_dataset,
-    get_unifrac_dataset, combine_datasets, get_sequencing_dataset,
-    get_sequencing_count_dataset, combine_count_datasets
-)
+from aam.data_utils import (batch_dataset, get_unifrac_dataset, get_table_data, load_data)
 from attention_regression.data_utils import (
     load_biom_table, shuffle_table, train_val_split
 )
@@ -496,119 +492,10 @@ def unifrac_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    # table = shuffle_table(load_biom_table(i_table_path))
-
-    # feature_dataset = get_sequencing_dataset(table)
-    # feature_count_dataset = get_sequencing_count_dataset(table)
-
-    # regression_dataset = get_unifrac_dataset(
-    #     i_table_path,
-    #     i_tree_path,
-    # )
-    # mean, std = 0., 1.
-    # full_dataset, sequence_tokenizer = combine_count_datasets(
-    #     feature_dataset,
-    #     feature_count_dataset,
-    #     regression_dataset,
-    #     i_max_bp,
-    #     add_index=True
-    # )
-    # training, val = train_val_split(
-    #     full_dataset,
-    #     train_percent=.9
-    # )
-    # training_dataset = batch_dataset(
-    #     training,
-    #     p_batch_size,
-    #     i_max_bp,
-    #     shuffle=True,
-    #     repeat=p_repeat,
-    #     dist=True
-    # )
-
-    # validation_dataset = batch_dataset(
-    #     val,
-    #     p_batch_size,
-    #     i_max_bp,
-    #     shuffle=False,
-    #     repeat=1,
-    #     dist=True
-    # )
-
-    # model = pretrain_unifrac(
-    #     p_batch_size,
-    #     p_lr,
-    #     p_dropout,
-    #     p_ff_d_model,
-    #     p_pca_heads,
-    #     1,
-    #     1024,
-    #     p_token_dim,
-    #     p_ff_clr,
-    #     p_enc_layers,
-    #     p_enc_heads,
-    #     32,
-    #     i_max_bp,
-    #     mean,
-    #     std,
-    #     include_count=False,
-    #     include_random=p_include_random,
-    #     sequence_tokenizer=sequence_tokenizer
-    # )
-
-    # for x, y in validation_dataset.take(1):
-    #     ind, seq, rclr = x
-    #     model(x)
-    # model.summary()
-
-    table = load_biom_table(i_table_path)
-    o_ids = tf.constant(table.ids(axis='observation'))
-    table = table.transpose()
-    data = table.matrix_data.tocoo()
-    row_ind = data.row
-    col_ind = data.col
-    values = data.data
-    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    table_data = tf.sparse.SparseTensor(indices=indices, values=values,
-                                        dense_shape=table.shape)
-    table_data = tf.sparse.reorder(table_data)
-    table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
-    sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens=8,
-        split='character',
-        output_mode='int',
-        output_sequence_length=i_max_bp
+    data_obj = load_data(
+        i_table_path, i_max_bp, p_batch_size,
+        tree_path=i_tree_path,
     )
-    sequence_tokenizer.adapt(o_ids[:10])
-    unifrac_dataset = get_unifrac_dataset(i_table_path, i_tree_path)
-
-    dataset = (
-        tf.data.Dataset.zip(
-            (
-                tf.data.Dataset.range(unifrac_dataset.cardinality()),
-                table_dataset
-            ),
-            unifrac_dataset
-        )
-    )
-    size = dataset.cardinality().numpy()
-    train_size = int(size*.9)
-    training_dataset = (
-        dataset
-        .take(train_size)
-        .cache()
-        .shuffle(train_size, reshuffle_each_iteration=True)
-        .batch(8, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE)
-    )
-    validation_dataset = (
-        dataset
-        .skip(train_size)
-        .cache()
-        .batch(8, drop_remainder=True)
-    )
-
-    mean = 0
-    std = 1
 
     model = pretrain_unifrac(
         p_batch_size,
@@ -624,15 +511,15 @@ def unifrac_regressor(
         p_enc_heads,
         32,
         i_max_bp,
-        mean,
-        std,
+        data_obj['mean'],
+        data_obj['std'],
         include_count=False,
         include_random=p_include_random,
-        o_ids=o_ids,
-        sequence_tokenizer=sequence_tokenizer
+        o_ids=data_obj['o_ids'],
+        sequence_tokenizer=data_obj['sequence_tokenizer']
     )
 
-    for data in training_dataset.take(1):
+    for data in data_obj['training_dataset'].take(1):
         inputs, _ = model._extract_data(data)
         model(inputs)
     model.summary()
@@ -655,8 +542,8 @@ def unifrac_regressor(
         ),
     ]
     model.fit(
-        training_dataset,
-        validation_data=validation_dataset,
+        data_obj['training_dataset'],
+        validation_data=data_obj['validation_dataset'],
         callbacks=[
             *core_callbacks
         ],
@@ -822,80 +709,27 @@ def transfer_learn_fit_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    table = shuffle_table(load_biom_table(i_table_path))
-    metadata = pd.read_csv(
-        i_metadata_path, sep='\t',
-        index_col=0
+    data_obj = load_data(
+        i_table_path, i_max_bp, p_batch_size,
+        repeat=p_repeat,
+        shuffle_samples=False,
+        metadata_path=i_metadata_path,
+        metadata_col=i_metadata_col,
+        missing_samples_flag=p_missing_samples
     )
 
-    # check for mismatch samples
-    ids = table.ids(axis='sample')
-    shared_ids = set(ids).intersection(set(metadata.index))
-    min_ids = min(len(shared_ids), len(ids), len(metadata.index))
-    max_ids = max(len(shared_ids), len(ids), len(metadata.index))
-    if len(shared_ids) == 0:
-        raise Exception('Table and Metadata have no matching sample ids')
-    if min_ids != max_ids and p_missing_samples == 'error':
-        raise Exception('Table and Metadata do share all same sample ids.')
-    elif min_ids != max_ids and p_missing_samples == 'ignore':
-        print('Warning: Table and Metadata do share all same sample ids.')
-        print('Table and metadata will be filtered')
-        table = table.filter(shared_ids, inplace=False)
-        metadata = metadata[metadata.index.isin(shared_ids)]
-        ids = table.ids(axis='sample')
+    train_size = data_obj['training_dataset'].cardinality().numpy()
 
-    # TODO: check for invalid metadata values
-    table = table.remove_empty(axis='observation', inplace=False)
-    feature_dataset = get_sequencing_dataset(table)
-    feature_count_dataset = get_sequencing_count_dataset(table)
-    metadata = filter_and_reorder(metadata, ids)
-    regression_data = extract_col(
-        metadata,
-        i_metadata_col,
-        output_dtype=np.float32
-    )
-    regression_dataset, mean, std = convert_to_normalized_dataset(
-        regression_data,
-        'z'
-    )
-    full_dataset = combine_count_datasets(
-        feature_dataset,
-        feature_count_dataset,
-        regression_dataset,
-        i_max_bp,
-        add_index=True,
-        return_tokenizer=False
-    )
-    training, val = train_val_split(
-        full_dataset,
-        train_percent=.8
-    )
-    training_size = training.cardinality().numpy()
-    training_ids = ids[:training_size]
-    training_dataset = batch_dataset(
-        training,
-        p_batch_size,
-        i_max_bp,
-        shuffle=True,
-        repeat=5,
-    )
-
-    validation_dataset = batch_dataset(
-        val,
-        p_batch_size,
-        i_max_bp,
-        shuffle=False,
-        repeat=1,
-    )
     base_model = tf.keras.models.load_model(p_base_model_path)
-    base_model.trainable = False
-
     model = TransferLearnNucleotideModel(
         base_model,
-        mean,
-        std,
+        p_dropout,
+        shift=data_obj['mean'],
+        scale=data_obj['std'],
         include_random=p_include_random,
-        include_count=True
+        include_count=True,
+        o_ids=data_obj['o_ids'],
+        sequence_tokenizer=data_obj['sequence_tokenizer']
     )
 
     optimizer = tf.keras.optimizers.Adam(
@@ -904,26 +738,27 @@ def transfer_learn_fit_regressor(
         beta_2=0.98,
         epsilon=1e-9
     )
-    model.compile(
-        optimizer=optimizer,
-        jit_compile=False
-    )
+    model.compile(optimizer=optimizer, jit_compile=False)
 
-    for x, y in validation_dataset.take(1):
-        base_model(x)
-        model(x)
+    for data in data_obj['validation_dataset'].take(1):
+        inputs, _ = model._extract_data(data)
+        model(inputs)
     model.summary()
 
     reg_out_callbacks = [
         MAE_Scatter(
             'training',
-            validation_dataset,
-            metadata[metadata.index.isin(training_ids)],
+            data_obj['validation_dataset'],
+            data_obj['metadata'][
+                data_obj['metadata'].index.isin(
+                    data_obj['sample_ids'][train_size:]
+                )
+            ],
             i_metadata_col,
             None,
             None,
-            mean,
-            std,
+            data_obj['mean'],
+            data_obj['std'],
             figure_path,
             report_back_after=p_report_back_after
         )
@@ -947,8 +782,8 @@ def transfer_learn_fit_regressor(
         ),
     ]
     model.fit(
-        training_dataset,
-        validation_data=validation_dataset,
+        data_obj['training_dataset'],
+        validation_data=data_obj['validation_dataset'],
         callbacks=[
             *reg_out_callbacks,
             *core_callbacks

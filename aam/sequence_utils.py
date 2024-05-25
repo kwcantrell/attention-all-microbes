@@ -54,7 +54,8 @@ def add_random_sequences(
 
 def random_sequences_mask(
     seq,
-    seeds
+    seeds,
+    seq_mask_rate
 ):
     random_mask = tf.random.stateless_binomial(
         tf.shape(seq)[1:],
@@ -63,7 +64,7 @@ def random_sequences_mask(
             tf.shape(seq)[1:],
             dtype=tf.float32
         ),
-        [1 - .01],
+        [1 - seq_mask_rate],
         output_dtype=tf.int32
     )
     seq = tf.multiply(
@@ -80,3 +81,50 @@ def add_random_seq_and_mask(
 ):
     seq = add_random_sequences(seq, seeds, range)
     return random_sequences_mask(seq, seeds, range)
+
+
+def compute_pca_proj(
+    tensor,
+    hidden_dim,
+    num_heads,
+    head_size
+):
+    BP_DIM = 2
+    HEAD_DIM = 3
+    HEAD_SIZE_DIM = 4
+    shape = tf.shape(tensor)
+    reshape = tf.concat([shape[:-1], [num_heads, head_size]], axis=0)
+    perm = tf.concat(
+        [tf.range(tf.shape(reshape)[0])[:-3], [HEAD_DIM, BP_DIM, HEAD_SIZE_DIM]],
+        axis=0
+    )
+    second_reshape = tf.concat([shape[:-2], [hidden_dim, head_size]], axis=0)
+
+    tensor = tf.subtract(
+        tensor,
+        tf.reduce_mean(tensor, axis=-2, keepdims=True)
+    )
+    tensor = tf.divide(
+        tensor,
+        tf.math.sqrt(
+            tf.cast(
+                tf.shape(tensor)[-2],
+                dtype=tf.float32
+            )
+        )
+    )
+    tensor = tf.reshape(tensor, shape=reshape)
+    tensor = tf.transpose(tensor, perm=perm)
+    cov = tf.linalg.matmul(tensor, tensor, transpose_a=True)
+    eig_values, eig_vec = tf.linalg.eigh(cov)
+    pca = tf.transpose(
+        tf.matmul(
+            tf.linalg.diag(
+                eig_values
+            ),
+            eig_vec,
+        ),
+        perm=perm
+    )
+    pca = tf.reshape(pca, shape=second_reshape)
+    return pca

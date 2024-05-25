@@ -8,11 +8,7 @@ from aam.losses import _pairwise_distances
 from skbio.stats.distance import DistanceMatrix
 import skbio.stats.ordination
 from biom import load_table
-from aam.data_utils import (
-    get_sequencing_dataset, get_unifrac_dataset, combine_datasets,
-    # batch_dataset,
-)
-# from unifrac import unweighted
+from aam.data_utils import get_unifrac_dataset
 
 
 def mean_confidence_interval(data, confidence=0.95):

@@ -15,10 +15,7 @@ def pretrain_unifrac(batch_size: int, lr: float, *args, **kwargs):
         beta_2=0.98,
         epsilon=1e-9
     )
-    model.compile(
-        optimizer=optimizer,
-        jit_compile=False
-    )
+    model.compile(optimizer=optimizer)
     return model
 
 

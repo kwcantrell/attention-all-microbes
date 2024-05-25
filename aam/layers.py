@@ -1,6 +1,8 @@
 import tensorflow as tf
 import tensorflow_models as tfm
-from aam.sequence_utils import add_random_sequences, add_random_seq_and_mask, random_sequences_mask
+from aam.sequence_utils import (
+    add_random_sequences, add_random_seq_and_mask, random_sequences_mask, compute_pca_proj
+)
 
 
 @tf.keras.saving.register_keras_serializable(
@@ -82,7 +84,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         self.add_random_sequences = tf.function(add_random_sequences)
         self.add_random_seq_and_mask = tf.function(add_random_seq_and_mask)
         self.random_sequences_mask = tf.function(random_sequences_mask)
-        self.add_seq_and_count_pad = tf.function(add_seq_and_count_pad)
+        self.add_seq_and_count_pad = add_seq_and_count_pad
 
     def call(
         self,
@@ -90,14 +92,14 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         mask=None,
         training=None,
         include_random=True,
-        include_count=True
+        seq_mask_rate=0.
     ):
         seq, rclr = tf.nest.flatten(inputs, expand_composites=True)
         if training and include_random:
             seeds = self.random_generator.make_seeds(1)
-            seq = self.random_sequences_mask(seq, seeds)
+            seq = self.random_sequences_mask(seq, seeds, seq_mask_rate)
 
-        seq, rclr = self.add_seq_and_count_pad(seq, rclr)
+        seq, rclr = tf.nest.flatten(self.add_seq_and_count_pad(seq, rclr))
         mask = tf.cast(
             tf.not_equal(
                 seq,
@@ -208,72 +210,17 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.dropout = dropout
         self.norm = tf.keras.layers.LayerNormalization(axis=-2)
-
-    def build(self, input_shape):
-        shape = [x if x is not None else -1 for x in input_shape]
-        # occurs after up scaling
-        head_size = self.hidden_dim // self.num_heads
-
-        reshape = shape[:-1] + [self.num_heads, head_size]
-        first_transp = [i for i in range(len(reshape))]
-        first_transp = first_transp[:-3] + [first_transp[-2],
-                                            first_transp[-3],
-                                            first_transp[-1]]
-        second_transp = [i for i in range(len(reshape))]
-        second_transp = second_transp[:-3] + [second_transp[-2],
-                                              second_transp[-3],
-                                              second_transp[-1]]
-        second_reshape = shape[:-2] + [self.hidden_dim, head_size]
-        init_tup = (
-            reshape,
-            first_transp,
-            second_transp,
-            second_reshape,
-        )
-        self.second = second_transp
-        self.compute_proj = MultiHeadPCAProjection.init_proj(*init_tup)
-
-    def init_proj(
-        reshape,
-        first_transp,
-        second_transp,
-        second_reshape
-    ):
-        @tf.function(jit_compile=True)
-        def compute_proj(X):
-            X = tf.subtract(
-                X,
-                tf.reduce_mean(X, axis=-2, keepdims=True)
-            )
-            X = tf.divide(
-                X,
-                tf.math.sqrt(
-                    tf.cast(
-                        tf.shape(X)[-2],
-                        dtype=tf.float32
-                    )
-                )
-            )
-            X = tf.reshape(X, shape=reshape)
-            X = tf.transpose(X, perm=first_transp)
-            cov = tf.linalg.matmul(X, X, transpose_a=True)
-            eig_values, eig_vec = tf.linalg.eigh(cov)
-            pca = tf.transpose(
-                tf.matmul(
-                    tf.linalg.diag(
-                        eig_values
-                    ),
-                    eig_vec,
-                ),
-                perm=second_transp
-            )
-            pca = tf.reshape(pca, shape=second_reshape)
-            return pca
-        return compute_proj
+        self.compute_pca_proj = tf.function(compute_pca_proj, jit_compile=True)
+        self.head_size = self.hidden_dim // self.num_heads
 
     def call(self, inputs):
         output = inputs
-        pca = self.compute_proj(output)
+        pca = self.compute_pca_proj(
+            output,
+            self.hidden_dim,
+            self.num_heads,
+            self.head_size
+        )
         return pca
 
     def get_config(self):
@@ -350,11 +297,16 @@ class ReadHead(tf.keras.layers.Layer):
         return {**base_config, **config}
 
     def call(self, inputs):
+        batch_dim = tf.shape(inputs)[0]
+        num_seq = tf.shape(inputs)[1] - 1
+
+        reg_out = inputs[:, -1, :]
         reg_out = self.reg_out(inputs[:, -1, :])
+        
         seq_out = inputs[:, :-1, :]
         seq_out = tf.reshape(
             self.attention_out(seq_out),
-            shape=[8, -1, self.max_bp, 6]
+            shape=[batch_dim, num_seq, self.max_bp, 6]
         )
         seq_out = self.nuc_out(seq_out + self.pos_emb(seq_out))
 

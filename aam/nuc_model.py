@@ -66,15 +66,16 @@ def _construct_regressor(
     return model
 
 
-@tf.keras.saving.register_keras_serializable(package="UnifracModel")
+@tf.keras.saving.register_keras_serializable(package="BaseNucleotideModel")
 class BaseNucleotideModel(tf.keras.Model):
     def __init__(
         self,
         batch_size,
-        shift,
-        scale,
+        shift=0,
+        scale=1,
         include_random=True,
         include_count=True,
+        seq_mask_rate=0.1,
         use_attention_loss=True,
         o_ids=None,
         sequence_tokenizer=None,
@@ -86,6 +87,7 @@ class BaseNucleotideModel(tf.keras.Model):
         self.scale = scale
         self.include_random = include_random
         self.include_count = include_count
+        self.seq_mask_rate = seq_mask_rate
         self.use_attention_loss = use_attention_loss
         self.o_ids = o_ids
         self.sequence_tokenizer = sequence_tokenizer
@@ -153,6 +155,8 @@ class BaseNucleotideModel(tf.keras.Model):
                 fn_output_signature=(tf.string, tf.float32)
             )
             features = tf.cast(self.sequence_tokenizer(features), tf.int32)
+            features = tf.stop_gradient(features)
+            rclr = tf.stop_gradient(rclr)
             output = self.model_step((features, rclr), training=training)
             return (output, features)
         self.call_function = tf.function(one_step)
@@ -166,12 +170,10 @@ class BaseNucleotideModel(tf.keras.Model):
         """
         input_seq = tf.keras.Input(
             shape=[None, self.max_bp],
-            batch_size=self.batch_size,
             dtype=tf.int32
         )
         input_rclr = tf.keras.Input(
             shape=[None],
-            batch_size=self.batch_size,
             dtype=tf.float32
         )
         self.model_step((input_seq, input_rclr))
@@ -182,7 +184,11 @@ class BaseNucleotideModel(tf.keras.Model):
             self.o_ids = o_ids
 
     def predict_step(self, data):
-        raise NotImplementedError("Please Implement this method")
+        inputs, _ = self._extract_data(data)
+        # Forward pass
+        outputs, _ = self(inputs, training=False)
+        reg_out, _ = tf.nest.flatten(outputs, expand_composites=True)
+        return reg_out
 
     @abc.abstractmethod
     def _extract_data(self, data):
@@ -356,7 +362,7 @@ class UnifracModel(BaseNucleotideModel):
             inputs,
             training=training,
             include_random=self.include_random,
-            include_count=self.include_count
+            seq_mask_rate=self.seq_mask_rate
         )
         output = self.readhead(output)
         return output
@@ -462,38 +468,31 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
     def __init__(
         self,
         base_model,
-        shift,
-        scale,
-        use_attention_loss=False,
+        dropout_rate,
+        count_ff_dim=1024,
+        num_layers=6,
+        num_attention_heads=8,
+        dff=1024,
+        use_attention_loss=True,
         **kwargs
     ):
         super().__init__(
             batch_size=base_model.batch_size,
-            shift=shift,
-            scale=scale,
             use_attention_loss=use_attention_loss,
             **kwargs
         )
         self.base_model = base_model
-        self.base_model.feature_emb.trainable = False
-        self.shift = shift
-        self.scale = scale
+        self.base_model.trainable = False
         self.max_bp = self.base_model.max_bp
+        self.dropout_rate = dropout_rate
+        self.count_ff_dim = count_ff_dim
+        self.num_layers = num_layers
+        self.num_attention_heads = num_attention_heads
+        self.dff = dff
         self.sequence_tokenizer = self.base_model.sequence_tokenizer
         self.count_ff = tf.keras.Sequential([
             tf.keras.layers.Dense(
-                1024,
-                activation='relu',
-                use_bias=True
-            ),
-            tf.keras.layers.Dense(
-                self.base_model.pca_hidden_dim,
-                use_bias=True
-            ),
-        ])
-        self.ff = tf.keras.Sequential([
-            tf.keras.layers.Dense(
-                1024,
+                count_ff_dim,
                 activation='relu',
                 use_bias=True
             ),
@@ -504,10 +503,10 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
             tf.keras.layers.LayerNormalization()
         ])
         self.attention_layer = tfm.nlp.models.TransformerEncoder(
-            num_layers=6,
-            num_attention_heads=8,
-            intermediate_size=1024,
-            dropout_rate=0.1,
+            num_layers=num_layers,
+            num_attention_heads=num_attention_heads,
+            intermediate_size=dff,
+            dropout_rate=dropout_rate,
             norm_first=True,
             activation='relu',
         )
@@ -520,56 +519,33 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         )
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.regresssion_loss = tf.keras.losses.MeanSquaredError()
-        self.metric_traker = MAE(shift, scale, name="mae")
+        self.metric_traker = MAE(self.shift, self.scale, name="mae")
 
     def model_step(self, inputs, training=None):
         seq, rclr = inputs
-        output, seq = self.base_model.feature_emb(
+        base_emb = self.base_model.feature_emb
+        output = base_emb(
             (seq, rclr),
             training=training,
             include_random=self.include_random,
-            include_count=self.base_model.include_count
+            seq_mask_rate=self.seq_mask_rate
+        )
+        output = tf.stop_gradient(output)
+        seq, rclr = base_emb.add_seq_and_count_pad(
+            seq, rclr
         )
         if not self.base_model.include_count:
-            rclr = tf.pad(
-                rclr,
-                paddings=[
-                    [0, 0],
-                    [0, tf.shape(output)[1] - tf.shape(rclr)[1]]
-                ],
-                constant_values=0
-            )
             rclr = self.count_ff(
                 tf.expand_dims(
                     rclr,
                     axis=-1
                 )
             )
-            # output = output + rclr
-            rclr = tf.linalg.matmul(
-                output,
-                rclr,
-                transpose_b=True
-            )
-            rclr = tf.linalg.matmul(
-                rclr,
-                output,
+            output = output + rclr
 
-            )
-            output = self.ff(rclr)
-        mask = tf.cast(
-            tf.not_equal(
-                tf.pad(seq, [[0, 0], [0, 1], [0, 0]], constant_values=1),
-                0
-            ),
-            dtype=tf.float32
-        )
+        mask = tf.cast(tf.not_equal(seq, 0), dtype=tf.float32)
         attention_mask = tf.cast(
-            tf.matmul(
-                mask,
-                mask,
-                transpose_b=True
-            ),
+            tf.matmul(mask, mask, transpose_b=True),
             dtype=tf.bool
         )
         output = self.attention_layer(
@@ -578,13 +554,11 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
             training=training
         )
         output = self.readhead(output)
-        return (output, seq)
+        return output
 
     def _extract_data(self, data):
-        x, y = data
-        ind, seq, rclr = tf.nest.flatten(x)
-        ind = tf.squeeze(ind)
-        return ((ind, seq, rclr), y)
+        (_, table_info), y = data
+        return (table_info, y)
 
     def get_config(self):
         base_config = super().get_config()
@@ -592,8 +566,12 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
             "base_model": tf.keras.saving.serialize_keras_object(
                 self.base_model
             ),
-            "shift": self.shift,
-            "scale": self.scale,
+            "dropout_rate": self.dropout_rate,
+            "count_ff_dim": self.count_ff_dim,
+            "num_layers": self.num_layers,
+            "num_attention_heads": self.num_attention_heads,
+            "dff": self.dff,
+
         }
         return {**base_config, **config}
 
