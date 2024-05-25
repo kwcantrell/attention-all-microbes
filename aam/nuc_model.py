@@ -152,9 +152,9 @@ class BaseNucleotideModel(tf.keras.Model):
                 table_info,
                 fn_output_signature=(tf.string, tf.float32)
             )
-            features = self.sequence_tokenizer(features)
+            features = tf.cast(self.sequence_tokenizer(features), tf.int32)
             output = self.model_step((features, rclr), training=training)
-            return output
+            return (output, features)
         self.call_function = tf.function(one_step)
 
     def call(self, inputs, training=None):
@@ -167,7 +167,7 @@ class BaseNucleotideModel(tf.keras.Model):
         input_seq = tf.keras.Input(
             shape=[None, self.max_bp],
             batch_size=self.batch_size,
-            dtype=tf.int64
+            dtype=tf.int32
         )
         input_rclr = tf.keras.Input(
             shape=[None],
@@ -352,17 +352,17 @@ class UnifracModel(BaseNucleotideModel):
         )
 
     def model_step(self, inputs, training=None):
-        output, seq = self.feature_emb(
+        output = self.feature_emb(
             inputs,
             training=training,
             include_random=self.include_random,
             include_count=self.include_count
         )
         output = self.readhead(output)
-        return (output, seq)
+        return output
 
     def _extract_data(self, data):
-        sample_indices, table_info, y = data
+        (sample_indices, table_info), y = data
         sample_indices = tf.squeeze(sample_indices)
         y = tf.gather(y, sample_indices, axis=1, batch_dims=0)
         return (table_info, y)

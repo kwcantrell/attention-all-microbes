@@ -584,12 +584,27 @@ def unifrac_regressor(
 
     dataset = (
         tf.data.Dataset.zip(
-            tf.data.Dataset.range(unifrac_dataset.cardinality()),
-            table_dataset,
+            (
+                tf.data.Dataset.range(unifrac_dataset.cardinality()),
+                table_dataset
+            ),
             unifrac_dataset
         )
-        .shuffle(unifrac_dataset.cardinality(), reshuffle_each_iteration=True)
+    )
+    size = dataset.cardinality().numpy()
+    train_size = int(size*.9)
+    training_dataset = (
+        dataset
+        .take(train_size)
+        .cache()
+        .shuffle(train_size, reshuffle_each_iteration=True)
         .batch(8, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE)
+    )
+    validation_dataset = (
+        dataset
+        .skip(train_size)
+        .cache()
+        .batch(8, drop_remainder=True)
     )
 
     mean = 0
@@ -617,8 +632,8 @@ def unifrac_regressor(
         sequence_tokenizer=sequence_tokenizer
     )
 
-    for data in dataset.take(1):
-        inputs, outputs = model._extract_data(data)
+    for data in training_dataset.take(1):
+        inputs, _ = model._extract_data(data)
         model(inputs)
     model.summary()
 
@@ -640,8 +655,8 @@ def unifrac_regressor(
         ),
     ]
     model.fit(
-        dataset,
-        # validation_data=validation_dataset,
+        training_dataset,
+        validation_data=validation_dataset,
         callbacks=[
             *core_callbacks
         ],
