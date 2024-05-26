@@ -60,7 +60,8 @@ def _construct_regressor(
             include_random=include_random,
             include_count=include_count,
             o_ids=o_ids,
-            sequence_tokenizer=sequence_tokenizer
+            sequence_tokenizer=sequence_tokenizer,
+            seq_mask_rate=0.75
         )
 
     return model
@@ -212,16 +213,24 @@ class BaseNucleotideModel(tf.keras.Model):
             reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
 
             # Compute regression loss
-            loss = self.regresssion_loss(y, reg_out)
+            loss = tf.squeeze(self.regresssion_loss(y, reg_out))
             if self.use_attention_loss:
-                attention_loss = tf.reduce_mean(
+                counts = tf.reduce_sum(
+                    tf.cast(tf.math.not_equal(seq, 0), dtype=tf.float32),
+                    axis=-1,
+                )
+                attention_loss = tf.reduce_sum(
                     self.attention_loss(
                         seq,
                         logits
                     ),
                     axis=-1
                 )
-                loss += attention_loss
+                attention_loss = tf.reduce_sum(
+                    tf.math.divide_no_nan(attention_loss, counts),
+                    axis=-1
+                )
+                loss = tf.reduce_mean(loss + attention_loss)
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -257,17 +266,24 @@ class BaseNucleotideModel(tf.keras.Model):
         reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
 
         # Compute regression loss
-        loss = self.regresssion_loss(y, reg_out)
+        loss = tf.squeeze(self.regresssion_loss(y, reg_out))
         if self.use_attention_loss:
-            attention_loss = tf.reduce_mean(
+            counts = tf.reduce_sum(
+                tf.cast(tf.math.not_equal(seq, 0), dtype=tf.float32),
+                axis=-1,
+            )
+            attention_loss = tf.reduce_sum(
                 self.attention_loss(
                     seq,
                     logits
                 ),
                 axis=-1
             )
-            loss += attention_loss
-
+            attention_loss = tf.reduce_sum(
+                tf.math.divide_no_nan(attention_loss, counts),
+                axis=-1
+            )
+            loss = tf.reduce_mean(loss + attention_loss)
         self.loss_tracker.update_state(loss)
 
         # Compute our own metrics
@@ -469,10 +485,10 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         self,
         base_model,
         dropout_rate,
-        count_ff_dim=1024,
-        num_layers=6,
+        count_ff_dim=32,
+        num_layers=2,
         num_attention_heads=8,
-        dff=1024,
+        dff=32,
         use_attention_loss=True,
         **kwargs
     ):
@@ -518,7 +534,7 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
             output_dim=1
         )
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.regresssion_loss = tf.keras.losses.MeanSquaredError()
+        self.regresssion_loss = tf.keras.losses.MeanSquaredError(reduction='none')
         self.metric_traker = MAE(self.shift, self.scale, name="mae")
 
     def model_step(self, inputs, training=None):

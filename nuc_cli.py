@@ -712,10 +712,11 @@ def transfer_learn_fit_regressor(
     data_obj = load_data(
         i_table_path, i_max_bp, p_batch_size,
         repeat=p_repeat,
-        shuffle_samples=False,
+        shuffle_samples=True,
         metadata_path=i_metadata_path,
         metadata_col=i_metadata_col,
-        missing_samples_flag=p_missing_samples
+        missing_samples_flag=p_missing_samples,
+        train_percent=0.8
     )
 
     train_size = data_obj['training_dataset'].cardinality().numpy()
@@ -729,7 +730,8 @@ def transfer_learn_fit_regressor(
         include_random=p_include_random,
         include_count=True,
         o_ids=data_obj['o_ids'],
-        sequence_tokenizer=data_obj['sequence_tokenizer']
+        sequence_tokenizer=data_obj['sequence_tokenizer'],
+        seq_mask_rate=0.75
     )
 
     optimizer = tf.keras.optimizers.Adam(

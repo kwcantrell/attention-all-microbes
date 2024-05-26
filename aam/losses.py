@@ -51,19 +51,20 @@ def _pairwise_distances(embeddings, squared=False):
 
 
 class PairwiseLoss(tf.keras.losses.Loss):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, reduction="none", **kwargs):
+        super().__init__(reduction="none", **kwargs)
 
         @tf.py_function(Tout=tf.float32)
         def nc2(n):
             return tf.cast(comb(n, 2), dtype=tf.float32)
 
         def pairwise_loss(y_true, y_pred):
-            batch_size = tf.shape(y_pred)[0]
+            # batch_size = tf.shape(y_pred)[0]
             y_pred_dist = _pairwise_distances(y_pred, squared=False)
-            difference = tf.math.square(y_true - y_pred_dist)
-            difference = tf.linalg.band_part(difference, 0, -1)
-            return tf.reduce_sum(difference) / nc2(batch_size)
+            difference = tf.math.reduce_sum(
+                tf.math.square(y_true - y_pred_dist), axis=-1
+            )
+            return difference
         self.loss = tf.function(pairwise_loss)
 
     def call(self, y_true, y_pred):

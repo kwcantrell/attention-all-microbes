@@ -42,7 +42,7 @@ def convert_to_normalized_dataset(values, normalize):
         scale = 1
     else:
         raise Exception(f"Invalid data normalization: {normalize}")
-    values_normalized = (values - shift) / scale
+    values_normalized = tf.expand_dims((values - shift) / scale, axis=-1)
     dataset = tf.data.Dataset.from_tensor_slices(values_normalized)
     return dataset, shift, scale
 
@@ -57,10 +57,7 @@ def get_unifrac_dataset(table_path, tree_path):
 def batch_dataset(table_dataset, target_dataset, batch_size, shuffle=False, repeat=1, train_percent=None):
     dataset = (
         tf.data.Dataset.zip(
-            (
-                tf.data.Dataset.range(target_dataset.cardinality()),
-                table_dataset
-            ),
+            (tf.data.Dataset.range(table_dataset.cardinality()), table_dataset),
             target_dataset
         )
     )
@@ -110,7 +107,6 @@ def validate_metadata(table, metadata, missing_samples_flag):
         print('Table and metadata will be filtered')
         table = table.filter(shared_ids, inplace=False)
         metadata = metadata[metadata.index.isin(shared_ids)]
-        ids = table.ids(axis='sample')
     return table, metadata
 
 

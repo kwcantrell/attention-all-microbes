@@ -57,20 +57,11 @@ def random_sequences_mask(
     seeds,
     seq_mask_rate
 ):
-    random_mask = tf.random.stateless_binomial(
-        tf.shape(seq)[1:],
-        seeds[:, 0],
-        tf.ones(
-            tf.shape(seq)[1:],
-            dtype=tf.float32
-        ),
-        [1 - seq_mask_rate],
-        output_dtype=tf.int32
+    random_mask = tf.random.stateless_uniform(tf.shape(seq), seeds[:, 0])
+    random_mask = tf.cast(
+        tf.math.greater_equal(random_mask, seq_mask_rate), dtype=tf.int32
     )
-    seq = tf.multiply(
-        seq,
-        tf.expand_dims(random_mask, axis=0)
-    )
+    seq = tf.multiply(seq, random_mask)
     return seq
 
 
@@ -100,18 +91,9 @@ def compute_pca_proj(
     )
     second_reshape = tf.concat([shape[:-2], [hidden_dim, head_size]], axis=0)
 
-    tensor = tf.subtract(
-        tensor,
-        tf.reduce_mean(tensor, axis=-2, keepdims=True)
-    )
+    tensor = tf.subtract(tensor, tf.reduce_mean(tensor, axis=-2, keepdims=True))
     tensor = tf.divide(
-        tensor,
-        tf.math.sqrt(
-            tf.cast(
-                tf.shape(tensor)[-2],
-                dtype=tf.float32
-            )
-        )
+        tensor, tf.math.sqrt(tf.cast(tf.shape(tensor)[-2], dtype=tf.float32))
     )
     tensor = tf.reshape(tensor, shape=reshape)
     tensor = tf.transpose(tensor, perm=perm)
