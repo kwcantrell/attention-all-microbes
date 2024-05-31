@@ -1,5 +1,6 @@
-import tensorflow as tf
 from math import comb
+
+import tensorflow as tf
 
 
 @tf.function(jit_compile=True)
@@ -27,8 +28,11 @@ def _pairwise_distances(embeddings, squared=False):
     # Compute the pairwise distance matrix as we have:
     # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
     # shape (batch_size, batch_size)
-    distances = (tf.expand_dims(square_norm, 1) - 2.0 * dot_product +
-                 tf.expand_dims(square_norm, 0))
+    distances = (
+        tf.expand_dims(square_norm, 1)
+        - 2.0 * dot_product
+        + tf.expand_dims(square_norm, 0)
+    )
 
     # Because of computation errors, some distances might be negative so we
     # put everything >= 0.0
@@ -65,10 +69,11 @@ class PairwiseLoss(tf.keras.losses.Loss):
                 tf.math.square(y_true - y_pred_dist), axis=-1
             )
             return difference
+
         self.loss = tf.function(pairwise_loss)
 
     def call(self, y_true, y_pred):
-        return self.loss(y_true, y_pred),
+        return (self.loss(y_true, y_pred),)
 
     def get_config(self):
         return super().get_config()
@@ -97,11 +102,12 @@ def pairwise_residual_mse(batch_size, mean=None, std=None):
         rse = tf.linalg.band_part(tf.square(r_yt - r_yp), 0, -1)
         mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
         return mse + mrse
+
     return inner
 
 
 def denormalize(tensor, mean, std):
-    return tensor*std + mean
+    return tensor * std + mean
 
 
 def mae_loss(mean=None, std=None):
@@ -110,6 +116,7 @@ def mae_loss(mean=None, std=None):
             y_true = denormalize(y_true, mean, std)
             y_pred = denormalize(y_pred, mean, std)
         return tf.abs(y_true - y_pred)
+
     return mae
 
 
@@ -118,6 +125,7 @@ def mse_loss(mean=None, std=None):
         y_true = denormalize(y_true, mean, std)
         y_pred = denormalize(y_pred, mean, std)
         return tf.square(y_true - y_pred)
+
     return mse
 
 
@@ -129,10 +137,7 @@ def real_feature_mask(total_features, size):
 
 
 class MeanSquaredError(tf.keras.losses.Loss):
-    def __init__(self,
-                 mean=None,
-                 std=None,
-                 **kwargs):
+    def __init__(self, mean=None, std=None, **kwargs):
         super().__init__(**kwargs)
         self.fn = mse_loss(mean, std)
 

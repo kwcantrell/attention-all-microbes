@@ -1,18 +1,15 @@
 import tensorflow as tf
+
 from aam.losses import _pairwise_distances, mae_loss
 
 
 class PairwiseMAE(tf.keras.metrics.Metric):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.loss = self.add_weight(
-            name='rl',
-            initializer='zero',
-            dtype=tf.float32
-        )
+        self.loss = self.add_weight(name="rl", initializer="zero", dtype=tf.float32)
         self.i = self.add_weight(
-            name='i',
-            initializer='zero',
+            name="i",
+            initializer="zero",
             dtype=tf.float32,
         )
 
@@ -20,6 +17,7 @@ class PairwiseMAE(tf.keras.metrics.Metric):
         def compute_compare(y_true, y_pred):
             batch_size = tf.cast(tf.shape(y_pred)[0], dtype=tf.float32)
             return (batch_size * batch_size) - batch_size / 2.0
+
         self.compare = compute_compare
 
     def update_state(self, y_true, y_pred, sample_weight=None):
@@ -34,22 +32,10 @@ class PairwiseMAE(tf.keras.metrics.Metric):
         return super().get_config()
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="MAE"
-)
+@tf.keras.saving.register_keras_serializable(package="MAE")
 class MAE(tf.keras.metrics.MeanMetricWrapper):
-    def __init__(
-        self,
-        shift=None,
-        scale=None,
-        dtype=None,
-        **kwargs
-    ):
-        super().__init__(
-            fn=mae_loss(shift, scale),
-            dtype=dtype,
-            **kwargs
-        )
+    def __init__(self, shift=None, scale=None, dtype=None, **kwargs):
+        super().__init__(fn=mae_loss(shift, scale), dtype=dtype, **kwargs)
         self.shift = shift
         self.scale = scale
         self._direction = "down"

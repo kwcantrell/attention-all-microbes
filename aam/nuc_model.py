@@ -1,50 +1,12 @@
 import abc
+
 import tensorflow as tf
 import tensorflow_models as tfm
+
+from aam.layers import NucleotideEmbedding, ReadHead
 from aam.losses import PairwiseLoss
-from aam.layers import ReadHead, NucleotideEmbedding
-from aam.metrics import PairwiseMAE, MAE
-
-
-def _construct_regressor(
-        batch_size: int,
-        dropout_rate: float,
-        pca_hidden_dim: int,
-        pca_heads: int,
-        pca_layers: int,
-        dff: int,
-        token_dim: int,
-        ff_clr,
-        attention_layers: int,
-        attention_heads: int,
-        output_dim: int,
-        max_bp: int,
-        shift=None,
-        scale=None,
-        include_count=True,
-        include_random=True,
-        o_ids=None,
-        sequence_tokenizer=None
-):
-    if include_count:
-        model = NucModel(
-            pca_hidden_dim,
-            max_bp,
-            pca_hidden_dim,
-            pca_heads,
-            pca_layers,
-            attention_heads,
-            attention_layers,
-            dff,
-            dropout_rate,
-            batch_size=batch_size,
-            shift=shift,
-            scale=scale,
-            include_random=include_random,
-            include_count=include_count,
-        )
-
-    return model
+from aam.metrics import MAE, PairwiseMAE
+from aam.utils import float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="BaseNucleotideModel")
@@ -54,13 +16,13 @@ class BaseNucleotideModel(tf.keras.Model):
         batch_size,
         shift=0,
         scale=1,
-        include_random=True,
+        include_random=False,
         include_count=True,
         seq_mask_rate=0.1,
         use_attention_loss=True,
         o_ids=None,
         sequence_tokenizer=None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.batch_size = batch_size
@@ -74,12 +36,8 @@ class BaseNucleotideModel(tf.keras.Model):
         self.sequence_tokenizer = sequence_tokenizer
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.regresssion_loss = None
-        self.attention_loss = (
-            tf.keras.losses.SparseCategoricalCrossentropy(
-                ignore_class=0,
-                from_logits=True,
-                reduction="none"
-            )
+        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(
+            ignore_class=0, from_logits=True, reduction="none"
         )
         self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.metric_traker = None
@@ -94,11 +52,10 @@ class BaseNucleotideModel(tf.keras.Model):
             tf.reduce_sum(
                 tf.sparse.to_dense(
                     tf.sparse.map_values(
-                        lambda x: tf.ones_like(x, dtype=tf.int32),
-                        sparse_tensor
+                        lambda x: tf.ones_like(x, dtype=tf.int32), sparse_tensor
                     )
                 ),
-                axis=-1
+                axis=-1,
             )
         )
         return max_features // 32 * 32 + 32
@@ -126,6 +83,7 @@ class BaseNucleotideModel(tf.keras.Model):
             component of type tf.float32 and the second representing the
             nucleotide sequences of type tf.int64
         """
+
         @tf.autograph.experimental.do_not_convert
         def one_step(inputs, training=None):
             table_info = inputs
@@ -133,13 +91,14 @@ class BaseNucleotideModel(tf.keras.Model):
             features, rclr = tf.map_fn(
                 lambda x: self.get_table_data(x, pad_size, self.o_ids),
                 table_info,
-                fn_output_signature=(tf.string, tf.float32)
+                fn_output_signature=(tf.string, tf.float32),
             )
             features = tf.cast(self.sequence_tokenizer(features), tf.int32)
             features = tf.stop_gradient(features)
             rclr = tf.stop_gradient(rclr)
             output = self.model_step((features, rclr), training=training)
             return (output, features)
+
         self.call_function = tf.function(one_step)
 
     def call(self, inputs, training=None):
@@ -149,14 +108,8 @@ class BaseNucleotideModel(tf.keras.Model):
         """
         simulate model execution using symbolic tensors
         """
-        input_seq = tf.keras.Input(
-            shape=[None, self.max_bp],
-            dtype=tf.int32
-        )
-        input_rclr = tf.keras.Input(
-            shape=[None],
-            dtype=tf.float32
-        )
+        input_seq = tf.keras.Input(shape=[None, self.max_bp], dtype=tf.int32)
+        input_rclr = tf.keras.Input(shape=[None], dtype=tf.float32)
         self.model_step((input_seq, input_rclr))
 
     def compile(self, o_ids=None, **kwargs):
@@ -196,19 +149,14 @@ class BaseNucleotideModel(tf.keras.Model):
             loss = tf.squeeze(self.regresssion_loss(y, reg_out))
             if self.use_attention_loss:
                 counts = tf.reduce_sum(
-                    tf.cast(tf.math.not_equal(seq, 0), dtype=tf.float32),
+                    float_mask(seq),
                     axis=-1,
                 )
                 attention_loss = tf.reduce_sum(
-                    self.attention_loss(
-                        seq,
-                        logits
-                    ),
-                    axis=-1
+                    self.attention_loss(seq, logits), axis=-1
                 )
                 attention_loss = tf.reduce_sum(
-                    tf.math.divide_no_nan(attention_loss, counts),
-                    axis=-1
+                    tf.math.divide_no_nan(attention_loss, counts), axis=-1
                 )
                 loss = tf.reduce_mean(loss + attention_loss)
             self.loss_tracker.update_state(loss)
@@ -249,19 +197,12 @@ class BaseNucleotideModel(tf.keras.Model):
         loss = tf.squeeze(self.regresssion_loss(y, reg_out))
         if self.use_attention_loss:
             counts = tf.reduce_sum(
-                tf.cast(tf.math.not_equal(seq, 0), dtype=tf.float32),
+                float_mask(seq),
                 axis=-1,
             )
+            attention_loss = tf.reduce_sum(self.attention_loss(seq, logits), axis=-1)
             attention_loss = tf.reduce_sum(
-                self.attention_loss(
-                    seq,
-                    logits
-                ),
-                axis=-1
-            )
-            attention_loss = tf.reduce_sum(
-                tf.math.divide_no_nan(attention_loss, counts),
-                axis=-1
+                tf.math.divide_no_nan(attention_loss, counts), axis=-1
             )
             loss = tf.reduce_mean(loss + attention_loss)
         self.loss_tracker.update_state(loss)
@@ -292,16 +233,16 @@ class BaseNucleotideModel(tf.keras.Model):
             "use_attention_loss": self.use_attention_loss,
         }
         if self.sequence_tokenizer is not None:
-            config['sequence_tokenizer'] = tf.keras.saving.serialize_keras_object(
+            config["sequence_tokenizer"] = tf.keras.saving.serialize_keras_object(
                 self.sequence_tokenizer
             )
         return {**base_config, **config}
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
-        if 'sequence_tokenizer' in config:
-            config['sequence_tokenizer'] = tf.keras.saving.deserialize_keras_object(
-                config['sequence_tokenizer']
+        if "sequence_tokenizer" in config:
+            config["sequence_tokenizer"] = tf.keras.saving.deserialize_keras_object(
+                config["sequence_tokenizer"]
             )
         return cls(**config)
 
@@ -317,10 +258,10 @@ class UnifracModel(BaseNucleotideModel):
         pca_layers,
         attention_heads,
         attention_layers,
-        dff,
+        attention_ff,
         dropout_rate,
         use_attention_loss=True,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(use_attention_loss=use_attention_loss, **kwargs)
         self.token_dim = token_dim
@@ -330,7 +271,7 @@ class UnifracModel(BaseNucleotideModel):
         self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
-        self.dff = dff
+        self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
         self.regresssion_loss = PairwiseLoss()
         self.metric_traker = PairwiseMAE()
@@ -342,7 +283,7 @@ class UnifracModel(BaseNucleotideModel):
             pca_layers,
             attention_heads,
             attention_layers,
-            dff,
+            attention_ff,
             dropout_rate,
         )
         self.readhead = ReadHead(
@@ -350,7 +291,7 @@ class UnifracModel(BaseNucleotideModel):
             hidden_dim=pca_hidden_dim,
             num_heads=pca_heads,
             num_layers=pca_layers,
-            output_dim=32
+            output_dim=32,
         )
 
     def model_step(self, inputs, training=None):
@@ -358,7 +299,7 @@ class UnifracModel(BaseNucleotideModel):
             inputs,
             training=training,
             include_random=self.include_random,
-            seq_mask_rate=self.seq_mask_rate
+            seq_mask_rate=self.seq_mask_rate,
         )
         output = self.readhead(output)
         return output
@@ -379,9 +320,8 @@ class UnifracModel(BaseNucleotideModel):
             "pca_layers": self.pca_layers,
             "attention_heads": self.attention_heads,
             "attention_layers": self.attention_layers,
-            "dff": self.dff,
+            "attention_ff": self.attention_ff,
             "dropout_rate": self.dropout_rate,
-
         }
         return {**base_config, **config}
 
@@ -399,7 +339,7 @@ class NucModel(BaseNucleotideModel):
         attention_layers,
         dff,
         dropout_rate,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.token_dim = token_dim
@@ -429,7 +369,7 @@ class NucModel(BaseNucleotideModel):
             hidden_dim=pca_hidden_dim,
             num_heads=pca_heads,
             num_layers=pca_layers,
-            output_dim=1
+            output_dim=1,
         )
 
     def model_step(self, inputs, training=None):
@@ -470,12 +410,12 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         num_attention_heads=8,
         dff=32,
         use_attention_loss=True,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             batch_size=base_model.batch_size,
             use_attention_loss=use_attention_loss,
-            **kwargs
+            **kwargs,
         )
         self.base_model = base_model
         self.base_model.trainable = False
@@ -486,35 +426,30 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         self.num_attention_heads = num_attention_heads
         self.dff = dff
         self.sequence_tokenizer = self.base_model.sequence_tokenizer
-        self.count_ff = tf.keras.Sequential([
-            tf.keras.layers.Dense(
-                count_ff_dim,
-                activation='relu',
-                use_bias=True
-            ),
-            tf.keras.layers.Dense(
-                self.base_model.pca_hidden_dim,
-                use_bias=True
-            ),
-            tf.keras.layers.LayerNormalization()
-        ])
+        self.count_ff = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(count_ff_dim, activation="relu", use_bias=True),
+                tf.keras.layers.Dense(self.base_model.pca_hidden_dim, use_bias=True),
+                tf.keras.layers.LayerNormalization(),
+            ]
+        )
         self.attention_layer = tfm.nlp.models.TransformerEncoder(
             num_layers=num_layers,
             num_attention_heads=num_attention_heads,
             intermediate_size=dff,
             dropout_rate=dropout_rate,
             norm_first=True,
-            activation='relu',
+            activation="relu",
         )
         self.readhead = ReadHead(
             max_bp=base_model.max_bp,
             hidden_dim=base_model.pca_hidden_dim,
             num_heads=base_model.pca_heads,
             num_layers=base_model.pca_layers,
-            output_dim=1
+            output_dim=1,
         )
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.regresssion_loss = tf.keras.losses.MeanSquaredError(reduction='none')
+        self.regresssion_loss = tf.keras.losses.MeanSquaredError(reduction="none")
         self.metric_traker = MAE(self.shift, self.scale, name="mae")
 
     def model_step(self, inputs, training=None):
@@ -524,30 +459,18 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
             (seq, rclr),
             training=training,
             include_random=self.include_random,
-            seq_mask_rate=self.seq_mask_rate
+            seq_mask_rate=self.seq_mask_rate,
         )
         output = tf.stop_gradient(output)
-        seq, rclr = base_emb.add_seq_and_count_pad(
-            seq, rclr
-        )
+        seq, rclr = base_emb.add_seq_and_count_pad(seq, rclr)
         if not self.base_model.include_count:
-            rclr = self.count_ff(
-                tf.expand_dims(
-                    rclr,
-                    axis=-1
-                )
-            )
+            rclr = self.count_ff(tf.expand_dims(rclr, axis=-1))
             output = output + rclr
 
-        mask = tf.cast(tf.not_equal(seq, 0), dtype=tf.float32)
-        attention_mask = tf.cast(
-            tf.matmul(mask, mask, transpose_b=True),
-            dtype=tf.bool
-        )
+        mask = float_mask(seq)
+        attention_mask = tf.cast(tf.matmul(mask, mask, transpose_b=True), dtype=tf.bool)
         output = self.attention_layer(
-            output,
-            attention_mask=attention_mask,
-            training=training
+            output, attention_mask=attention_mask, training=training
         )
         output = self.readhead(output)
         return output
@@ -559,15 +482,12 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
     def get_config(self):
         base_config = super().get_config()
         config = {
-            "base_model": tf.keras.saving.serialize_keras_object(
-                self.base_model
-            ),
+            "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
             "dropout_rate": self.dropout_rate,
             "count_ff_dim": self.count_ff_dim,
             "num_layers": self.num_layers,
             "num_attention_heads": self.num_attention_heads,
             "dff": self.dff,
-
         }
         return {**base_config, **config}
 

@@ -1,36 +1,19 @@
 import tensorflow as tf
 
 
-def add_random_sequences(
-    seq,
-    seeds,
-    range
-):
-    seq_mask = tf.cast(
-        tf.math.equal(
-            seq,
-            0
-        ),
-        dtype=tf.int32
-    )
+def add_random_sequences(seq, seeds, range):
+    seq_mask = tf.cast(tf.math.equal(seq, 0), dtype=tf.int32)
 
     nucleotides = tf.reduce_sum(
-        tf.one_hot(
-                seq,
-                depth=6,
-                axis=-1,
-                dtype=tf.float32
-        ),
-        axis=[0, 1]
+        tf.one_hot(seq, depth=6, axis=-1, dtype=tf.float32), axis=[0, 1]
     )
     unormalized_log_prob = tf.divide(
-        nucleotides,
-        tf.math.reduce_max(nucleotides, axis=-1, keepdims=True)
+        nucleotides, tf.math.reduce_max(nucleotides, axis=-1, keepdims=True)
     )
     unormalized_log_prob = tf.math.log(
         tf.math.divide_no_nan(
             unormalized_log_prob,
-            tf.ones_like(unormalized_log_prob) - unormalized_log_prob
+            tf.ones_like(unormalized_log_prob) - unormalized_log_prob,
         ),
     )
     nuc_strings = tf.multiply(
@@ -40,23 +23,19 @@ def add_random_sequences(
                     unormalized_log_prob,
                     tf.cast(range, dtype=tf.int32),
                     tf.cast(seeds[:, 1], dtype=tf.int32),
-                    dtype=tf.int32
+                    dtype=tf.int32,
                 )
             ),
-            tf.shape(seq)
+            tf.shape(seq),
         ),
-        seq_mask
+        seq_mask,
     )
 
     seq = tf.concat([seq, nuc_strings[:, -8:, :]], axis=1)
     return seq
 
 
-def random_sequences_mask(
-    seq,
-    seeds,
-    seq_mask_rate
-):
+def random_sequences_mask(seq, seeds, seq_mask_rate):
     random_mask = tf.random.stateless_uniform(tf.shape(seq), seeds[:, 0])
     random_mask = tf.cast(
         tf.math.greater_equal(random_mask, seq_mask_rate), dtype=tf.int32
@@ -65,29 +44,19 @@ def random_sequences_mask(
     return seq
 
 
-def add_random_seq_and_mask(
-    seq,
-    seeds,
-    range
-):
+def add_random_seq_and_mask(seq, seeds, range):
     seq = add_random_sequences(seq, seeds, range)
     return random_sequences_mask(seq, seeds, range)
 
 
-def compute_pca_proj(
-    tensor,
-    hidden_dim,
-    num_heads,
-    head_size
-):
+def compute_pca_proj(tensor, hidden_dim, num_heads, head_size):
     BP_DIM = 2
     HEAD_DIM = 3
     HEAD_SIZE_DIM = 4
     shape = tf.shape(tensor)
     reshape = tf.concat([shape[:-1], [num_heads, head_size]], axis=0)
     perm = tf.concat(
-        [tf.range(tf.shape(reshape)[0])[:-3], [HEAD_DIM, BP_DIM, HEAD_SIZE_DIM]],
-        axis=0
+        [tf.range(tf.shape(reshape)[0])[:-3], [HEAD_DIM, BP_DIM, HEAD_SIZE_DIM]], axis=0
     )
     second_reshape = tf.concat([shape[:-2], [hidden_dim, head_size]], axis=0)
 
@@ -101,12 +70,10 @@ def compute_pca_proj(
     eig_values, eig_vec = tf.linalg.eigh(cov)
     pca = tf.transpose(
         tf.matmul(
-            tf.linalg.diag(
-                eig_values
-            ),
+            tf.linalg.diag(eig_values),
             eig_vec,
         ),
-        perm=perm
+        perm=perm,
     )
     pca = tf.reshape(pca, shape=second_reshape)
     return pca

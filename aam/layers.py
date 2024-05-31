@@ -1,26 +1,29 @@
 import tensorflow as tf
 import tensorflow_models as tfm
+
 from aam.sequence_utils import (
-    add_random_sequences, add_random_seq_and_mask, random_sequences_mask, compute_pca_proj
+    add_random_seq_and_mask,
+    add_random_sequences,
+    compute_pca_proj,
+    random_sequences_mask,
 )
+from aam.utils import float_mask
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="NucleotideEmbedding"
-)
+@tf.keras.saving.register_keras_serializable(package="NucleotideEmbedding")
 class NucleotideEmbedding(tf.keras.layers.Layer):
     def __init__(
-            self,
-            token_dim,
-            max_bp,
-            pca_hidden_dim,
-            pca_heads,
-            pca_layers,
-            attention_heads,
-            attention_layers,
-            dff,
-            dropout_rate,
-            **kwargs
+        self,
+        token_dim,
+        max_bp,
+        pca_hidden_dim,
+        pca_heads,
+        pca_layers,
+        attention_heads,
+        attention_layers,
+        attention_ff,
+        dropout_rate,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.token_dim = token_dim
@@ -30,55 +33,37 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
-        self.dff = dff
+        self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
-        self.random_generator = (
-            tf.random.Generator.from_non_deterministic_state()
-        )
+        self.random_generator = tf.random.Generator.from_non_deterministic_state()
 
-        self.emb_layer = tf.keras.layers.Embedding(
-            8,
-            512,
-            input_length=max_bp,
-            embeddings_initializer=tf.keras.initializers.GlorotNormal()
+        self.emb_layer = tf.keras.Sequential(
+            [
+                tf.keras.layers.Embedding(
+                    8,
+                    self.token_dim,
+                    input_length=self.max_bp,
+                    embeddings_initializer=tf.keras.initializers.GlorotNormal(),
+                ),
+                tf.keras.layers.Dense(128, activation="relu"),
+            ]
         )
         self.pca_layer = PCAProjector(
-            hidden_dim=128,
-            num_heads=8,
-            num_layers=pca_layers,
-            dropout=dropout_rate
-        )
-        self.ff_clr = tf.keras.layers.Dense(
-            128, 'relu', use_bias=True
+            hidden_dim=128, num_heads=8, num_layers=pca_layers, dropout=dropout_rate
         )
         self.attention_layer = tfm.nlp.models.TransformerEncoder(
-            num_layers=6,
-            num_attention_heads=8,
-            intermediate_size=1024,
+            num_layers=self.attention_layers,
+            num_attention_heads=self.attention_heads,
+            intermediate_size=self.attention_ff,
             dropout_rate=dropout_rate,
             norm_first=True,
-            activation='relu',
+            activation="relu",
         )
 
     def build(self, input_shape):
         def add_seq_and_count_pad(seq, rclr):
-            seq = tf.pad(
-                seq,
-                [
-                    [0, 0],
-                    [0, 1],
-                    [0, 0]
-                ],
-                constant_values=7
-            )
-            rclr = tf.pad(
-                rclr,
-                paddings=[
-                    [0, 0],
-                    [0, 1]
-                ],
-                constant_values=0
-            )
+            seq = tf.pad(seq, [[0, 0], [0, 1], [0, 0]], constant_values=7)
+            rclr = tf.pad(rclr, paddings=[[0, 0], [0, 1]], constant_values=0)
             return (seq, rclr)
 
         self.add_random_sequences = tf.function(add_random_sequences)
@@ -87,12 +72,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         self.add_seq_and_count_pad = add_seq_and_count_pad
 
     def call(
-        self,
-        inputs,
-        mask=None,
-        training=None,
-        include_random=True,
-        seq_mask_rate=0.
+        self, inputs, mask=None, training=None, include_random=None, seq_mask_rate=None
     ):
         seq, rclr = tf.nest.flatten(inputs, expand_composites=True)
         if training and include_random:
@@ -100,28 +80,13 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             seq = self.random_sequences_mask(seq, seeds, seq_mask_rate)
 
         seq, rclr = tf.nest.flatten(self.add_seq_and_count_pad(seq, rclr))
-        mask = tf.cast(
-            tf.not_equal(
-                seq,
-                0
-            ),
-            dtype=tf.float32
-        )
-        attention_mask = tf.cast(
-            tf.matmul(
-                mask,
-                mask,
-                transpose_b=True
-            ),
-            dtype=tf.bool
-        )
+        mask = float_mask(seq)
+        attention_mask = tf.cast(tf.matmul(mask, mask, transpose_b=True), dtype=tf.bool)
         output = self.emb_layer(seq)
 
         output = self.pca_layer(output)
         output = self.attention_layer(
-            output,
-            attention_mask=attention_mask,
-            training=training
+            output, attention_mask=attention_mask, training=training
         )
         return output
 
@@ -135,34 +100,21 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             "pca_layers": self.pca_layers,
             "attention_heads": self.attention_heads,
             "attention_layers": self.attention_layers,
-            "dff": self.dff,
+            "attention_ff": self.attention_ff,
             "dropout_rate": self.dropout_rate,
         }
         return {**base_config, **config}
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="PCAProjector"
-)
+@tf.keras.saving.register_keras_serializable(package="PCAProjector")
 class PCAProjector(tf.keras.layers.Layer):
-    def __init__(
-            self,
-            hidden_dim,
-            num_heads,
-            num_layers,
-            dropout,
-            **kwargs
-    ):
+    def __init__(self, hidden_dim, num_heads, num_layers, dropout, **kwargs):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
-        self.pca_layer = MultiHeadPCAProjection(
-            hidden_dim,
-            num_heads,
-            dropout
-        )
+        self.pca_layer = MultiHeadPCAProjection(hidden_dim, num_heads, dropout)
         self.ff = tf.keras.layers.Dense(hidden_dim)
         self.norm = tf.keras.layers.LayerNormalization()
         self.dropout_layer = tf.keras.layers.Dropout(dropout)
@@ -170,8 +122,7 @@ class PCAProjector(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-                max_length=input_shape[-2],
-                seq_axis=2
+            max_length=input_shape[-2], seq_axis=2
         )
 
     def call(self, inputs):
@@ -186,25 +137,17 @@ class PCAProjector(tf.keras.layers.Layer):
         base_config = super().get_config()
 
         config = {
-            "hidden_dim":  self.hidden_dim,
-            "num_heads":  self.num_heads,
-            "num_layers":  self.num_layers,
-            "dropout":  self.dropout,
+            "hidden_dim": self.hidden_dim,
+            "num_heads": self.num_heads,
+            "num_layers": self.num_layers,
+            "dropout": self.dropout,
         }
         return {**base_config, **config}
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="MultiHeadPCAProjection"
-)
+@tf.keras.saving.register_keras_serializable(package="MultiHeadPCAProjection")
 class MultiHeadPCAProjection(tf.keras.layers.Layer):
-    def __init__(
-            self,
-            hidden_dim,
-            num_heads,
-            dropout,
-            **kwargs
-    ):
+    def __init__(self, hidden_dim, num_heads, dropout, **kwargs):
         super().__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -216,10 +159,7 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
     def call(self, inputs):
         output = inputs
         pca = self.compute_pca_proj(
-            output,
-            self.hidden_dim,
-            self.num_heads,
-            self.head_size
+            output, self.hidden_dim, self.num_heads, self.head_size
         )
         return pca
 
@@ -228,62 +168,35 @@ class MultiHeadPCAProjection(tf.keras.layers.Layer):
         config = {
             "hidden_dim": self.hidden_dim,
             "num_heads": self.num_heads,
-            "dropout": self.dropout
+            "dropout": self.dropout,
         }
         return {**base_config, **config}
 
 
-@tf.keras.saving.register_keras_serializable(
-    package="ReadHead"
-)
+@tf.keras.saving.register_keras_serializable(package="ReadHead")
 class ReadHead(tf.keras.layers.Layer):
-    def __init__(
-            self,
-            max_bp,
-            hidden_dim,
-            num_heads,
-            num_layers,
-            output_dim,
-            **kwargs
-    ):
+    def __init__(self, max_bp, hidden_dim, num_heads, num_layers, output_dim, **kwargs):
         super().__init__(**kwargs)
         self.max_bp = max_bp
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.output_dim = output_dim
-        self.reg_out = tf.keras.Sequential([
-            tf.keras.layers.Dense(
-                1024,
-                activation='relu',
-                use_bias=True
-            ),
-            tf.keras.layers.Dense(
-                output_dim,
-                use_bias=True
-            ),
-        ])
+        self.reg_out = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(1024, activation="relu", use_bias=True),
+                tf.keras.layers.Dense(output_dim, use_bias=True),
+            ]
+        )
 
-        self.attention_out = tf.keras.Sequential([
-            tf.keras.layers.Dense(
-                1024,
-                activation='relu',
-                use_bias=True
-            ),
-            tf.keras.layers.Dense(
-                max_bp*6,
-                activation='relu',
-                use_bias=True
-            ),
-        ])
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            max_length=max_bp,
-            seq_axis=2
+        self.attention_out = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(1024, activation="relu", use_bias=True),
+                tf.keras.layers.Dense(max_bp * 6, activation="relu", use_bias=True),
+            ]
         )
-        self.nuc_out = tf.keras.layers.Dense(
-            6,
-            use_bias=True
-        )
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(max_length=max_bp, seq_axis=2)
+        self.nuc_out = tf.keras.layers.Dense(6, use_bias=True)
 
     def get_config(self):
         base_config = super().get_config()
@@ -302,11 +215,10 @@ class ReadHead(tf.keras.layers.Layer):
 
         reg_out = inputs[:, -1, :]
         reg_out = self.reg_out(inputs[:, -1, :])
-        
+
         seq_out = inputs[:, :-1, :]
         seq_out = tf.reshape(
-            self.attention_out(seq_out),
-            shape=[batch_dim, num_seq, self.max_bp, 6]
+            self.attention_out(seq_out), shape=[batch_dim, num_seq, self.max_bp, 6]
         )
         seq_out = self.nuc_out(seq_out + self.pos_emb(seq_out))
 

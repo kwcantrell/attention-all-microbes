@@ -316,13 +316,11 @@ def unifrac_regressor(
         1024,
         p_dropout,
         batch_size=p_batch_size,
-        shift=data_obj["mean"],
-        scale=data_obj["std"],
         include_random=p_include_random,
         include_count=False,
         o_ids=data_obj["o_ids"],
         sequence_tokenizer=data_obj["sequence_tokenizer"],
-        seq_mask_rate=0.25,
+        seq_mask_rate=p_features_to_add_rate,
     )
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=p_lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9
@@ -335,7 +333,6 @@ def unifrac_regressor(
     model.summary()
 
     core_callbacks = [
-        # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
             "loss", factor=0.8, patients=5, min_lr=0.00001
         ),
