@@ -1,25 +1,26 @@
-import click
-import tensorflow as tf
-import aam._parameter_descriptions as desc
-from aam.cli_util import aam_model_options
-from aam.data_utils import (batch_dataset, get_unifrac_dataset, get_table_data, load_data)
-from attention_regression.data_utils import (
-    load_biom_table, shuffle_table, train_val_split
-)
-from aam.model_utils_current import pretrain_unifrac, regressor
-from attention_regression.callbacks import MAE_Scatter
-from aam.callbacks import SaveModel
-import pandas as pd
-import numpy as np
 import os
+
+import click
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
-from datetime import datetime
-import biom
-from typing import Tuple
-from attention_regression.data_utils import filter_and_reorder, extract_col, convert_to_normalized_dataset
-from bp import parse_newick
-from aam.nuc_model import TransferLearnNucleotideModel
+import tensorflow as tf
+
+import aam._parameter_descriptions as desc
+from aam.callbacks import SaveModel
+from aam.data_utils import batch_dataset, get_unifrac_dataset, load_data
+from aam.model_utils_current import regressor
+from aam.nuc_model import TransferLearnNucleotideModel, UnifracModel
+from attention_regression.callbacks import MAE_Scatter
+from attention_regression.data_utils import (
+    convert_to_normalized_dataset,
+    extract_col,
+    filter_and_reorder,
+    load_biom_table,
+    shuffle_table,
+    train_val_split,
+)
 
 
 @click.group()
@@ -36,36 +37,28 @@ def _create_dataset(
     table = shuffle_table(load_biom_table(i_table_path))
 
     # check for mismatch samples
-    ids = table.ids(axis='sample')
+    ids = table.ids(axis="sample")
 
     # TODO: check for invalid metadata values
-    table = table.remove_empty(axis='observation', inplace=False)
+    table = table.remove_empty(axis="observation", inplace=False)
     feature_dataset = get_sequencing_dataset(table)
     distance_dataset = get_unifrac_dataset(i_table_path, i_tree_path)
 
     full_dataset = combine_datasets(
-        feature_dataset,
-        distance_dataset,
-        i_max_bp,
-        add_index=True
+        feature_dataset, distance_dataset, i_max_bp, add_index=True
     )
-    training, val = train_val_split(
-        full_dataset,
-        train_percent=.8
-    )
+    training, val = train_val_split(full_dataset, train_percent=0.8)
 
     return {
-        'training': training,
-        'val': val,
-        'sample_ids': ids,
-        'table': table,
+        "training": training,
+        "val": val,
+        "sample_ids": ids,
+        "table": table,
     }
 
 
 def _aam_globals():
-    return {
-        'feature-attention-methods': ['add_features', 'mask_features', 'none']
-    }
+    return {"feature-attention-methods": ["add_features", "mask_features", "none"]}
 
 
 aam_globals = _aam_globals()
@@ -73,120 +66,41 @@ aam_globals = _aam_globals()
 
 @cli.command()
 @click.option(
-    '--i-table-path',
+    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+)
+@click.option(
+    "--i-metadata-path",
     required=True,
     help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    type=click.Path(exists=True),
 )
+@click.option("--i-metadata-col", required=True, type=str)
+@click.option("--i-max-bp", required=True, type=int)
 @click.option(
-    '--i-metadata-path',
-    required=True,
-    help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=desc.MISSING_SAMPLES_DESC,
 )
+@click.option("--p-batch-size", default=8, show_default=True, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-repeat", default=5, show_default=True, type=int)
+@click.option("--p-dropout", default=0.01, show_default=True, type=float)
+@click.option("--p-token-dim", default=512, show_default=True, type=int)
 @click.option(
-    '--i-metadata-col',
-    required=True,
-    type=str
+    "--p-feature-attention-method",
+    default="add_features",
+    type=click.Choice(aam_globals["feature-attention-methods"]),
 )
-@click.option(
-    '--i-max-bp',
-    required=True,
-    type=int
-)
-@click.option(
-    '--p-missing-samples',
-    default='error',
-    type=click.Choice(['error', 'ignore'], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC
-)
-@click.option(
-    '--p-batch-size',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-epochs',
-    default=1000,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-repeat',
-    default=5,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-dropout',
-    default=0.01,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-token-dim',
-    default=512,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-feature-attention-method',
-    default='add_features',
-    type=click.Choice(aam_globals['feature-attention-methods'])
-)
-@click.option(
-    '--p-features-to-add-rate',
-    default=1.,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-ff-d-model',
-    default=128,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-ff-clr',
-    default=64,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-pca-heads',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-enc-layers',
-    default=2,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-enc-heads',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-lr',
-    default=0.01,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-report-back-after',
-    default=5,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-output-dir',
-    required=True
-)
+@click.option("--p-features-to-add-rate", default=1.0, show_default=True, type=float)
+@click.option("--p-ff-d-model", default=128, show_default=True, type=int)
+@click.option("--p-ff-clr", default=64, show_default=True, type=int)
+@click.option("--p-pca-heads", default=8, show_default=True, type=int)
+@click.option("--p-enc-layers", default=2, show_default=True, type=int)
+@click.option("--p-enc-heads", default=8, show_default=True, type=int)
+@click.option("--p-lr", default=0.01, show_default=True, type=float)
+@click.option("--p-report-back-after", default=5, show_default=True, type=int)
+@click.option("--p-output-dir", required=True)
 def fit_regressor(
     i_table_path: str,
     i_metadata_path: str,
@@ -207,62 +121,49 @@ def fit_regressor(
     p_enc_heads: int,
     p_lr: float,
     p_report_back_after: int,
-    p_output_dir: str
+    p_output_dir: str,
 ):
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
 
-    figure_path = os.path.join(p_output_dir, 'figures')
+    figure_path = os.path.join(p_output_dir, "figures")
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
     table = shuffle_table(load_biom_table(i_table_path))
-    metadata = pd.read_csv(
-        i_metadata_path, sep='\t',
-        index_col=0
-    )
+    metadata = pd.read_csv(i_metadata_path, sep="\t", index_col=0)
 
     # check for mismatch samples
-    ids = table.ids(axis='sample')
+    ids = table.ids(axis="sample")
     shared_ids = set(ids).intersection(set(metadata.index))
     min_ids = min(len(shared_ids), len(ids), len(metadata.index))
     max_ids = max(len(shared_ids), len(ids), len(metadata.index))
     if len(shared_ids) == 0:
-        raise Exception('Table and Metadata have no matching sample ids')
-    if min_ids != max_ids and p_missing_samples == 'error':
-        raise Exception('Table and Metadata do share all same sample ids.')
-    elif min_ids != max_ids and p_missing_samples == 'ignore':
-        print('Warning: Table and Metadata do share all same sample ids.')
-        print('Table and metadata will be filtered')
+        raise Exception("Table and Metadata have no matching sample ids")
+    if min_ids != max_ids and p_missing_samples == "error":
+        raise Exception("Table and Metadata do share all same sample ids.")
+    elif min_ids != max_ids and p_missing_samples == "ignore":
+        print("Warning: Table and Metadata do share all same sample ids.")
+        print("Table and metadata will be filtered")
         table = table.filter(shared_ids, inplace=False)
         metadata = metadata[metadata.index.isin(shared_ids)]
-        ids = table.ids(axis='sample')
+        ids = table.ids(axis="sample")
 
     # TODO: check for invalid metadata values
-    table = table.remove_empty(axis='observation', inplace=False)
+    table = table.remove_empty(axis="observation", inplace=False)
     feature_dataset = get_sequencing_dataset(table)
     feature_count_dataset = get_sequencing_count_dataset(table)
     metadata = filter_and_reorder(metadata, ids)
-    regression_data = extract_col(
-        metadata,
-        i_metadata_col,
-        output_dtype=np.float32
-    )
-    regression_dataset, mean, std = convert_to_normalized_dataset(
-        regression_data,
-        'z'
-    )
+    regression_data = extract_col(metadata, i_metadata_col, output_dtype=np.float32)
+    regression_dataset, mean, std = convert_to_normalized_dataset(regression_data, "z")
     full_dataset = combine_count_datasets(
         feature_dataset,
         feature_count_dataset,
         regression_dataset,
         i_max_bp,
-        add_index=True
+        add_index=True,
     )
-    training, val = train_val_split(
-        full_dataset,
-        train_percent=.8
-    )
+    training, val = train_val_split(full_dataset, train_percent=0.8)
     training_size = training.cardinality().numpy()
     training_ids = ids[:training_size]
     training_dataset = batch_dataset(
@@ -296,7 +197,7 @@ def fit_regressor(
         32,
         i_max_bp,
         mean,
-        std
+        std,
     )
 
     for x, y in validation_dataset.take(1):
@@ -305,7 +206,7 @@ def fit_regressor(
 
     reg_out_callbacks = [
         MAE_Scatter(
-            'training',
+            "training",
             validation_dataset,
             metadata[metadata.index.isin(training_ids)],
             i_metadata_col,
@@ -314,155 +215,60 @@ def fit_regressor(
             mean,
             std,
             figure_path,
-            report_back_after=p_report_back_after
+            report_back_after=p_report_back_after,
         )
     ]
 
     core_callbacks = [
         # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
-            "loss",
-            factor=0.5,
-            patients=20,
-            min_lr=0.0001
+            "loss", factor=0.5, patients=20, min_lr=0.0001
         ),
-        tf.keras.callbacks.EarlyStopping(
-            'loss',
-            patience=500
-        ),
-        SaveModel(
-            p_output_dir,
-            p_report_back_after
-        ),
+        tf.keras.callbacks.EarlyStopping("loss", patience=500),
+        SaveModel(p_output_dir, p_report_back_after),
     ]
     model.fit(
         training_dataset,
         validation_data=validation_dataset,
-        callbacks=[
-            *reg_out_callbacks,
-            *core_callbacks
-        ],
-        epochs=p_epochs
+        callbacks=[*reg_out_callbacks, *core_callbacks],
+        epochs=p_epochs,
     )
 
 
 @cli.command()
 @click.option(
-    '--i-table-path',
-    required=True,
-    help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
 )
 @click.option(
-    '--i-tree-path',
-    required=True,
-    help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    "--i-tree-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
 )
+@click.option("--i-max-bp", required=True, type=int)
 @click.option(
-    '--i-max-bp',
-    required=True,
-    type=int
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=desc.MISSING_SAMPLES_DESC,
 )
+@click.option("--p-batch-size", default=8, show_default=True, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-repeat", default=5, show_default=True, type=int)
+@click.option("--p-dropout", default=0.01, show_default=True, type=float)
+@click.option("--p-token-dim", default=512, show_default=True, type=int)
 @click.option(
-    '--p-missing-samples',
-    default='error',
-    type=click.Choice(['error', 'ignore'], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC
+    "--p-feature-attention-method",
+    default="add_features",
+    type=click.Choice(aam_globals["feature-attention-methods"]),
 )
-@click.option(
-    '--p-batch-size',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-epochs',
-    default=1000,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-repeat',
-    default=5,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-dropout',
-    default=0.01,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-token-dim',
-    default=512,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-feature-attention-method',
-    default='add_features',
-    type=click.Choice(aam_globals['feature-attention-methods'])
-)
-@click.option(
-    '--p-features-to-add-rate',
-    default=1.,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-ff-d-model',
-    default=128,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-ff-clr',
-    default=64,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-pca-heads',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-enc-layers',
-    default=2,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-enc-heads',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-include-random',
-    default=True,
-    show_default=True,
-    type=bool
-)
-@click.option(
-    '--p-lr',
-    default=0.01,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-report-back-after',
-    default=5,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-output-dir',
-    required=True
-)
+@click.option("--p-features-to-add-rate", default=1.0, show_default=True, type=float)
+@click.option("--p-ff-d-model", default=128, show_default=True, type=int)
+@click.option("--p-ff-clr", default=64, show_default=True, type=int)
+@click.option("--p-pca-heads", default=8, show_default=True, type=int)
+@click.option("--p-enc-layers", default=2, show_default=True, type=int)
+@click.option("--p-enc-heads", default=8, show_default=True, type=int)
+@click.option("--p-include-random", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=0.01, show_default=True, type=float)
+@click.option("--p-report-back-after", default=5, show_default=True, type=int)
+@click.option("--p-output-dir", required=True)
 def unifrac_regressor(
     i_table_path: str,
     i_tree_path: str,
@@ -483,43 +289,47 @@ def unifrac_regressor(
     p_include_random: bool,
     p_lr: float,
     p_report_back_after: int,
-    p_output_dir: str
+    p_output_dir: str,
 ):
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
 
-    figure_path = os.path.join(p_output_dir, 'figures')
+    figure_path = os.path.join(p_output_dir, "figures")
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
     data_obj = load_data(
-        i_table_path, i_max_bp, p_batch_size,
+        i_table_path,
+        i_max_bp,
+        p_batch_size,
         tree_path=i_tree_path,
     )
 
-    model = pretrain_unifrac(
-        p_batch_size,
-        p_lr,
-        p_dropout,
+    model = UnifracModel(
+        p_ff_d_model,
+        i_max_bp,
         p_ff_d_model,
         p_pca_heads,
         1,
-        1024,
-        p_token_dim,
-        p_ff_clr,
-        p_enc_layers,
         p_enc_heads,
-        32,
-        i_max_bp,
-        data_obj['mean'],
-        data_obj['std'],
-        include_count=False,
+        p_enc_layers,
+        1024,
+        p_dropout,
+        batch_size=p_batch_size,
+        shift=data_obj["mean"],
+        scale=data_obj["std"],
         include_random=p_include_random,
-        o_ids=data_obj['o_ids'],
-        sequence_tokenizer=data_obj['sequence_tokenizer']
+        include_count=False,
+        o_ids=data_obj["o_ids"],
+        sequence_tokenizer=data_obj["sequence_tokenizer"],
+        seq_mask_rate=0.25,
     )
+    optimizer = tf.keras.optimizers.Adam(
+        learning_rate=p_lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9
+    )
+    model.compile(optimizer=optimizer)
 
-    for data in data_obj['training_dataset'].take(1):
+    for data in data_obj["training_dataset"].take(1):
         inputs, _ = model._extract_data(data)
         model(inputs)
     model.summary()
@@ -527,157 +337,58 @@ def unifrac_regressor(
     core_callbacks = [
         # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
-            "loss",
-            factor=0.8,
-            patients=5,
-            min_lr=0.00001
+            "loss", factor=0.8, patients=5, min_lr=0.00001
         ),
-        tf.keras.callbacks.EarlyStopping(
-            'loss',
-            patience=500
-        ),
-        SaveModel(
-            p_output_dir,
-            p_report_back_after
-        ),
+        tf.keras.callbacks.EarlyStopping("loss", patience=500),
+        SaveModel(p_output_dir, p_report_back_after),
     ]
     model.fit(
-        data_obj['training_dataset'],
-        validation_data=data_obj['validation_dataset'],
-        callbacks=[
-            *core_callbacks
-        ],
-        epochs=p_epochs
+        data_obj["training_dataset"],
+        validation_data=data_obj["validation_dataset"],
+        callbacks=[*core_callbacks],
+        epochs=p_epochs,
     )
 
 
 @cli.command()
 @click.option(
-    '--i-table-path',
+    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+)
+@click.option(
+    "--i-metadata-path",
     required=True,
     help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    type=click.Path(exists=True),
 )
+@click.option("--i-metadata-col", required=True, type=str)
+@click.option("--i-max-bp", required=True, type=int)
 @click.option(
-    '--i-metadata-path',
-    required=True,
-    help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=desc.MISSING_SAMPLES_DESC,
 )
+@click.option("--p-batch-size", default=8, show_default=True, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-repeat", default=5, show_default=True, type=int)
+@click.option("--p-dropout", default=0.01, show_default=True, type=float)
+@click.option("--p-token-dim", default=512, show_default=True, type=int)
 @click.option(
-    '--i-metadata-col',
-    required=True,
-    type=str
+    "--p-feature-attention-method",
+    default="add_features",
+    type=click.Choice(aam_globals["feature-attention-methods"]),
 )
-@click.option(
-    '--i-max-bp',
-    required=True,
-    type=int
-)
-@click.option(
-    '--p-missing-samples',
-    default='error',
-    type=click.Choice(['error', 'ignore'], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC
-)
-@click.option(
-    '--p-batch-size',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-epochs',
-    default=1000,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-repeat',
-    default=5,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-dropout',
-    default=0.01,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-token-dim',
-    default=512,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-feature-attention-method',
-    default='add_features',
-    type=click.Choice(aam_globals['feature-attention-methods'])
-)
-@click.option(
-    '--p-features-to-add-rate',
-    default=1.,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-ff-d-model',
-    default=128,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-ff-clr',
-    default=64,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-pca-heads',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-enc-layers',
-    default=2,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-enc-heads',
-    default=8,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-include-random',
-    default=True,
-    show_default=True,
-    type=bool
-)
-@click.option(
-    '--p-lr',
-    default=0.01,
-    show_default=True,
-    type=float
-)
-@click.option(
-    '--p-report-back-after',
-    default=5,
-    show_default=True,
-    type=int
-)
-@click.option(
-    '--p-base-model-path',
-    required=True,
-    type=click.Path(exists=True)
-)
-@click.option(
-    '--p-output-dir',
-    required=True
-)
+@click.option("--p-features-to-add-rate", default=1.0, show_default=True, type=float)
+@click.option("--p-ff-d-model", default=128, show_default=True, type=int)
+@click.option("--p-ff-clr", default=64, show_default=True, type=int)
+@click.option("--p-pca-heads", default=8, show_default=True, type=int)
+@click.option("--p-enc-layers", default=2, show_default=True, type=int)
+@click.option("--p-enc-heads", default=8, show_default=True, type=int)
+@click.option("--p-include-random", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=0.01, show_default=True, type=float)
+@click.option("--p-report-back-after", default=5, show_default=True, type=int)
+@click.option("--p-base-model-path", required=True, type=click.Path(exists=True))
+@click.option("--p-output-dir", required=True)
 def transfer_learn_fit_regressor(
     i_table_path: str,
     i_metadata_path: str,
@@ -700,138 +411,104 @@ def transfer_learn_fit_regressor(
     p_lr: float,
     p_report_back_after: int,
     p_base_model_path: str,
-    p_output_dir: str
+    p_output_dir: str,
 ):
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
 
-    figure_path = os.path.join(p_output_dir, 'figures')
+    figure_path = os.path.join(p_output_dir, "figures")
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
     data_obj = load_data(
-        i_table_path, i_max_bp, p_batch_size,
+        i_table_path,
+        i_max_bp,
+        p_batch_size,
         repeat=p_repeat,
         shuffle_samples=True,
         metadata_path=i_metadata_path,
         metadata_col=i_metadata_col,
         missing_samples_flag=p_missing_samples,
-        train_percent=0.8
+        train_percent=0.8,
     )
 
-    train_size = data_obj['training_dataset'].cardinality().numpy()
+    train_size = data_obj["training_dataset"].cardinality().numpy()
 
     base_model = tf.keras.models.load_model(p_base_model_path)
     model = TransferLearnNucleotideModel(
         base_model,
         p_dropout,
-        shift=data_obj['mean'],
-        scale=data_obj['std'],
+        shift=data_obj["mean"],
+        scale=data_obj["std"],
         include_random=p_include_random,
         include_count=True,
-        o_ids=data_obj['o_ids'],
-        sequence_tokenizer=data_obj['sequence_tokenizer'],
-        seq_mask_rate=0.75
+        o_ids=data_obj["o_ids"],
+        sequence_tokenizer=data_obj["sequence_tokenizer"],
+        seq_mask_rate=0.01,
     )
 
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=p_lr,
-        beta_1=0.9,
-        beta_2=0.98,
-        epsilon=1e-9
+        learning_rate=p_lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9
     )
     model.compile(optimizer=optimizer, jit_compile=False)
 
-    for data in data_obj['validation_dataset'].take(1):
+    for data in data_obj["validation_dataset"].take(1):
         inputs, _ = model._extract_data(data)
         model(inputs)
     model.summary()
 
     reg_out_callbacks = [
         MAE_Scatter(
-            'training',
-            data_obj['validation_dataset'],
-            data_obj['metadata'][
-                data_obj['metadata'].index.isin(
-                    data_obj['sample_ids'][train_size:]
-                )
+            "training",
+            data_obj["validation_dataset"],
+            data_obj["metadata"][
+                data_obj["metadata"].index.isin(data_obj["sample_ids"][train_size:])
             ],
             i_metadata_col,
             None,
             None,
-            data_obj['mean'],
-            data_obj['std'],
+            data_obj["mean"],
+            data_obj["std"],
             figure_path,
-            report_back_after=p_report_back_after
+            report_back_after=p_report_back_after,
         )
     ]
 
     core_callbacks = [
         # tboard_callback,
         tf.keras.callbacks.ReduceLROnPlateau(
-            "loss",
-            factor=0.8,
-            patients=10,
-            min_lr=0.0001
+            "loss", factor=0.8, patients=10, min_lr=0.0001
         ),
-        tf.keras.callbacks.EarlyStopping(
-            'loss',
-            patience=500
-        ),
-        SaveModel(
-            p_output_dir,
-            p_report_back_after
-        ),
+        tf.keras.callbacks.EarlyStopping("loss", patience=500),
+        SaveModel(p_output_dir, p_report_back_after),
     ]
     model.fit(
-        data_obj['training_dataset'],
-        validation_data=data_obj['validation_dataset'],
-        callbacks=[
-            *reg_out_callbacks,
-            *core_callbacks
-        ],
-        epochs=p_epochs
+        data_obj["training_dataset"],
+        validation_data=data_obj["validation_dataset"],
+        callbacks=[*reg_out_callbacks, *core_callbacks],
+        epochs=p_epochs,
     )
 
 
 @cli.command()
 @click.option(
-    '--i-table-path',
-    required=True,
-    help=desc.TABLE_DESC,
-    type=click.Path(exists=True)
+    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+)
+@click.option("--i-model-path", required=True, type=click.Path(exists=True))
+@click.option("--m-metadata-file", required=True, type=click.Path(exists=True))
+@click.option(
+    "--m-metadata-column", required=True, help=desc.METADATA_COL_DESC, type=str
 )
 @click.option(
-    '--i-model-path',
-    required=True,
-    type=click.Path(exists=True)
+    "--p-normalize", default="minmax", type=click.Choice(["minmax", "z", "none"])
 )
 @click.option(
-    '--m-metadata-file',
-    required=True,
-    type=click.Path(exists=True)
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=desc.MISSING_SAMPLES_DESC,
 )
-@click.option(
-    '--m-metadata-column',
-    required=True,
-    help=desc.METADATA_COL_DESC,
-    type=str
-)
-@click.option(
-    '--p-normalize',
-    default='minmax',
-    type=click.Choice(['minmax', 'z', 'none'])
-)
-@click.option(
-    '--p-missing-samples',
-    default='error',
-    type=click.Choice(['error', 'ignore'], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC
-)
-@click.option(
-    '--p-output-dir',
-    required=True
-)
+@click.option("--p-output-dir", required=True)
 def scatter_plot(
     i_table_path,
     i_model_path,
@@ -839,39 +516,28 @@ def scatter_plot(
     m_metadata_column,
     p_normalize,
     p_missing_samples,
-    p_output_dir
+    p_output_dir,
 ):
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
     model = tf.keras.models.load_model(i_model_path)
     dataset_obj = _create_dataset(
-        i_table_path,
-        m_metadata_file,
-        m_metadata_column,
-        p_normalize,
-        p_missing_samples
+        i_table_path, m_metadata_file, m_metadata_column, p_normalize, p_missing_samples
     )
-    training = dataset_obj['dataset']
-    training_no_shuffle = batch_dataset(
-        training,
-        32,
-        shuffle=False
-    )
+    training = dataset_obj["dataset"]
+    training_no_shuffle = batch_dataset(training, 32, shuffle=False)
 
-    mean = dataset_obj['mean']
-    std = dataset_obj['std']
+    mean = dataset_obj["mean"]
+    std = dataset_obj["std"]
     std = model.std
     mean = model.mean
     output = model.predict(training_no_shuffle)
-    pred_val = tf.concat(output['regression'], axis=0)
+    pred_val = tf.concat(output["regression"], axis=0)
     pred_val = tf.squeeze(pred_val)
-    pred_val = pred_val*std + mean
-    true_val = tf.concat(
-        [y["reg_out"] for _, y in training_no_shuffle],
-        axis=0
-    )
+    pred_val = pred_val * std + mean
+    true_val = tf.concat([y["reg_out"] for _, y in training_no_shuffle], axis=0)
     true_val = tf.squeeze(true_val)
-    true_val = true_val*std + mean
+    true_val = true_val * std + mean
     mae = tf.reduce_mean(tf.abs(true_val - pred_val))
 
     min_x = tf.reduce_min(true_val)
@@ -888,45 +554,37 @@ def scatter_plot(
     data = {
         "#SampleID": dataset_obj["sample_ids"],
         "pred": pred_val.numpy(),
-        "true": true_val.numpy()
+        "true": true_val.numpy(),
     }
     data = pd.DataFrame(data=data)
     plot = sns.scatterplot(data, x="true", y="pred")
     plt.plot(xx, yy)
     plt.plot(diag_xx, diag_yy)
-    mae = '%.4g' % mae
-    plot.set(xlabel='True')
-    plot.set(ylabel='Predicted')
+    mae = "%.4g" % mae
+    plot.set(xlabel="True")
+    plot.set(ylabel="Predicted")
     plot.set(title=f"Mean Absolute Error: {mae}")
-    plt.savefig(
-        os.path.join(p_output_dir, 'scatter-plot.png'),
-        bbox_inches="tight"
-    )
+    plt.savefig(os.path.join(p_output_dir, "scatter-plot.png"), bbox_inches="tight")
     plt.close()
     data["residual"] = data["true"] - data["pred"]
 
     mean_residual = np.mean(np.abs(data["residual"]))
-    mean_residual = '%.4g' % mean_residual
+    mean_residual = "%.4g" % mean_residual
     plot = sns.displot(data, x="residual")
     plot.set(title=f"Mean Absolute Residual: {mean_residual}")
-    plt.savefig(
-        os.path.join(p_output_dir, 'residual-plot.png'),
-        bbox_inches="tight"
-    )
+    plt.savefig(os.path.join(p_output_dir, "residual-plot.png"), bbox_inches="tight")
     plt.close()
     data.to_csv(
-        os.path.join(p_output_dir, 'sample-residuals.tsv'),
-        sep='\t',
-        index=False
+        os.path.join(p_output_dir, "sample-residuals.tsv"), sep="\t", index=False
     )
 
 
 def main():
-    gpus = tf.config.list_physical_devices('GPU')
+    gpus = tf.config.list_physical_devices("GPU")
     if len(gpus) > 0:
         tf.config.experimental.set_memory_growth(gpus[0], True)
     cli()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

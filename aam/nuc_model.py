@@ -1,9 +1,9 @@
+import abc
 import tensorflow as tf
 import tensorflow_models as tfm
 from aam.losses import PairwiseLoss
 from aam.layers import ReadHead, NucleotideEmbedding
 from aam.metrics import PairwiseMAE, MAE
-import abc
 
 
 def _construct_regressor(
@@ -42,26 +42,6 @@ def _construct_regressor(
             scale=scale,
             include_random=include_random,
             include_count=include_count,
-        )
-    else:
-        model = UnifracModel(
-            pca_hidden_dim,
-            max_bp,
-            pca_hidden_dim,
-            pca_heads,
-            pca_layers,
-            attention_heads,
-            attention_layers,
-            dff,
-            dropout_rate,
-            batch_size=batch_size,
-            shift=shift,
-            scale=scale,
-            include_random=include_random,
-            include_count=include_count,
-            o_ids=o_ids,
-            sequence_tokenizer=sequence_tokenizer,
-            seq_mask_rate=0.75
         )
 
     return model
