@@ -153,9 +153,7 @@ def load_data(
     o_ids, table_dataset, tokenizer = get_table_data(table.copy())
 
     regression_data = extract_col(metadata, metadata_col, output_dtype=np.int32)
-    regression_dataset, mean, std = convert_to_normalized_dataset(
-        regression_data, "none"
-    )
+    regression_dataset, mean, std = convert_to_normalized_dataset(regression_data, "z")
 
     training_dataset, validation_dataset = batch_dataset(
         table_dataset,

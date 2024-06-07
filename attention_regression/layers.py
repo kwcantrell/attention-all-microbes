@@ -12,20 +12,14 @@ def random_sequences_mask(seq, seeds, seq_mask_rate):
 
 
 def robust_clr(tensor):
-    rclr_mask = float_mask(tensor)
-    rclr_s_counts = tf.reduce_sum(rclr_mask, axis=-1, keepdims=True)
-    gx = tf.exp(
-        tf.math.divide_no_nan(
-            tf.reduce_sum(
-                tf.math.log(tensor + (1.0 - rclr_mask)), axis=-1, keepdims=True
-            ),
-            rclr_s_counts,
-        )
-    )
-    tensor = tf.math.divide_no_nan(tensor, gx)
-    rclr_mask = tf.cast(tf.equal(tensor, 0.0), dtype=tf.float32)
-    tensor = tf.math.log(tensor + rclr_mask)
-    return tensor
+    # rclr_mask = tf.cast(tf.equal(tensor, 0.0), dtype=tf.float32)
+    # gx = tf.exp(
+    #     tf.reduce_mean(tf.math.log(tensor + rclr_mask), axis=-1, keepdims=True),
+    # )
+    # tensor = tf.math.log(tensor + rclr_mask) - tf.math.log(gx)
+    gx = tf.exp(tf.reduce_mean(tf.math.log1p(tensor), axis=-1, keepdims=True))
+    rclr = tf.math.log1p(tensor / gx)
+    return rclr
 
 
 def float_mask(tensor):
@@ -110,10 +104,8 @@ class FeatureSelector(tf.keras.layers.Layer):
         )
         self.random_generator = tf.random.Generator.from_non_deterministic_state()
         self.random_sequences_mask = tf.function(random_sequences_mask)
-        self.similarity_threshold = 0.95
-        self.similarity_loss = similarity_loss(
-            self.features_per_selector * self.similarity_threshold
-        )
+        self.similarity_threshold = 0.85
+        self.similarity_loss = similarity_loss(self.features_per_selector)
         self.feature_selector_loss = feature_selector_loss(self.similarity_threshold)
         self.prevalence_loss = prevalence_loss()
 
@@ -194,23 +186,25 @@ class FeatureEmbedding(tf.keras.layers.Layer):
                     kernel_regularizer=tf.keras.regularizers.L2(),
                     bias_regularizer=tf.keras.regularizers.L2(),
                     activation="relu",
+                    use_bias=False,
                 ),
+                tf.keras.layers.Dropout(0.1),
                 tf.keras.layers.Dense(
                     d_model,
                     kernel_regularizer=tf.keras.regularizers.L2(),
                     bias_regularizer=tf.keras.regularizers.L2(),
                     activation="relu",
+                    use_bias=False,
                 ),
-                tf.keras.layers.BatchNormalization(),
             ]
         )
         self.rclr_reg = ActivityRegularizationLayer(0.1)
         self.attention_layer = tfm.nlp.models.TransformerEncoder(
             num_layers=6,
             num_attention_heads=8,
-            intermediate_size=512,
-            dropout_rate=0.0,
-            attention_dropout_rate=0.0,
+            intermediate_size=128,
+            dropout_rate=0.1,
+            attention_dropout_rate=0.1,
             intermediate_dropout=0.1,
             norm_first=True,
             activation="relu",
@@ -235,7 +229,6 @@ class FeatureEmbedding(tf.keras.layers.Layer):
             self.objectives, shape=(batch_size, 1, self.d_model)
         )
         features = tf.concat([features, objectives], axis=1)
-
         rclr = tf.expand_dims(rclr, axis=-1)
         rclr = self.rclr_reg(rclr)
         output = features + self.rclr_ff(rclr)

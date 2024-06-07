@@ -9,6 +9,7 @@ import seaborn as sns
 import tensorflow as tf
 from aam.callbacks import SaveModel
 from aam.cli_util import aam_model_options
+from attention_regression.callbacks import MAE_Scatter
 from attention_regression.data_utils import batch_dataset, load_data
 from attention_regression.model import AtttentionRegression
 
@@ -104,6 +105,18 @@ def fit_regressor(
     model.summary()
     core_callbacks = [
         # tboard_callback,
+        MAE_Scatter(
+            "training",
+            data_obj["validation_dataset"],
+            0,
+            m_metadata_column,
+            None,
+            None,
+            data_obj["mean"],
+            data_obj["std"],
+            figure_path,
+            report_back_after=p_report_back_after,
+        ),
         tf.keras.callbacks.ReduceLROnPlateau(
             "loss", factor=0.8, patients=5, min_lr=0.00001
         ),
