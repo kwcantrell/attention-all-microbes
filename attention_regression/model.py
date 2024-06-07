@@ -1,270 +1,189 @@
+import abc
+from typing import Union
+
 import tensorflow as tf
-from attention_regression.layers import (
-    FeatureEmbedding,
-    FeatureLoadings,
-    Regressor
-)
 from aam.metrics import MAE
 
+from attention_regression.layers import FeatureEmbedding, ReadHead
 
-# temp hacky way to initialize model creation
-def _construct_model(
-    ids,
-    shift,
-    scale,
-    token_dim,
-    p_feature_attention_method,
-    features_to_add,
-    dropout,
+
+def _construct_regressor(
+    batch_size: int,
+    dropout_rate: float,
+    pca_hidden_dim: int,
+    pca_heads: int,
+    pca_layers: int,
+    dff: int,
+    token_dim: int,
     ff_clr,
-    ff_d_model,
-    pca_heads,
-    enc_layers,
-    enc_heads,
-    lr
+    attention_layers: int,
+    attention_heads: int,
+    output_dim: int,
+    max_bp: int,
+    shift=None,
+    scale=None,
+    include_count=True,
+    include_random=True,
+    o_ids=None,
+    sequence_tokenizer=None,
 ):
-    feature_input = tf.keras.Input(
-        shape=[None],
-        dtype=tf.string,
-        name="feature"
-    )
-    rclr_input = tf.keras.Input(
-        shape=[None],
-        dtype=tf.float32,
-        name="rclr"
-    )
-
-    feature_emb = FeatureEmbedding(
-        token_dim,
-        ids,
-        p_feature_attention_method,
-        features_to_add,
-        ff_clr,
-        ff_d_model,
-        dropout,
-        name="FeatureEmbeddings",
-        dtype=tf.float32
-    )
-    emb_outputs = feature_emb((feature_input, rclr_input))
-
-    output_embeddings = emb_outputs[2]
-    output_regression = emb_outputs[3]
-
-    binary_loadings = FeatureLoadings(
-        enc_layers=enc_layers,
-        enc_heads=enc_heads,
-        dff=128,
-        dropout=dropout,
-        output_dim=(
-            3 if p_feature_attention_method == 'add_features'
-            else len(ids) + 1
-        ),
-        name="FeatureLoadings"
-    )
-    output_embeddings = binary_loadings(output_embeddings)
-
-    regressor = Regressor(
-        ff_d_model,
-        pca_heads,
-        2,
-        4,
-        128,
-        0.1
-    )
-    output_regression = regressor(output_regression)
-
-    model = AttentionRegression(
-        shift,
-        scale,
-        feature_emb,
-        p_feature_attention_method,
-        binary_loadings,
-        regressor,
-    )
-    optimizer = tf.keras.optimizers.Adam(
-        learning_rate=lr,
-        beta_1=0.9,
-        beta_2=0.98,
-        epsilon=1e-9
-    )
-    model.compile(
-        optimizer=optimizer
-    )
+    if include_count:
+        model = AtttentionRegression(
+            pca_hidden_dim,
+            max_bp,
+            pca_hidden_dim,
+            pca_heads,
+            pca_layers,
+            attention_heads,
+            attention_layers,
+            dff,
+            dropout_rate,
+            batch_size=batch_size,
+            shift=shift,
+            scale=scale,
+            include_random=include_random,
+            include_count=include_count,
+        )
     return model
 
 
-@tf.keras.saving.register_keras_serializable(package="AttentionRegression")
-class AttentionRegression(tf.keras.Model):
+def cast_to_loss_shape(tensor):
+    return tf.reshape(tensor, shape=(-1, 1))
+
+
+@tf.keras.saving.register_keras_serializable(package="BaseModel")
+class BaseModel(tf.keras.Model):
     def __init__(
-            self,
-            shift,
-            scale,
-            feature_emb,
-            feature_attention_method,
-            binary_loadings,
-            regressor,
-            **kwargs
+        self,
+        batch_size,
+        shift=0,
+        scale=1,
+        include_random=True,
+        include_count=True,
+        seq_mask_rate=0.1,
+        use_attention_loss=True,
+        o_ids=None,
+        sequence_tokenizer: Union[tf.keras.layers.StringLookup, None] = None,
+        **kwargs,
     ):
         super().__init__(**kwargs)
+        self.batch_size = batch_size
         self.shift = shift
         self.scale = scale
+        self.include_random = include_random
+        self.include_count = include_count
+        self.seq_mask_rate = seq_mask_rate
+        self.use_attention_loss = use_attention_loss
+        self.o_ids = o_ids
+        self.sequence_tokenizer = sequence_tokenizer
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.mae_metric = MAE(shift, scale, name="mae")
-        self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
-        self.loss_reg = tf.keras.losses.MeanSquaredError()
-        self.attention_loss = (
-            tf.keras.losses.SparseCategoricalCrossentropy(
-                ignore_class=0,
-                from_logits=True,
-                reduction="none"
-            )
+        self.regresssion_loss = None
+        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(
+            ignore_class=0, from_logits=True, reduction="none"
         )
-        self.feature_emb = feature_emb
-        self.feature_attention_method = feature_attention_method
-        self.binary_loadings = binary_loadings
-        self.regressor = regressor
-        self.TRUE_CLASS = tf.constant(2, dtype=tf.int64)
-        self.ADDED_CLASS = tf.constant(1, dtype=tf.int64)
+        self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
+        self.metric_traker = None
+        self.make_call_function()
 
-    def call(self, inputs, training=None):
-        emb_outputs = self.feature_emb(inputs, training=training)
-        output_token_mask = emb_outputs[0]
-        output_tokens = emb_outputs[1]
-        output_embeddings = emb_outputs[2]
-        output_regression = emb_outputs[3]
-        output_embeddings = self.binary_loadings(output_embeddings, training)
-        output_regression = self.regressor(output_regression)
+    @abc.abstractmethod
+    def model_step(self, inputs, training=None):
+        return
 
-        return {
-            "token_mask": output_token_mask,
-            "tokens": output_tokens,
-            "embeddings": output_embeddings,
-            "regression": output_regression,
-            "_model_out_keys": [
-                "token_mask",
-                "tokens",
-                "embeddings",
-                "regression"
-            ],
-            "class_labels": {
-                "true":  2,
-                "added": 1
-            },
-            "total_tokens": self.feature_emb.total_tokens
-        }
+    def get_table_data(self, sparse_row):
+        # count
+        dense = tf.cast(sparse_row.values, dtype=tf.float32)
+        dense = tf.scatter_nd(
+            sparse_row.indices, dense, shape=[sparse_row.dense_shape[0]]
+        )
+        return dense
 
-    def _get_inputs(self, x):
-        return (x['feature'], x['rclr'])
+    def make_call_function(self):
+        """
+        handles model exectution
+        returns:
+            a tuple of tf.tensors with first tensor being the "regression"
+            component of type tf.float32 and the second representing the
+            nucleotide sequences of type tf.int64
+        """
+
+        # @tf.autograph.experimental.do_not_convert
+        def one_step(inputs, training=None):
+            table_info = inputs
+            counts = tf.map_fn(
+                self.get_table_data, table_info, fn_output_signature=tf.float32
+            )
+            output = self.model_step(
+                (
+                    tf.stop_gradient(table_info.indices),
+                    tf.stop_gradient(tf.cast(table_info.indices[:, 1], dtype=tf.int32)),
+                    tf.stop_gradient(counts),
+                ),
+                training=training,
+            )
+            # return (output, features)
+            return output
+
+        self.call_function = one_step
+
+    def call(self, inputs, training=False):
+        return self.call_function(inputs, training=training)
+
+    def build(self, input_shape=None):
+        """
+        simulate model execution using symbolic tensors
+        """
+        input_ind = tf.keras.Input(shape=[None, 2], dtype=tf.int32)
+        input_seq = tf.keras.Input(shape=[None], dtype=tf.int32)
+        input_rclr = tf.keras.Input(shape=[None], dtype=tf.float32)
+        self.model_step((input_ind, input_seq, input_rclr))
+
+    def compile(self, o_ids=None, **kwargs):
+        super().compile(**kwargs)
+        if o_ids is not None:
+            self.o_ids = o_ids
 
     def predict_step(self, data):
-        x, y = data
-        inputs = self._get_inputs(x)
-        y = y['reg_out']
-        y_pred = self((inputs), training=False)
-        return y_pred
+        (sample_indices, table_info), y = data
 
-    @tf.function
-    def select_equal_class(self, inputs):
-        embeddings, labels, max_added = inputs
-        added_embeddings = embeddings[-max_added:]
-        added_labels = labels[-max_added:]
-
-        true_embeddings = embeddings[:max_added]
-        true_labels = labels[:max_added]
-        return (
-            tf.concat((true_embeddings, added_embeddings), axis=0),
-            tf.concat((true_labels, added_labels), axis=0),
+        counts = tf.map_fn(
+            self.get_table_data, table_info, fn_output_signature=tf.float32
         )
-
-    def _add_feature_loss(self, model_outputs):
-        # extract feature labels
-        _, token_mask, tokens, embeddings = model_outputs
-        labels = tf.add(
-            tf.cast(tf.greater(tokens, 0), dtype=tf.int64),
-            tf.cast(token_mask, dtype=tf.int64)
-        )
-        max_added = tf.repeat(
-            tf.reduce_max(
-                tf.reduce_sum(
-                    tf.cast(
-                        tf.equal(labels, 1),
-                        dtype=tf.int64
-                    ),
-                    axis=1
-                )
+        output = self.model_step(
+            (
+                tf.stop_gradient(table_info.indices),
+                tf.stop_gradient(tf.cast(table_info.indices[:, 1], dtype=tf.int32)),
+                tf.stop_gradient(counts),
             ),
-            repeats=[tf.shape(tokens)[0]],
-            axis=0
+            training=False,
         )
+        return output
 
-        embeddings, labels = tf.vectorized_map(
-            self.select_equal_class,
-            [embeddings, labels, max_added]
-        )
+    @abc.abstractmethod
+    def _extract_data(self, data):
+        """
+        this should become a tf.keras.layer for better preprosses with tf.data
 
-        attention_loss = tf.reduce_mean(
-            self.attention_loss(labels, embeddings),
-            axis=-1
-        )
-        return attention_loss
-
-    def _add_mask_loss(self, model_outputs):
-        features, _, sample_tokens, embeddings = model_outputs
-        feature_tokens = self.feature_emb.feature_tokens(features)
-        masked_tokens = tf.math.not_equal(
-            feature_tokens,
-            sample_tokens
-        )
-        labels = tf.multiply(
-            feature_tokens,
-            tf.cast(masked_tokens, dtype=tf.int64)
-        )
-        embedding_mask = tf.cast(
-            tf.greater(
-                labels,
-                0
-            ),
-            dtype=tf.float32
-        )
-        embeddings = tf.multiply(
-            embeddings,
-            tf.expand_dims(embedding_mask, axis=-1)
-        )
-        attention_loss = tf.reduce_sum(
-            self.attention_loss(labels, embeddings),
-            axis=-1
-        )
-        return attention_loss
-
-    def _attention_loss(self, model_outputs):
-        if self.feature_attention_method == 'add_features':
-            return self._add_feature_loss(model_outputs)
-        elif self.feature_attention_method == 'mask_features':
-            return self._add_mask_loss(model_outputs)
-        else:
-            raise Exception(
-                f'Invalid attention method {self.feature_attention_method}'
-            )
+        returns:
+            inputs: a tuple of tf.tensors representing model input
+            y: a tf.tensor
+        """
+        return
 
     def train_step(self, data):
-        x, y = data
-        inputs = self._get_inputs(x)
-        y = y['reg_out']
-
+        """
+        Need to add checks to verify input/output tuples are formatted correctly
+        """
+        inputs, y_ad = self._extract_data(data)
+        # y_ad = cast_to_loss_shape(y_ad)
         with tf.GradientTape() as tape:
             # Forward pass
-            outputs = self((inputs), training=True)
+            reg_out = self(inputs, training=True)
+            # reg_out = cast_to_loss_shape(reg_out)
 
             # Compute regression loss
-            loss = self.loss_reg(y, outputs["regression"])
-            model_outputs = (
-                inputs[0],
-                outputs["token_mask"],
-                outputs["tokens"],
-                outputs["embeddings"]
-            )
-            attention_loss = self._attention_loss(model_outputs)
-            loss += attention_loss
+            loss = self.regresssion_loss(y_ad, reg_out)
+            model_reg = tf.reduce_sum(self.losses)
+            loss += model_reg
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -275,216 +194,116 @@ class AttentionRegression(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         # Compute our own metrics
-        self.mae_metric.update_state(y, outputs["regression"])
-        self.confidence_tracker.update_state(attention_loss)
+        self.metric_traker.update_state(y_ad, reg_out)
         return {
             "loss": self.loss_tracker.result(),
-            "confidence": self.confidence_tracker.result(),
-            "mae": self.mae_metric.result(),
+            "accuracy": self.metric_traker.result(),
         }
 
-    def build(self, input_shape):
-        feature_input = tf.keras.Input(
-            shape=[None],
-            dtype=tf.string,
-            name="feature"
-        )
-        rclr_input = tf.keras.Input(
-            shape=[None],
-            dtype=tf.float32,
-            name="rclr"
-        )
-        emb_outputs = self.feature_emb((feature_input, rclr_input))
-        output_embeddings = emb_outputs[2]
-        output_regression = emb_outputs[3]
+    def test_step(self, data):
+        """
+        Need to add checks to verify input/output tuples are formatted correctly
+        """
+        inputs, y_ad = self._extract_data(data)
+        # y_ad = cast_to_loss_shape(y_ad)
+        # Forward pass
+        reg_out = self(inputs, training=False)
+        # reg_out = cast_to_loss_shape(reg_out)
 
-        output_embeddings = self.binary_loadings(output_embeddings)
-        output_regression = self.regressor(output_regression)
+        # Compute regression loss
+        loss = self.regresssion_loss(y_ad, reg_out)
+        self.loss_tracker.update_state(loss)
 
-    @property
-    def metrics(self):
-        # We list our `Metric` objects here so that `reset_states()` can be
-        # called automatically at the start of each epoch
-        # or at the start of `evaluate()`.
-        return [
-            self.loss_tracker,
-            self.confidence_tracker,
-            self.mae_metric
-        ]
-
-    def feature_confidences(self, dataset):
-        conf_dict = {
-            "conf_keys": ["count", "age", "confidence"],
-            "classes": ["true", "added"]
+        # Compute our own metrics
+        self.metric_traker.update_state(y_ad, reg_out)
+        return {
+            "loss": self.loss_tracker.result(),
+            "accuracy": self.metric_traker.result(),
         }
-
-        keys = conf_dict["conf_keys"]
-        for c in conf_dict["classes"]:
-            conf_dict[c] = {}
-            for k in keys:
-                if k == "age":
-                    conf_dict[c][k] = {
-                        "true_age": tf.zeros(
-                            self.feature_emb.total_tokens,
-                            dtype=tf.float32
-                        ),
-                        "predicted_age": tf.zeros(
-                            self.feature_emb.total_tokens,
-                            dtype=tf.float32
-                        )
-                    }
-                else:
-                    conf_dict[c][k] = tf.zeros(
-                        self.feature_emb.total_tokens,
-                        dtype=tf.float32
-                    )
-
-        def _normalize_age(tensor):
-            return self.scale * tensor + self.shift
-
-        def _process_class_masks(sample_token_mask, sample_tokens, cls_val):
-            class_mask = tf.greater(sample_tokens, 0)
-            classes = tf.cast(sample_token_mask, dtype=tf.int64) + 1
-            classes *= tf.cast(class_mask, dtype=tf.int64)
-            cls_mask = tf.equal(classes, cls_val)
-            class_tokens = (
-                sample_tokens * tf.cast(cls_mask, dtype=tf.int64)
-            )
-            return cls_mask, class_tokens
-
-        def _map_sample_tokens(inputs):
-            sampe_confidence, sample_tokens = inputs
-            return tf.scatter_nd(
-                tf.expand_dims(sample_tokens, axis=-1),
-                sampe_confidence,
-                shape=[self.feature_emb.total_tokens]
-            )
-
-        def map_to_tokens(
-                batch_tensor,
-                class_mask,
-                class_tokens
-        ):
-            # extract class info from batch tensor
-            class_tensor = tf.multiply(
-                batch_tensor,
-                tf.cast(class_mask, dtype=tf.float32)
-            )
-
-            # map the class_tensor to the respective token indices
-            batch_token_tensor = tf.reduce_sum(
-                tf.map_fn(
-                    _map_sample_tokens,
-                    (class_tensor, class_tokens),
-                    fn_output_signature=tf.float32
-                ),
-                axis=0
-            )
-            return batch_token_tensor
-
-        def _process_batch(x, y):
-            inputs = self._get_inputs(x)
-            model_outputs = self(inputs)
-
-            model_outputs["predicted_age"] = _normalize_age(
-                model_outputs["regression"]
-            )
-            model_outputs["true_age"] = _normalize_age(
-                tf.expand_dims(
-                    y["reg_out"],
-                    axis=-1
-                )
-            )
-            model_outputs["embeddings"] = tf.keras.activations.softmax(
-                model_outputs["embeddings"]
-            )
-
-            for c in conf_dict["classes"]:
-                class_mask, class_tokens = _process_class_masks(
-                    model_outputs["token_mask"],
-                    model_outputs["tokens"],
-                    model_outputs["class_labels"][c]
-                )
-
-                cls_val = model_outputs["class_labels"][c]
-                batch_confidence = tf.multiply(
-                        model_outputs["embeddings"][:, :, cls_val],
-                        tf.cast(class_mask, dtype=tf.float32)
-                )
-                conf_dict[c]["confidence"] += map_to_tokens(
-                    batch_confidence,
-                    class_mask,
-                    class_tokens
-                )
-
-                ones = tf.ones_like(model_outputs["tokens"], dtype=tf.float32)
-
-                conf_dict[c]["age"]["true_age"] += map_to_tokens(
-                    tf.multiply(
-                        model_outputs["true_age"],
-                        ones
-                    ),
-                    class_mask,
-                    class_tokens
-                )
-                conf_dict[c]["age"]["predicted_age"] += map_to_tokens(
-                    tf.multiply(
-                        model_outputs["predicted_age"],
-                        ones
-                    ),
-                    class_mask,
-                    class_tokens
-                )
-
-                conf_dict[c]["count"] += map_to_tokens(
-                    ones,
-                    class_mask,
-                    class_tokens
-                )
-
-        for batch in dataset:
-            _process_batch(*batch)
-
-        for c in conf_dict["classes"]:
-            class_dict = conf_dict[c]
-            for k in conf_dict["conf_keys"]:
-                if k == "count":
-                    continue
-                token_counts = class_dict["count"]
-                if k == "age":
-                    class_dict[k]["true_age"] /= token_counts
-                    class_dict[k]["predicted_age"] /= token_counts
-                else:
-                    class_dict[k] /= token_counts
-        return conf_dict
 
     def get_config(self):
         base_config = super().get_config()
         config = {
+            "batch_size": self.batch_size,
             "shift": self.shift,
             "scale": self.scale,
-            "feature_emb": tf.keras.saving.serialize_keras_object(
-                self.feature_emb
-            ),
-            "feature_attention_method": self.feature_attention_method,
-            "binary_loadings": tf.keras.saving.serialize_keras_object(
-                self.binary_loadings
-            ),
-            "regressor": tf.keras.saving.serialize_keras_object(
-                self.regressor
-            ),
+            "include_random": self.include_random,
+            "include_count": self.include_count,
+            "use_attention_loss": self.use_attention_loss,
         }
+        if self.sequence_tokenizer is not None:
+            config["sequence_tokenizer"] = tf.keras.saving.serialize_keras_object(
+                self.sequence_tokenizer
+            )
         return {**base_config, **config}
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
-        config["feature_emb"] = tf.keras.saving.deserialize_keras_object(
-            config["feature_emb"]
-        )
-        config["binary_loadings"] = tf.keras.saving.deserialize_keras_object(
-            config["binary_loadings"]
-        )
-        config["regressor"] = tf.keras.saving.deserialize_keras_object(
-            config["regressor"]
-        )
+        if "sequence_tokenizer" in config:
+            config["sequence_tokenizer"] = tf.keras.saving.deserialize_keras_object(
+                config["sequence_tokenizer"]
+            )
         return cls(**config)
+
+
+@tf.keras.saving.register_keras_serializable(package="AtttentionRegression")
+class AtttentionRegression(BaseModel):
+    def __init__(
+        self,
+        batch_size,
+        token_dim,
+        d_model,
+        attention_heads,
+        attention_layers,
+        dff,
+        dropout_rate,
+        use_attention_loss=False,
+        **kwargs,
+    ):
+        super().__init__(batch_size, use_attention_loss=use_attention_loss, **kwargs)
+        self.token_dim = token_dim
+        self.d_model = d_model
+        self.attention_heads = attention_heads
+        self.attention_layers = attention_layers
+        self.dff = dff
+        self.dropout_rate = dropout_rate
+        # self.regresssion_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        # self.metric_traker = tf.keras.metrics.BinaryAccuracy()
+        self.regresssion_loss = tf.keras.losses.MeanSquaredError()
+        self.metric_traker = MAE(self.shift, self.scale, name="mae")
+        self.feature_emb: FeatureEmbedding = FeatureEmbedding(
+            len(self.sequence_tokenizer.get_vocabulary()),
+            token_dim,
+            d_model,
+            attention_heads,
+            attention_layers,
+            dff,
+            dropout_rate,
+        )
+        self.readhead = ReadHead(output_dim=1)
+
+    def model_predict_step(self, inputs, training=None):
+        output = self.feature_emb.process_seq(inputs, training=False)
+        output = tf.argmax(self.readhead(output), axis=-1)
+        return output
+
+    def model_step(self, inputs, training=None):
+        output = self.feature_emb(inputs, training=training, batch_size=self.batch_size)
+        output = self.readhead(output)
+        return output
+
+    def _extract_data(self, data):
+        (sample_indices, table_info), y = data
+        return (table_info, y)
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "token_dim": self.token_dim,
+            "d_model": self.d_model,
+            "attention_heads": self.attention_heads,
+            "attention_layers": self.attention_layers,
+            "dff": self.dff,
+            "dropout_rate": self.dropout_rate,
+        }
+        return {**base_config, **config}
