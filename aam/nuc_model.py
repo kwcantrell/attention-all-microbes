@@ -84,7 +84,6 @@ class BaseNucleotideModel(tf.keras.Model):
             nucleotide sequences of type tf.int64
         """
 
-        @tf.autograph.experimental.do_not_convert
         def one_step(inputs, training=None):
             table_info = inputs
             pad_size = self.get_max_unique_asv(table_info)
@@ -101,7 +100,7 @@ class BaseNucleotideModel(tf.keras.Model):
 
         self.call_function = tf.function(one_step)
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, training=False):
         return self.call_function(inputs, training=training)
 
     def build(self, input_shape=None):
@@ -159,6 +158,7 @@ class BaseNucleotideModel(tf.keras.Model):
                     tf.math.divide_no_nan(attention_loss, counts), axis=-1
                 )
                 loss = tf.reduce_mean(loss + attention_loss)
+            loss += self.losses
             self.loss_tracker.update_state(loss)
 
         # Compute gradients
@@ -294,7 +294,7 @@ class UnifracModel(BaseNucleotideModel):
             output_dim=32,
         )
 
-    def model_step(self, inputs, training=None):
+    def model_step(self, inputs, training=False):
         output = self.feature_emb(
             inputs,
             training=training,

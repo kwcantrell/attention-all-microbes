@@ -61,9 +61,6 @@ def compute_pca_proj(tensor, hidden_dim, num_heads, head_size):
     second_reshape = tf.concat([shape[:-2], [hidden_dim, head_size]], axis=0)
 
     tensor = tf.subtract(tensor, tf.reduce_mean(tensor, axis=-2, keepdims=True))
-    tensor = tf.divide(
-        tensor, tf.math.sqrt(tf.cast(tf.shape(tensor)[-2], dtype=tf.float32))
-    )
     tensor = tf.reshape(tensor, shape=reshape)
     tensor = tf.transpose(tensor, perm=perm)
     cov = tf.linalg.matmul(tensor, tensor, transpose_a=True)

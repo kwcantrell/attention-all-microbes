@@ -325,6 +325,7 @@ def unifrac_regressor(
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=p_lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9
     )
+    model.o_ids = data_obj["o_ids"]
     model.compile(optimizer=optimizer)
 
     for data in data_obj["training_dataset"].take(1):
