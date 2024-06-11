@@ -146,6 +146,7 @@ class BaseNucleotideModel(tf.keras.Model):
 
             # Compute regression loss
             loss = tf.squeeze(self.regresssion_loss(y, reg_out))
+            # TODO: Abstract to function for variable loss steps in training
             if self.use_attention_loss:
                 counts = tf.reduce_sum(
                     float_mask(seq),
