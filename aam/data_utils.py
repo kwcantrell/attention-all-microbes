@@ -31,6 +31,33 @@ def get_table_data(table, max_bp):
     return (o_ids, table_dataset, sequence_tokenizer)
 
 
+def get_gotu_dataset(table):
+    o_ids = tf.constant(table.ids(axis="observation"))
+    max_tokens = int(tf.shape(o_ids)[0]) + 2
+    print(max_tokens)
+    table = table.transpose()
+    data = table.matrix_data.tocoo()
+    row_ind = data.row
+    col_ind = data.col
+    values = data.data
+    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
+    table_data = tf.sparse.SparseTensor(
+        indices=indices, values=values, dense_shape=table.shape
+    )
+    table_data = tf.sparse.reorder(table_data)
+
+    table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
+    sequence_tokenizer = tf.keras.layers.TextVectorization(
+        max_tokens=max_tokens,
+        split="character",
+        output_mode="int",
+        output_sequence_length=2,
+    )
+    sequence_tokenizer.adapt(o_ids[:10])
+
+    return (o_ids, table_dataset, sequence_tokenizer)
+
+
 def convert_to_normalized_dataset(values, normalize):
     if normalize == "minmax":
         shift = min(values)
@@ -138,6 +165,7 @@ def load_data(
     tree_path=None,
     metadata_path=None,
     metadata_col=None,
+    gotu_path=None,
     missing_samples_flag=None,
 ):
     table = load_table(table_path)
@@ -200,3 +228,33 @@ def load_data(
             "mean": mean,
             "std": std,
         }
+
+    if gotu_path:
+        o_ids, table_dataset, sequence_tokenizer = get_table_data(table, max_bp)
+        gotu_data = load_table(gotu_path)
+        gotu_o_ids, gotu_table_dataset, gotu_tokenizer = get_gotu_dataset(gotu_data)
+        sample_ids = table.ids(axis="sample")
+        training_dataset, validation_dataset = batch_dataset(
+            table_dataset,
+            gotu_table_dataset,
+            batch_size,
+            shuffle=shuffle_samples,
+            repeat=repeat,
+            train_percent=train_percent,
+        )
+
+        return {
+            "table": table,
+            "sample_ids": sample_ids,
+            "o_ids": o_ids,
+            "sequence_tokenizer": sequence_tokenizer,
+            "gotu_o_ids": gotu_o_ids,
+            "gotu_table_dataset": gotu_table_dataset,
+            "gotu_tokenizer": gotu_tokenizer,
+            "training_dataset": training_dataset,
+            "validation_dataset": validation_dataset,
+        }
+
+
+
+    
