@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+from aam.utils import float_mask
+
 
 def add_random_sequences(seq, seeds, range):
     seq_mask = tf.cast(tf.math.equal(seq, 0), dtype=tf.int32)
@@ -74,3 +76,16 @@ def compute_pca_proj(tensor, hidden_dim, num_heads, head_size):
     )
     pca = tf.reshape(pca, shape=second_reshape)
     return pca
+
+
+def add_seq_and_count_pad(inputs):
+    seq, rclr = tf.nest.flatten(inputs, expand_composites=True)
+    seq = tf.pad(seq, [[0, 0], [0, 1], [0, 0]], constant_values=7)
+    rclr = tf.pad(rclr, paddings=[[0, 0], [0, 1]], constant_values=1)
+    return (seq, rclr)
+
+
+def sequence_attention_mask(tensor):
+    mask = float_mask(tensor)
+    attention_mask = tf.cast(tf.matmul(mask, mask, transpose_b=True), dtype=tf.bool)
+    return attention_mask

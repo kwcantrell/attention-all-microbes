@@ -25,6 +25,9 @@ Compare results from [age regression](https://journals.asm.org/doi/10.1128/msyst
 |![Residual](docs/residual-plot.png)| |
 
 
+# Launch Tensorboard
+ssh -L 6006:127.0.0.1:6006 brncl-34
+
 
 
 

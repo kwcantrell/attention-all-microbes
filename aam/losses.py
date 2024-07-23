@@ -14,28 +14,32 @@ def _pairwise_distances(embeddings, squared=False):
     Returns:
         pairwise_distances: tensor of shape (batch_size, batch_size)
     """
-    # Get the dot product between all embeddings
-    # shape (batch_size, batch_size)
-    dot_product = tf.matmul(embeddings, tf.transpose(embeddings))
+    # # Get the dot product between all embeddings
+    # # shape (batch_size, batch_size)
+    # dot_product = tf.matmul(embeddings, tf.transpose(embeddings))
 
-    # Get squared L2 norm for each embedding. We can just take the diagonal of
-    # `dot_product`.
-    # This also provides more numerical stability (the diagonal of the result
-    # will be exactly 0).
-    # shape (batch_size,)
-    square_norm = tf.linalg.diag_part(dot_product)
+    # # Get squared L2 norm for each embedding. We can just take the diagonal of
+    # # `dot_product`.
+    # # This also provides more numerical stability (the diagonal of the result
+    # # will be exactly 0).
+    # # shape (batch_size,)
+    # square_norm = tf.linalg.diag_part(dot_product)
 
-    # Compute the pairwise distance matrix as we have:
-    # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
-    # shape (batch_size, batch_size)
-    distances = (
-        tf.expand_dims(square_norm, 1)
-        - 2.0 * dot_product
-        + tf.expand_dims(square_norm, 0)
+    # # Compute the pairwise distance matrix as we have:
+    # # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
+    # # shape (batch_size, batch_size)
+    # distances = (
+    #     tf.expand_dims(square_norm, 1)
+    #     - 2.0 * dot_product
+    #     + tf.expand_dims(square_norm, 0)
+    # )
+
+    # # Because of computation errors, some distances might be negative so we
+    # # put everything >= 0.0
+    distances = tf.reduce_sum(
+        tf.math.abs(tf.expand_dims(embeddings, 0) - tf.expand_dims(embeddings, 1)),
+        axis=-1,
     )
-
-    # Because of computation errors, some distances might be negative so we
-    # put everything >= 0.0
     distances = tf.maximum(distances, 0.0)
 
     if not squared:
@@ -66,14 +70,14 @@ class PairwiseLoss(tf.keras.losses.Loss):
             # batch_size = tf.shape(y_pred)[0]
             y_pred_dist = _pairwise_distances(y_pred, squared=False)
             difference = tf.math.reduce_sum(
-                tf.math.square(y_true - y_pred_dist), axis=-1
+                tf.math.square(y_pred_dist - y_true), axis=-1
             )
             return difference
 
         self.loss = tf.function(pairwise_loss)
 
     def call(self, y_true, y_pred):
-        return (self.loss(y_true, y_pred),)
+        return self.loss(y_true, y_pred)
 
     def get_config(self):
         return super().get_config()
@@ -106,15 +110,14 @@ def pairwise_residual_mse(batch_size, mean=None, std=None):
     return inner
 
 
-def denormalize(tensor, mean, std):
-    return tensor * std + mean
+def denormalize(tensor, shift, scale):
+    return tensor * scale + shift
 
 
-def mae_loss(mean=None, std=None):
+def mae_loss(shift=0, scale=1):
     def mae(y_true, y_pred):
-        if mean is not None:
-            y_true = denormalize(y_true, mean, std)
-            y_pred = denormalize(y_pred, mean, std)
+        y_true = denormalize(y_true, shift, scale)
+        y_pred = denormalize(y_pred, shift, scale)
         return tf.abs(y_true - y_pred)
 
     return mae

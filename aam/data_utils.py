@@ -25,8 +25,10 @@ def get_table_data(table, max_bp):
         split="character",
         output_mode="int",
         output_sequence_length=max_bp,
+        name="tokenizer",
+        vocabulary=["", "[UNK]", "g", "a", "t", "c"],
     )
-    sequence_tokenizer.adapt(o_ids[:10])
+    # sequence_tokenizer.adapt(o_ids[:10])
 
     return (o_ids, table_dataset, sequence_tokenizer)
 
@@ -76,16 +78,16 @@ def batch_dataset(
     training_dataset = training_dataset
 
     if shuffle:
-        training_dataset = training_dataset.shuffle(size)
+        training_dataset = training_dataset.shuffle(size, reshuffle_each_iteration=True)
     training_dataset = training_dataset.batch(
         batch_size, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE
     )
 
     if repeat > 1:
-        training_dataset = training_dataset.repeat(repeat)
+        training_dataset = training_dataset.repeat(repeat).prefetch(10)
 
     if train_percent:
-        validation_dataset = dataset.skip(size).batch(8, drop_remainder=True)
+        validation_dataset = dataset.skip(size).batch(batch_size, drop_remainder=True)
         return training_dataset, validation_dataset
     else:
         return training_dataset
@@ -133,14 +135,18 @@ def load_data(
     max_bp,
     batch_size,
     repeat=1,
-    shuffle_samples=False,
+    shuffle_samples=True,
     train_percent=0.9,
     tree_path=None,
     metadata_path=None,
     metadata_col=None,
     missing_samples_flag=None,
 ):
-    table = load_table(table_path)
+    if isinstance(table_path, str):
+        table = load_table(table_path)
+    else:
+        table = table_path
+
     if shuffle_samples:
         table = shuffle_table(table)
 
@@ -174,6 +180,7 @@ def load_data(
         sample_ids = table.ids(axis="sample")
         metadata = filter_and_reorder(metadata, sample_ids)
         o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
+        sample_ids = table.ids(axis="sample")
 
         regression_data = extract_col(metadata, metadata_col, output_dtype=np.float32)
         regression_dataset, mean, std = convert_to_normalized_dataset(

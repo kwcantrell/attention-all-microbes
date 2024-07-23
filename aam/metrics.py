@@ -34,7 +34,7 @@ class PairwiseMAE(tf.keras.metrics.Metric):
 
 @tf.keras.saving.register_keras_serializable(package="MAE")
 class MAE(tf.keras.metrics.MeanMetricWrapper):
-    def __init__(self, shift=None, scale=None, dtype=None, **kwargs):
+    def __init__(self, shift=0, scale=1, dtype=None, **kwargs):
         super().__init__(fn=mae_loss(shift, scale), dtype=dtype, **kwargs)
         self.shift = shift
         self.scale = scale
