@@ -2,15 +2,11 @@ import os
 from datetime import datetime
 
 import click
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
 import tensorflow as tf
 
 import aam._parameter_descriptions as desc
 from aam.callbacks import SaveModel
-from aam.data_utils import batch_dataset, load_data
+from aam.data_utils import load_data
 from aam.nuc_model import TransferLearnNucleotideModel
 from aam.utils import LRDecrease
 from attention_regression.callbacks import MAE_Scatter
@@ -84,7 +80,6 @@ def unifrac_regressor(
     p_report_back_after: int,
     p_output_dir: str,
 ):
-    print("change!!!")
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
 
@@ -99,12 +94,6 @@ def unifrac_regressor(
         p_batch_size,
         tree_path=i_tree_path,
     )
-    params = {
-        "beta_1": 0.3017041123190186,
-        "beta_2": 0.2696289218363902,
-        "epsilon": 2.4948854833703766e-06,
-        "lr": 0.0003,
-    }
     model = UnifracModel(
         p_ff_d_model,
         i_max_bp,
@@ -113,7 +102,7 @@ def unifrac_regressor(
         8,
         p_enc_heads,
         p_enc_layers,
-        2048,
+        1024,
         p_dropout,
         batch_size=p_batch_size,
         include_random=False,
@@ -121,21 +110,11 @@ def unifrac_regressor(
         sequence_tokenizer=data_obj["sequence_tokenizer"],
         seq_mask_rate=p_features_to_add_rate,
     )
-    from aam.utils import MyLRSchedule
     optimizer = tf.keras.optimizers.Adam(
-        # MyLRSchedule()
-        #tf.keras.optimizers.schedules.CosineDecayRestarts(0.0005, 2),
-        LRDecrease(params["lr"]),
-        # 0.0005,
-        # beta_1=params["beta_1"],
-        # beta_2=params["beta_2"],
-        # epsilon=params["epsilon"],
+        LRDecrease(0.0003),
     )
-    # optimizer._iterations.assign(30000)
-    model = tf.keras.models.load_model(
-         "foundation-model/model.keras", compile=False
-    )
-    # optimizer.learning_rate = (model.optimizer.get_config())
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+
     model.compile(
         sequence_tokenizer=data_obj["sequence_tokenizer"],
         optimizer=optimizer,
@@ -145,128 +124,17 @@ def unifrac_regressor(
     model.build()
     model.summary()
     core_callbacks = [
-        # tf.keras.callbacks.ReduceLROnPlateau(
-        #     "loss", factor=0.2, patients=0, min_lr=0.0000001
-        # ),
-        # tf.keras.callbacks.EarlyStopping("loss", patience=500),
         SaveModel(p_output_dir, 1),
     ]
     log_dir = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    # tensorboard_callback = tf.keras.callbacks.TensorBoard(
-    #     log_dir=log_dir,
-    #     write_graph=True,
-    #     update_freq=150,
-    # )
-    # core_callbacks.append(tensorboard_callback)
     model.fit(
         data_obj["training_dataset"],
         validation_data=data_obj["validation_dataset"],
         callbacks=[*core_callbacks],
         epochs=p_epochs,
     )
-    # import optuna
-
-    # from aam.nuc_model import UnifracModel
-
-    # data_obj = load_data(
-    #     i_table_path,
-    #     i_max_bp,
-    #     p_batch_size,
-    #     tree_path=i_tree_path,
-    #     shuffle_samples=True,
-    # )
-
-    # def run(optimizer, polyval=1.0):
-    #     model = UnifracModel(
-    #         p_ff_d_model,
-    #         i_max_bp,
-    #         p_ff_d_model,
-    #         p_pca_heads,
-    #         8,
-    #         p_enc_heads,
-    #         p_enc_layers,
-    #         1024,
-    #         p_dropout,
-    #         batch_size=p_batch_size,
-    #         include_random=False,
-    #         include_count=False,
-    #         sequence_tokenizer=data_obj["sequence_tokenizer"],
-    #         seq_mask_rate=p_features_to_add_rate,
-    #         polyval=polyval,
-    #     )
-    #     # model = tf.keras.models.load_model(
-    #     #     "/home/kcantrel/amplicon-gpt/foundation-model-optuna-2/model.keras"
-    #     # )
-    #     model.compile(
-    #         optimizer=optimizer,
-    #         o_ids=data_obj["o_ids"],
-    #         run_eagerly=False,
-    #         polyval=polyval,
-    #     )
-    #     history = model.fit(data_obj["training_dataset"], epochs=20)
-    #     return history
-
-    # def get_params(trial):
-    #     params = {
-    #         "beta_1": trial.suggest_float("beta_1", 0.1, 0.9),
-    #         "beta_2": trial.suggest_float("beta_2", 0.1, 0.99),
-    #         "epsilon": trial.suggest_float("epsilon", 1e-9, 1e-5),
-    #         "lr": trial.suggest_categorical("lr", [0.0001, 0.0003, 0.0005]),
-    #         # "lr_type": trial.suggest_categorical("lr_type", [True, False]),
-    #         # "polyval": trial.suggest_float("polyval", 0.1, 1.1),
-    #     }
-    #     return params
-
-    # def get_objective():
-    #     def objective(trial):
-    #         params = get_params(trial)
-    #         # if params["lr_type"]:
-    #         #     lr = tf.keras.optimizers.schedules.CosineDecayRestarts(
-    #         #         params["lr"], 2, alpha=0.01
-    #         #     )
-    #         # else:
-    #         lr = LRDecrease(params["lr"])
-    #         optimizer = tf.keras.optimizers.Adam(
-    #             # learning_rate=tf.keras.optimizers.schedules.CosineDecayRestarts(
-    #             #     0.0005, 2, alpha=0.01
-    #             # ),
-    #             # LRDecrease(0.0003),
-    #             lr,
-    #             beta_1=params["beta_1"],
-    #             beta_2=params["beta_2"],
-    #             epsilon=params["epsilon"],
-    #         )
-    #         # history = run(optimizer=optimizer, polyval=params["polyval"])
-    #         history = run(optimizer=optimizer)
-    #         score = history.history["loss"][-1]
-    #         score = 300000 if np.isnan(score) else score
-    #         return score
-
-    #     return objective
-
-    # def optuna_tuner(optuna_trials=100):
-    #     n_startup_trials = 20
-    #     sampler = optuna.samplers.TPESampler(
-    #         seed=10,
-    #         n_startup_trials=n_startup_trials,
-    #         consider_endpoints=True,
-    #         multivariate=True,
-    #     )
-    #     study = optuna.create_study(sampler=sampler, direction="minimize")
-    #     objective = get_objective()
-    #     study.optimize(objective, n_trials=optuna_trials)
-    #     trial = study.best_trial
-    #     print("**" * 50 + " Finished Optimizing")
-    #     print("Number of finished trials: ", len(study.trials))
-    #     print("  Value: {}".format(trial.value))
-    #     print("Best  Params: %s" % str(trial.params))
-    #     results = trial.params.copy()
-    #     return results
-
-    # best_params = optuna_tuner(optuna_trials=200)
-    # print(best_params)
 
 
 @cli.command()
@@ -444,99 +312,14 @@ def transfer_learn_fit_regressor(
     )
 
 
-@cli.command()
-@click.option(
-    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
-)
-@click.option("--i-model-path", required=True, type=click.Path(exists=True))
-@click.option("--m-metadata-file", required=True, type=click.Path(exists=True))
-@click.option(
-    "--m-metadata-column", required=True, help=desc.METADATA_COL_DESC, type=str
-)
-@click.option(
-    "--p-normalize", default="minmax", type=click.Choice(["minmax", "z", "none"])
-)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC,
-)
-@click.option("--p-output-dir", required=True)
-def scatter_plot(
-    i_table_path,
-    i_model_path,
-    m_metadata_file,
-    m_metadata_column,
-    p_normalize,
-    p_missing_samples,
-    p_output_dir,
-):
-    if not os.path.exists(p_output_dir):
-        os.makedirs(p_output_dir)
-    model = tf.keras.models.load_model(i_model_path)
-    dataset_obj = _create_dataset(
-        i_table_path, m_metadata_file, m_metadata_column, p_normalize, p_missing_samples
-    )
-    training = dataset_obj["dataset"]
-    training_no_shuffle = batch_dataset(training, 32, shuffle=False)
-
-    mean = dataset_obj["mean"]
-    std = dataset_obj["std"]
-    std = model.std
-    mean = model.mean
-    output = model.predict(training_no_shuffle)
-    pred_val = tf.concat(output["regression"], axis=0)
-    pred_val = tf.squeeze(pred_val)
-    pred_val = pred_val * std + mean
-    true_val = tf.concat([y["reg_out"] for _, y in training_no_shuffle], axis=0)
-    true_val = tf.squeeze(true_val)
-    true_val = true_val * std + mean
-    mae = tf.reduce_mean(tf.abs(true_val - pred_val))
-
-    min_x = tf.reduce_min(true_val)
-    max_x = tf.reduce_max(true_val)
-    coeff = np.polyfit(true_val, pred_val, deg=1)
-    p = np.poly1d(coeff)
-    xx = np.linspace(min_x, max_x, 50)
-    yy = p(xx)
-
-    diag = np.polyfit(true_val, true_val, deg=1)
-    p = np.poly1d(diag)
-    diag_xx = np.linspace(min_x, max_x, 50)
-    diag_yy = p(diag_xx)
-    data = {
-        "#SampleID": dataset_obj["sample_ids"],
-        "pred": pred_val.numpy(),
-        "true": true_val.numpy(),
-    }
-    data = pd.DataFrame(data=data)
-    plot = sns.scatterplot(data, x="true", y="pred")
-    plt.plot(xx, yy)
-    plt.plot(diag_xx, diag_yy)
-    mae = "%.4g" % mae
-    plot.set(xlabel="True")
-    plot.set(ylabel="Predicted")
-    plot.set(title=f"Mean Absolute Error: {mae}")
-    plt.savefig(os.path.join(p_output_dir, "scatter-plot.png"), bbox_inches="tight")
-    plt.close()
-    data["residual"] = data["true"] - data["pred"]
-
-    mean_residual = np.mean(np.abs(data["residual"]))
-    mean_residual = "%.4g" % mean_residual
-    plot = sns.displot(data, x="residual")
-    plot.set(title=f"Mean Absolute Residual: {mean_residual}")
-    plt.savefig(os.path.join(p_output_dir, "residual-plot.png"), bbox_inches="tight")
-    plt.close()
-    data.to_csv(
-        os.path.join(p_output_dir, "sample-residuals.tsv"), sep="\t", index=False
-    )
-
-
 def main():
     gpus = tf.config.list_physical_devices("GPU")
     if len(gpus) > 0:
         tf.config.experimental.set_memory_growth(gpus[0], True)
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
+    # Equivalent to the two lines above
+
     cli()
 
 

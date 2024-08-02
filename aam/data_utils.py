@@ -147,8 +147,8 @@ def load_data(
     else:
         table = table_path
 
-    if shuffle_samples:
-        table = shuffle_table(table)
+    # if shuffle_samples:
+    #     table = shuffle_table(table)
 
     if tree_path:
         sample_ids = table.ids(axis="sample")
@@ -180,7 +180,6 @@ def load_data(
         sample_ids = table.ids(axis="sample")
         metadata = filter_and_reorder(metadata, sample_ids)
         o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
-        sample_ids = table.ids(axis="sample")
 
         regression_data = extract_col(metadata, metadata_col, output_dtype=np.float32)
         regression_dataset, mean, std = convert_to_normalized_dataset(
