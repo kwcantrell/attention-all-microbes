@@ -3,6 +3,7 @@ import pandas as pd
 import tensorflow as tf
 from biom import load_table
 from unifrac import unweighted
+from aam.gotu.gotu_data_utils import gotu_encode_and_convert
 
 
 def get_table_data(table, max_bp):
@@ -14,9 +15,7 @@ def get_table_data(table, max_bp):
     col_ind = data.col
     values = data.data
     indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    table_data = tf.sparse.SparseTensor(
-        indices=indices, values=values, dense_shape=table.shape
-    )
+    table_data = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
     table_data = tf.sparse.reorder(table_data)
 
     table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
@@ -79,9 +78,7 @@ def batch_dataset(
 
     if shuffle:
         training_dataset = training_dataset.shuffle(size, reshuffle_each_iteration=True)
-    training_dataset = training_dataset.batch(
-        batch_size, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE
-    )
+    training_dataset = training_dataset.batch(batch_size, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE)
 
     if repeat > 1:
         training_dataset = training_dataset.repeat(repeat).prefetch(10)
@@ -141,6 +138,7 @@ def load_data(
     metadata_path=None,
     metadata_col=None,
     missing_samples_flag=None,
+    biom_path=None,
 ):
     if isinstance(table_path, str):
         table = load_table(table_path)
@@ -182,9 +180,7 @@ def load_data(
         o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
 
         regression_data = extract_col(metadata, metadata_col, output_dtype=np.float32)
-        regression_dataset, mean, std = convert_to_normalized_dataset(
-            regression_data, "z"
-        )
+        regression_dataset, mean, std = convert_to_normalized_dataset(regression_data, "z")
 
         training_dataset, validation_dataset = batch_dataset(
             table_dataset,
@@ -205,4 +201,31 @@ def load_data(
             "validation_dataset": validation_dataset,
             "mean": mean,
             "std": std,
+        }
+
+    if biom_path:
+        sample_ids = table.ids(axis="sample")
+        o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
+        
+        gotu_dataset, gotu_dict, gotu_count = gotu_encode_and_convert(load_table(biom_path))
+        
+        training_dataset, validation_dataset = batch_dataset(
+            table_dataset,
+            gotu_dataset,
+            batch_size,
+            shuffle=shuffle_samples,
+            repeat=repeat,
+            train_percent=train_percent,
+        )
+        return {
+            "table": table,
+            "sample_ids": sample_ids,
+            "o_ids": o_ids,
+            "sequence_tokenizer": sequence_tokenizer,
+            "gotu_dict": gotu_dict,
+            "num_gotus": gotu_count,
+            "training_dataset": training_dataset,
+            "validation_dataset": validation_dataset,
+            "mean": 0,
+            "std": 1,
         }

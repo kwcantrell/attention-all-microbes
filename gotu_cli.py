@@ -11,7 +11,7 @@ from aam.callbacks import SaveModel
 from aam.data_utils import load_data
 from aam.utils import LRDecrease
 from attention_regression.callbacks import MAE_Scatter
-from gotu.gotu_model import GOTUModel
+from aam.gotu.gotu_model import GOTUModel
 
 
 @click.group()
@@ -35,12 +35,7 @@ aam_globals = _aam_globals()
     type=click.Path(exists=True),
 )
 @click.option("--i-max-bp", required=True, type=int)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=desc.MISSING_SAMPLES_DESC,
-)
+
 @click.option("--p-batch-size", default=8, show_default=True, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-repeat", default=5, show_default=True, type=int)
@@ -58,15 +53,13 @@ aam_globals = _aam_globals()
 @click.option("--p-output-dir", required=True)
 def sequence2sequence(
     i_table_path: str,
+    i_gotu_path:str,
     i_max_bp: int,
-    p_missing_samples: str,
     p_batch_size: int,
     p_epochs: int,
     p_repeat: int,
     p_dropout: float,
     p_token_dim: int,
-    p_feature_attention_method: str,
-    p_features_to_add_rate: float,
     p_ff_d_model: int,
     p_ff_clr: int,
     p_pca_heads: int,
@@ -77,7 +70,6 @@ def sequence2sequence(
     p_report_back_after: int,
     p_base_model_path: str,
     p_output_dir: str,
-    p_tensorboard: bool,
 ):
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
@@ -91,8 +83,8 @@ def sequence2sequence(
         i_max_bp,
         p_batch_size,
         repeat=p_repeat,
+        biom_path=i_gotu_path,
         shuffle_samples=True,
-        missing_samples_flag=p_missing_samples,
         train_percent=0.8,
     )
 
@@ -114,9 +106,9 @@ def sequence2sequence(
         batch_size=p_batch_size,
         max_bp=i_max_bp,
         num_gotus=num_gotus,
-        pca_hidden_dim=base_model.pca_hidden_dim,
+        pca_hidden_dim=p_ff_d_model,
         pca_heads=p_pca_heads,
-        pca_layers=base_model.pca_layers,
+        pca_layers=p_pca_heads,
         count_ff_dim=p_ff_clr,
         num_layers=p_enc_layers,
         num_attention_heads=p_enc_heads,
