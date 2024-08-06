@@ -1,13 +1,15 @@
 """gotu_model.py"""
-import numpy as np
+
 import biom
+import numpy as np
 import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.callbacks import SaveModel
+from aam.layers import InputLayer
 from aam.nuc_model import BaseNucleotideModel
+from aam.utils import LRDecrease
 
-NUM_GOTUS = 6838
 
 class TransferLearnNucleotideModel(BaseNucleotideModel):
     def __init__(
@@ -16,6 +18,7 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         dropout_rate,
         batch_size,
         max_bp,
+        num_gotus,
         pca_hidden_dim,
         pca_heads,
         pca_layers,
@@ -40,126 +43,73 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         self.num_layers = num_layers
         self.num_attention_heads = num_attention_heads
         self.dff = dff
-        self.regresssion_loss = tf.keras.losses.MeanSquaredError(reduction="none")
+        self.regresssion_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.metric_traker = tf.keras.metrics.Mean(name="loss")
 
-        # layers used in model
-        self.input_layer = InputLayer(name="transfer_input")
+        self.input_layer = InputLayer(name="input_layer")
+
         self.base_model = base_model
-        self.base_model.trainable = False
-        self.attention_layer = TransferAttention(
-            self.dropout_rate, d_model=d_model, name="transfer_output"
+        self.base_model.trainable = False  # Freeze the base model
+
+        self.decoder_embedding = tf.keras.layers.Embedding(
+            input_dim=num_gotus + 4, output_dim=128, embeddings_initializer="uniform", input_length=1, name="decoder_embedding"
         )
-        self.layer_range = ["transfer_input", "transfer_output"]
 
-    def model_step(self, inputs, training=False):
-        inputs = self.input_layer(inputs)
-        seq, rel_count = inputs
-        embeddings = self.base_model.feature_emb(inputs, return_attention=True)
+        self.transformer_decoder = tfm.nlp.models.TransformerDecoder(
+            num_layers=self.num_layers,
+            dropout_rate=self.dropout_rate,
+            num_attention_heads=self.num_attention_heads,
+            intermediate_size=dff,
+            norm_first=True,
+            activation="relu",
+        )
 
-        embeddings = self.attention_layer((embeddings, rel_count), training=training)
-        output = self.readhead(embeddings, training=training)
+        self.dense_output = tf.keras.layers.Dense(num_gotus + 4)
+
+    def call(self, inputs, training=False):
+        encoder_inputs, decoder_inputs = self.input_layer(inputs)
+        encoder_output = self.base_model(encoder_inputs, training=training)
+
+        decoder_embeddings = self.decoder_embedding(decoder_inputs)
+        decoder_embeddings = tf.squeeze(decoder_embeddings, axis=-2)
+
+        transformer_output = self.transformer_decoder(decoder_embeddings, encoder_output, training=training)
+
+        output = self.dense_output(transformer_output)
         return output
 
-    def _extract_data(self, data):
-        (_, table_info), y = data
-        return (table_info, y)
-
-    def regularization_loss(self):
-        uni_losses = len(self.get_layer("unifrac_model").losses)
-        return self.losses[uni_losses:]
+    def model_step(self, inputs, training=False):
+        encoder_inputs, decoder_inputs = self.input_layer(inputs)
+        output = self((encoder_inputs, decoder_inputs), training=training)
+        return output
 
     def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
-            "dropout_rate": self.dropout_rate,
-            "count_ff_dim": self.count_ff_dim,
-            "num_layers": self.num_layers,
-            "num_attention_heads": self.num_attention_heads,
-            "dff": self.dff,
-        }
-        return {**base_config, **config}
+        config = super().get_config()
+        config.update(
+            {
+                "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
+                "batch_size": self.batch_size,
+                "dropout": self.dropout,
+                "dff": self.dff,
+                "d_model": self.d_model,
+                "enc_layers": self.enc_layers,
+                "enc_heads": self.enc_heads,
+                "max_bp": self.max_bp,
+            }
+        )
+        return config
 
-def gotu_model_base(
-    batch_size: int,
-    dropout: float,
-    dff: int,
-    d_model: int,
-    enc_layers: int,
-    enc_heads: int,
-    max_bp: int,
-):
-    """base gotu model utilizing previous asv model"""
-    asv_model = _construct_model(
-        batch_size=batch_size,
-        dropout=dropout,
-        pca_hidden_dim=64,
-        pca_heads=4,
-        pca_layers=2,
-        dff=dff,
-        d_model=d_model,
-        enc_layers=enc_layers,
-        enc_heads=enc_heads,
-        output_dim=32,
-        max_bp=max_bp,
-    )
-
-    encoder_inputs = tf.keras.Input(
-        shape=(None, 150),
-        batch_size=batch_size,
-        dtype=tf.int64,
-        name="encoder_inputs",
-    )
-    decoder_inputs = tf.keras.Input(
-        shape=(None, 1),
-        batch_size=batch_size,
-        dtype=tf.int64,
-        name="decoder_inputs",
-    )
-    model = tf.keras.Model(
-        inputs=asv_model.inputs, outputs=asv_model.layers[-2].output
-    )
-
-    model_output = model(encoder_inputs)
-
-    decoder_embedding = tf.keras.layers.Embedding(
-        NUM_GOTUS + 4,
-        128,
-        embeddings_initializer="uniform",
-        input_length=1,
-        name="decoder_embedding",
-    )(decoder_inputs)
-    decoder_embedding = tf.squeeze(decoder_embedding, axis=-2)
-
-    model_output = tfm.nlp.models.TransformerDecoder(
-        num_layers=enc_layers,
-        dropout_rate=dropout,
-        num_attention_heads=enc_heads,
-        intermediate_size=dff,
-        norm_first=True,
-        activation="relu",
-    )(decoder_embedding, model_output)
-
-    decoder_outputs = tf.keras.layers.Dense(NUM_GOTUS + 4)(model_output)
-    gotu_model = tf.keras.Model(
-        inputs=(encoder_inputs, decoder_inputs),
-        outputs=decoder_outputs,
-        name="asv_to_gotu_classifier",
-    )
-
-    return gotu_model
+    @classmethod
+    def from_config(cls, config):
+        base_model = tf.keras.saving.deserialize_keras_object(config.pop("base_model"))
+        return cls(base_model=base_model, **config)
 
 
-def gotu_classification(
-    batch_size: int, load_model: False, model_fp: None, **kwargs
-):
+def gotu_classification(batch_size: int, load_model: False, model_fp: None, **kwargs):
     model = gotu_model_base(batch_size, **kwargs)
     if load_model:
         model.load_weights(model_fp)
-    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-        from_logits=True
-    )
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=CustomSchedule(128),
         beta_1=0.9,
@@ -178,11 +128,9 @@ def gotu_classification(
 def gotu_predict(batch_size: int, model_fp: str, **kwargs):
     model = gotu_model_base(batch_size, **kwargs)
     model.load_weights(model_fp)
-    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-        from_logits=True
-    )
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=CustomSchedule(128),
+        learning_rate=LRDecrease(),
         beta_1=0.9,
         beta_2=0.98,
         epsilon=1e-9,
@@ -196,9 +144,8 @@ def gotu_predict(batch_size: int, model_fp: str, **kwargs):
 
     return model
 
-def run_gotu_predictions(
-    asv_fp: str, gotu_fp: str, model_fp: str, pred_out_path: str
-) -> None:
+
+def run_gotu_predictions(asv_fp: str, gotu_fp: str, model_fp: str, pred_out_path: str) -> None:
     gpus = tf.config.experimental.list_physical_devices("GPU")
     if gpus:
         try:
@@ -256,6 +203,7 @@ def run_gotu_predictions(
     pred_biom = biom.table.Table(pred_biom_data, gotu_ids, asv_samples)
     with biom.util.biom_open(f"{pred_out_path}", "w") as f:
         pred_biom.to_hdf5(f, "Predicted GOTUs Using DeepLearning")
+
 
 def run_gotu_training(
     training_dataset: tf.data.Dataset,
