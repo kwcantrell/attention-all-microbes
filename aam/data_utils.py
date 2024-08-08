@@ -3,7 +3,6 @@ import pandas as pd
 import tensorflow as tf
 from biom import load_table
 from unifrac import unweighted
-from aam.gotu.gotu_data_utils import gotu_encode_and_convert
 
 
 def get_table_data(table, max_bp):
@@ -30,6 +29,32 @@ def get_table_data(table, max_bp):
     # sequence_tokenizer.adapt(o_ids[:10])
 
     return (o_ids, table_dataset, sequence_tokenizer)
+
+
+def get_gotu_table_data(table):
+    # TODO: Vocab is the order of biom table, eventually ids need to be fixed list of GOTU's.
+            #  "Eventually" build a fixed list of o_ids from greengenes2
+    o_ids = tf.constant(table.ids(axis="observation"))
+    gotu_count = tf.size(o_ids).numpy()
+    table = table.transpose()
+    data = table.matrix_data.tocoo()
+    row_ind = data.row
+    col_ind = data.col
+    values = data.data
+    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
+    table_data = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
+    table_data = tf.sparse.reorder(table_data)
+
+    table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
+    sequence_tokenizer = tf.keras.layers.TextVectorization(
+        max_tokens=gotu_count + 4,
+        output_mode="int",
+        output_sequence_length=1,
+        name="tokenizer",
+        vocabulary=["","[UNK]"] + list(table.ids(axis="observation")),
+    )
+    
+    return (o_ids, table_dataset, sequence_tokenizer, gotu_count)
 
 
 def convert_to_normalized_dataset(values, normalize):
@@ -206,9 +231,9 @@ def load_data(
     if biom_path:
         sample_ids = table.ids(axis="sample")
         o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
-        
-        gotu_dataset, gotu_dict, gotu_count = gotu_encode_and_convert(load_table(biom_path))
-        
+
+        gotu_o_ids, gotu_dataset, gotu_tokenizer, gotu_count = get_gotu_table_data(load_table(biom_path))
+
         training_dataset, validation_dataset = batch_dataset(
             table_dataset,
             gotu_dataset,
@@ -222,10 +247,23 @@ def load_data(
             "sample_ids": sample_ids,
             "o_ids": o_ids,
             "sequence_tokenizer": sequence_tokenizer,
-            "gotu_dict": gotu_dict,
+            "gotu_ids": gotu_o_ids,
+            "gotu_dataset": gotu_dataset,
             "num_gotus": gotu_count,
+            "gotu_tokenizer": gotu_tokenizer,
             "training_dataset": training_dataset,
             "validation_dataset": validation_dataset,
             "mean": 0,
             "std": 1,
         }
+
+
+if __name__ == "__main__":
+    loaded_data = load_data(
+        table_path="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/asv_ordered_table.biom",
+        max_bp=150,
+        batch_size=8,
+        biom_path="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/gotu_ordered_table_filtered.biom",
+    )
+    for element in loaded_data["training_dataset"].take(1):
+        print(element)

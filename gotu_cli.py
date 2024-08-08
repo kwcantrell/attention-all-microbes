@@ -91,11 +91,7 @@ def sequence2sequence(
     train_size = data_obj["training_dataset"].cardinality().numpy()
 
     base_model = tf.keras.models.load_model(p_base_model_path, compile=False)
-    base_model = tf.keras.Model(
-        inputs=base_model.get_layer("nucleotide_embedding").input,
-        outputs=base_model.get_layer("nucleotide_embedding").output,
-        name="unifrac_model",
-    )
+    
     base_model.trainable = False
 
     num_gotus = data_obj["num_gotus"]
@@ -106,14 +102,10 @@ def sequence2sequence(
         batch_size=p_batch_size,
         max_bp=i_max_bp,
         num_gotus=num_gotus,
-        pca_hidden_dim=p_ff_d_model,
-        pca_heads=p_pca_heads,
-        pca_layers=p_pca_heads,
         count_ff_dim=p_ff_clr,
         num_layers=p_enc_layers,
         num_attention_heads=p_enc_heads,
         dff=p_ff_d_model,
-        d_model=p_token_dim,
     )
 
     optimizer = tf.keras.optimizers.Adam(
@@ -122,35 +114,41 @@ def sequence2sequence(
         beta_2=0.98,
         epsilon=1e-9,
     )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
     gotu_model.compile(
         optimizer=optimizer,
-        loss=gotu_model.regresssion_loss,
-        metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+        o_ids=data_obj["o_ids"],
+        gotu_ids=data_obj["gotu_ids"],
+        sequence_tokenizer=data_obj["sequence_tokenizer"],
+        gotu_tokenizer=data_obj["gotu_tokenizer"],
     )
 
-    gotu_model.build(input_shape=[(p_batch_size, None, 150), (p_batch_size, None, 1)])
+    # gotu_model.build(input_shape=[(p_batch_size, None, 150), (p_batch_size, None, 1)])
+    for data in data_obj["training_dataset"].take(1):
+        x, y = gotu_model._extract_data(data)
+        gotu_model(x)
     gotu_model.summary()
 
-    # core_callbacks = [
-    #     tf.keras.callbacks.ReduceLROnPlateau(
-    #         monitor="loss", factor=0.8, patience=10, min_lr=0.0001
-    #     ),
-    #     tf.keras.callbacks.EarlyStopping(monitor="loss", patience=20),
-    #     tf.keras.callbacks.ModelCheckpoint(
-    #         filepath=os.path.join(p_output_dir, "best_model.h5"),
-    #         save_best_only=True,
-    #         monitor="val_loss",
-    #         mode="min",
-    #     ),
-    # ]
+    core_callbacks = [
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="loss", factor=0.8, patience=10, min_lr=0.0001
+        ),
+        tf.keras.callbacks.EarlyStopping(monitor="loss", patience=20),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=os.path.join(p_output_dir, "best_model.h5"),
+            save_best_only=True,
+            monitor="val_loss",
+            mode="min",
+        ),
+    ]
 
-    # gotu_model.fit(
-    #     data_obj["training_dataset"],
-    #     validation_data=data_obj["validation_dataset"],
-    #     callbacks=core_callbacks,
-    #     epochs=p_epochs,
-    # )
+    gotu_model.fit(
+        data_obj["training_dataset"],
+        validation_data=data_obj["validation_dataset"],
+        callbacks=core_callbacks,
+        epochs=p_epochs,
+    )
 
 
 def main():

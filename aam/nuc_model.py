@@ -55,15 +55,11 @@ class BaseNucleotideModel(tf.keras.Model):
         self.sequence_tokenizer = sequence_tokenizer
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.regresssion_loss = None
-        self.attention_loss = tf.keras.losses.CategoricalCrossentropy(
-            from_logits=True, reduction="none"
-        )
+        self.attention_loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True, reduction="none")
         self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.metric_traker = None
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-        self.counter = self.add_weight(
-            "counter", initializer="zeros", trainable=False, dtype=tf.float32
-        )
+        self.counter = self.add_weight("counter", initializer="zeros", trainable=False, dtype=tf.float32)
 
         def shift_and_scale(scale, shift):
             def _inner(tensor):
@@ -83,9 +79,7 @@ class BaseNucleotideModel(tf.keras.Model):
         pass
 
     def get_max_unique_asv(self, sparse_tensor):
-        features_per_sample = tf.sparse.reduce_sum(
-            tf.sparse.map_values(tf.ones_like, sparse_tensor), axis=-1
-        )
+        features_per_sample = tf.sparse.reduce_sum(tf.sparse.map_values(tf.ones_like, sparse_tensor), axis=-1)
         max_features = tf.reduce_max(features_per_sample)
         return tf.cast(max_features, dtype=tf.int32)
 
@@ -136,7 +130,7 @@ class BaseNucleotideModel(tf.keras.Model):
         """
         simulate model execution using symbolic tensors
         """
-
+        print("how'd we get here")
         input_seq = tf.keras.Input(
             shape=[None, self.max_bp],
             batch_size=self.batch_size,
@@ -156,21 +150,28 @@ class BaseNucleotideModel(tf.keras.Model):
     def compile(
         self,
         o_ids=None,
+        gotu_ids=None,
         sequence_tokenizer=None,
+        gotu_tokenizer=None,
         optimizer="rmsprop",
         polyval=None,
         **kwargs,
     ):
-        if o_ids is not None:
-            self.o_ids = o_ids
-            self.make_call_function()
-
         if sequence_tokenizer is not None:
             self.sequence_tokenizer = sequence_tokenizer
+
+        if gotu_ids is not None:
+            self.gotu_ids = gotu_ids
+
+        if gotu_tokenizer is not None:
+            self.gotu_tokenizer = gotu_tokenizer
 
         if polyval is not None:
             self.feature_emb.pca_layer.polyval = polyval
 
+        if o_ids is not None:
+            self.o_ids = o_ids
+            self.make_call_function()
         super().compile(optimizer=optimizer, **kwargs)
 
     def predict_step(self, data):
@@ -211,14 +212,10 @@ class BaseNucleotideModel(tf.keras.Model):
             if self.use_attention_loss:
                 seq_cat = tf.one_hot(seq, depth=6)  # san -> san6
 
-                asv_mask = float_mask(
-                    tf.reduce_sum(seq, axis=-1, keepdims=True)
-                )  # san -> sa1
+                asv_mask = float_mask(tf.reduce_sum(seq, axis=-1, keepdims=True))  # san -> sa1
 
                 asv_counts = float_mask(tf.reduce_sum(seq, axis=-1))  # san -> sa
-                asv_counts = asv_counts = tf.reduce_sum(
-                    asv_counts, axis=-1, keepdims=True
-                )  # sa -> s1)
+                asv_counts = asv_counts = tf.reduce_sum(asv_counts, axis=-1, keepdims=True)  # sa -> s1)
 
                 # nucleotide level
                 asv_loss = self.attention_loss(seq_cat, logits)  # san6 -> san
@@ -281,14 +278,10 @@ class BaseNucleotideModel(tf.keras.Model):
         if self.use_attention_loss:
             seq_cat = tf.one_hot(seq, depth=6)  # san -> san6
 
-            asv_mask = float_mask(
-                tf.reduce_sum(seq, axis=-1, keepdims=True)
-            )  # san -> sa1
+            asv_mask = float_mask(tf.reduce_sum(seq, axis=-1, keepdims=True))  # san -> sa1
 
             asv_counts = float_mask(tf.reduce_sum(seq, axis=-1))  # san -> sa
-            asv_counts = asv_counts = tf.reduce_sum(
-                asv_counts, axis=-1, keepdims=True
-            )  # sa -> s1)
+            asv_counts = asv_counts = tf.reduce_sum(asv_counts, axis=-1, keepdims=True)  # sa -> s1)
 
             # nucleotide level
             asv_loss = self.attention_loss(seq_cat, logits)  # san6 -> san
@@ -353,17 +346,13 @@ class BaseNucleotideModel(tf.keras.Model):
             "use_attention_loss": self.use_attention_loss,
         }
         if self.sequence_tokenizer is not None:
-            config["sequence_tokenizer"] = tf.keras.saving.serialize_keras_object(
-                self.sequence_tokenizer
-            )
+            config["sequence_tokenizer"] = tf.keras.saving.serialize_keras_object(self.sequence_tokenizer)
         return {**base_config, **config}
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
         if "sequence_tokenizer" in config:
-            config["sequence_tokenizer"] = tf.keras.saving.deserialize_keras_object(
-                config["sequence_tokenizer"]
-            )
+            config["sequence_tokenizer"] = tf.keras.saving.deserialize_keras_object(config["sequence_tokenizer"])
         model = cls(**config)
         # model.compile()
         model.build()
@@ -477,13 +466,9 @@ class UnifracModel(BaseNucleotideModel):
         sequence_embedding = self.feature_emb.sequence_embedding(seq)
 
         sequence_logits = self.readhead.sequence_logits(sequence_embedding)
-        pred_seq = tf.argmax(
-            tf.nn.softmax(sequence_logits, axis=-1), axis=-1, output_type=tf.int32
-        )
+        pred_seq = tf.argmax(tf.nn.softmax(sequence_logits, axis=-1), axis=-1, output_type=tf.int32)
         sequence_mismatch_tokens = tf.not_equal(pred_seq, seq)
-        sequence_mismatch_counts = tf.reduce_sum(
-            tf.cast(sequence_mismatch_tokens, dtype=tf.int32), axis=-1
-        )
+        sequence_mismatch_counts = tf.reduce_sum(tf.cast(sequence_mismatch_tokens, dtype=tf.int32), axis=-1)
         mask = tf.reshape(tf.not_equal(seq[:, :, 0], 0), shape=(-1,))
         return tf.reshape(sequence_mismatch_counts, shape=(-1,))[mask]
 
@@ -543,9 +528,7 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
         self.input_layer = InputLayer(name="transfer_input")
         self.base_model = base_model
         self.base_model.trainable = False
-        self.attention_layer = TransferAttention(
-            self.dropout_rate, d_model=d_model, name="transfer_output"
-        )
+        self.attention_layer = TransferAttention(self.dropout_rate, d_model=d_model, name="transfer_output")
         self.layer_range = ["transfer_input", "transfer_output"]
 
     def model_step(self, inputs, training=False):

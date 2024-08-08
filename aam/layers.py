@@ -66,9 +66,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             input_length=self.max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
-        self.avs_attention = NucleotideAttention(
-            128, num_heads=2, num_layers=3, dropout=0.02
-        )
+        self.avs_attention = NucleotideAttention(128, num_heads=2, num_layers=3, dropout=0.02)
 
         self.sample_attention = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
@@ -93,14 +91,13 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         seq, _ = inputs
 
         if training:
-            seq_mask = tf.random.uniform(
-                tf.shape(seq), minval=0, maxval=1, dtype=tf.float32
-            )
+            seq_mask = tf.random.uniform(tf.shape(seq), minval=0, maxval=1, dtype=tf.float32)
             seq_mask = tf.greater(seq_mask, 0.98)
             seq_mask = tf.cast(seq_mask, dtype=tf.int32)
             seq = tf.multiply(seq, 1 - seq_mask)
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=6)
-
+        tf.print("this is the sequence here")
+        tf.print(seq)
         output = self.emb_layer(seq)
         nuc_attention = self.avs_attention(output, training=training)
 
@@ -114,16 +111,14 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
 
         seq, rclr = tf.nest.flatten(self.add_seq_and_count_pad(inputs))
         attention_mask = self.sequence_attention_mask(seq[:, :, :150])
-        attention_output = self.sample_attention(
-            output, attention_mask=attention_mask, training=training
-        )
+        attention_output = self.sample_attention(output, attention_mask=attention_mask, training=training)
         if self.variable_dtype != self.compute_dtype:
             attention_output = tf.cast(attention_output, self.compute_dtype)
 
         if return_nuc_attention:
             return (attention_output[:, -1, :], nuc_attention[:, :, :-1, :])
         else:
-            return tf.concat([output[:, :-1, :], attention_output[:, -1:, :]], axis=1)
+            return attention_output
 
     def sequence_embedding(self, seq):
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=6)
@@ -184,9 +179,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         attention_input = attention_input + self.pos_emb(attention_input)
 
         for layer_idx in range(self.num_layers):
-            attention_input = self.attention_layers[layer_idx](
-                attention_input, training=training
-            )
+            attention_input = self.attention_layers[layer_idx](attention_input, training=training)
         # extract asv token
         # nucleotide_output = attention_input[:, :, -1, :]
         nucleotide_output = self.ff_output(attention_input)
@@ -225,9 +218,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.k_dense, self.w_ki = add_transformation_weights("k")
         self.v_dense, self.w_vi = add_transformation_weights("v")
 
-        self.scale_dot_factor = tf.cast(
-            tf.math.sqrt(float(self.head_size)), dtype=self.compute_dtype
-        )
+        self.scale_dot_factor = tf.cast(tf.math.sqrt(float(self.head_size)), dtype=self.compute_dtype)
         self.attention_dropout = tf.keras.layers.Dropout(self.dropout)
         self.attention_norm = tf.keras.layers.LayerNormalization(epsilon=0.0001)
 
@@ -251,9 +242,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
             dot_tensor = tf.linalg.matmul(wq_tensor, wk_tensor, transpose_b=True)
             scaled_dot_tensor = tf.divide(dot_tensor, self.scale_dot_factor)
             softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-2)
-            attention_output = tf.einsum(
-                "sahij,sahjk->saihk", softmax_tensor, wv_tensor
-            )
+            attention_output = tf.einsum("sahij,sahjk->saihk", softmax_tensor, wv_tensor)
 
             # reshape
             batch_size = tf.shape(attention_input)[0]
@@ -269,9 +258,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         attention_input_shape[-2] = 151
         self.scaled_dot_attention = tf.function(
             scaled_dot_attention,
-            input_signature=[
-                tf.TensorSpec(shape=attention_input_shape, dtype=self.compute_dtype)
-            ],
+            input_signature=[tf.TensorSpec(shape=attention_input_shape, dtype=self.compute_dtype)],
             reduce_retracing=True,
         )
         print(attention_input_shape)
@@ -352,9 +339,7 @@ class TransferAttention(tf.keras.layers.Layer):
         rel_count = tf.pad(rel_count, [[0, 0], [0, 1]], constant_values=1)
         attention_mask = tf.greater(tf.reduce_sum(reg_out, axis=-1, keepdims=True))
         rel_count = tf.expand_dims(rel_count, axis=-1)
-        attention_mask = tf.cast(
-            tf.matmul(rel_count, rel_count, transpose_b=True), dtype=tf.bool
-        )
+        attention_mask = tf.cast(tf.matmul(rel_count, rel_count, transpose_b=True), dtype=tf.bool)
         attention_input = tf.multiply(attention_input, rel_count)
         # for layer_idx in range(self.num_layers):
         #     attention_input = self.attention_layers[layer_idx](
@@ -364,9 +349,7 @@ class TransferAttention(tf.keras.layers.Layer):
         #         attention_mask=attention_mask,
         #         training=training,
         #     )
-        attention_input = self.sample_attention(
-            attention_input, attention_mask=attention_mask, training=training
-        )
+        attention_input = self.sample_attention(attention_input, attention_mask=attention_mask, training=training)
         reg_out = self.reg_out(attention_input[:, -1, :])
         return reg_out
 
@@ -438,9 +421,7 @@ class ReadHead(tf.keras.layers.Layer):
     def sequence_logits(self, sequence_embeddings):
         seq_out = tf.reshape(
             self.attention_out(sequence_embeddings),
-            shape=tf.concat(
-                [tf.shape(sequence_embeddings)[:-1], [self.max_bp, 1]], axis=0
-            ),
+            shape=tf.concat([tf.shape(sequence_embeddings)[:-1], [self.max_bp, 1]], axis=0),
         )
         seq_out = seq_out + self.pos_emb(seq_out)
         seq_out = self.pos_norm(seq_out)
