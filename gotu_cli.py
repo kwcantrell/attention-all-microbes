@@ -11,7 +11,7 @@ from aam.callbacks import SaveModel
 from aam.data_utils import load_data
 from aam.utils import LRDecrease
 from attention_regression.callbacks import MAE_Scatter
-from aam.gotu.gotu_model import GOTUModel
+from gotu.gotu_model import GOTUModel
 
 
 @click.group()
@@ -35,7 +35,6 @@ aam_globals = _aam_globals()
     type=click.Path(exists=True),
 )
 @click.option("--i-max-bp", required=True, type=int)
-
 @click.option("--p-batch-size", default=8, show_default=True, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-repeat", default=5, show_default=True, type=int)
@@ -53,7 +52,7 @@ aam_globals = _aam_globals()
 @click.option("--p-output-dir", required=True)
 def sequence2sequence(
     i_table_path: str,
-    i_gotu_path:str,
+    i_gotu_path: str,
     i_max_bp: int,
     p_batch_size: int,
     p_epochs: int,
@@ -87,11 +86,7 @@ def sequence2sequence(
         shuffle_samples=True,
         train_percent=0.8,
     )
-
-    train_size = data_obj["training_dataset"].cardinality().numpy()
-
     base_model = tf.keras.models.load_model(p_base_model_path, compile=False)
-    
     base_model.trainable = False
 
     num_gotus = data_obj["num_gotus"]
@@ -107,7 +102,6 @@ def sequence2sequence(
         num_attention_heads=p_enc_heads,
         dff=p_ff_d_model,
     )
-
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=LRDecrease(),
         beta_1=0.9,
@@ -121,25 +115,27 @@ def sequence2sequence(
         o_ids=data_obj["o_ids"],
         gotu_ids=data_obj["gotu_ids"],
         sequence_tokenizer=data_obj["sequence_tokenizer"],
-        gotu_tokenizer=data_obj["gotu_tokenizer"],
+        weighted_metrics=[],
     )
 
-    # gotu_model.build(input_shape=[(p_batch_size, None, 150), (p_batch_size, None, 1)])
+    gotu_model.build(input_shape=[(p_batch_size, None, 150), (p_batch_size, None)])
+
     for data in data_obj["training_dataset"].take(1):
         x, y = gotu_model._extract_data(data)
         gotu_model(x)
+
     gotu_model.summary()
 
     core_callbacks = [
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="loss", factor=0.8, patience=10, min_lr=0.0001
-        ),
+        tf.keras.callbacks.ReduceLROnPlateau(monitor="loss", factor=0.8, patience=10, min_lr=0.0001),
         tf.keras.callbacks.EarlyStopping(monitor="loss", patience=20),
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=os.path.join(p_output_dir, "best_model.h5"),
+            filepath=os.path.join(p_output_dir, "best_model"),
             save_best_only=True,
             monitor="val_loss",
             mode="min",
+            save_format="tf",
+            save_weights_only=True,
         ),
     ]
 

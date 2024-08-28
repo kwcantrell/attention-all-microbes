@@ -86,7 +86,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         )
         self.add_seq_and_count_pad = tf.function(add_seq_and_count_pad)
         self.sequence_attention_mask = tf.function(sequence_attention_mask)
-
+    
     def call(self, inputs, return_nuc_attention=True, training=False):
         seq, _ = inputs
 
@@ -96,8 +96,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             seq_mask = tf.cast(seq_mask, dtype=tf.int32)
             seq = tf.multiply(seq, 1 - seq_mask)
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=6)
-        tf.print("this is the sequence here")
-        tf.print(seq)
+
         output = self.emb_layer(seq)
         nuc_attention = self.avs_attention(output, training=training)
 

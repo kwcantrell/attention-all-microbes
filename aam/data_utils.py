@@ -5,58 +5,6 @@ from biom import load_table
 from unifrac import unweighted
 
 
-def get_table_data(table, max_bp):
-    o_ids = tf.constant(table.ids(axis="observation"))
-
-    table = table.transpose()
-    data = table.matrix_data.tocoo()
-    row_ind = data.row
-    col_ind = data.col
-    values = data.data
-    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    table_data = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
-    table_data = tf.sparse.reorder(table_data)
-
-    table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
-    sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens=8,
-        split="character",
-        output_mode="int",
-        output_sequence_length=max_bp,
-        name="tokenizer",
-        vocabulary=["", "[UNK]", "g", "a", "t", "c"],
-    )
-    # sequence_tokenizer.adapt(o_ids[:10])
-
-    return (o_ids, table_dataset, sequence_tokenizer)
-
-
-def get_gotu_table_data(table):
-    # TODO: Vocab is the order of biom table, eventually ids need to be fixed list of GOTU's.
-            #  "Eventually" build a fixed list of o_ids from greengenes2
-    o_ids = tf.constant(table.ids(axis="observation"))
-    gotu_count = tf.size(o_ids).numpy()
-    table = table.transpose()
-    data = table.matrix_data.tocoo()
-    row_ind = data.row
-    col_ind = data.col
-    values = data.data
-    indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    table_data = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
-    table_data = tf.sparse.reorder(table_data)
-
-    table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
-    sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens=gotu_count + 4,
-        output_mode="int",
-        output_sequence_length=1,
-        name="tokenizer",
-        vocabulary=["","[UNK]"] + list(table.ids(axis="observation")),
-    )
-    
-    return (o_ids, table_dataset, sequence_tokenizer, gotu_count)
-
-
 def convert_to_normalized_dataset(values, normalize):
     if normalize == "minmax":
         shift = min(values)
@@ -88,7 +36,8 @@ def batch_dataset(
     train_percent=None,
 ):
     dataset = tf.data.Dataset.zip(
-        (tf.data.Dataset.range(table_dataset.cardinality()), table_dataset),
+        tf.data.Dataset.range(table_dataset.cardinality()),
+        table_dataset,
         target_dataset,
     )
 
@@ -157,7 +106,7 @@ def load_data(
     max_bp,
     batch_size,
     repeat=1,
-    shuffle_samples=True,
+    shuffle_samples=False,
     train_percent=0.9,
     tree_path=None,
     metadata_path=None,
@@ -229,19 +178,77 @@ def load_data(
         }
 
     if biom_path:
+
+        def get_table_data(table):
+            table = table.transpose()
+            data = table.matrix_data.tocoo()
+            row_ind = data.row
+            col_ind = data.col
+            values = data.data
+            indices = [[r, c] for r, c in zip(row_ind, col_ind)]
+            table_data = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
+            table_data = tf.sparse.reorder(table_data)
+
+            table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
+
+            return table_dataset
+
         sample_ids = table.ids(axis="sample")
-        o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
+        o_ids = table.ids(axis="observation")
+        table_dataset = get_table_data(table.copy())
 
-        gotu_o_ids, gotu_dataset, gotu_tokenizer, gotu_count = get_gotu_table_data(load_table(biom_path))
+        gotu_table = load_table(biom_path)
+        gotu_o_ids = gotu_table.ids(axis="observation")
+        gotu_count = len(gotu_o_ids)
+        gotu_dataset = get_table_data(gotu_table.copy())
 
-        training_dataset, validation_dataset = batch_dataset(
-            table_dataset,
-            gotu_dataset,
-            batch_size,
-            shuffle=shuffle_samples,
-            repeat=repeat,
-            train_percent=train_percent,
+        sequence_tokenizer = tf.keras.layers.TextVectorization(
+            max_tokens=8,
+            split="character",
+            output_mode="int",
+            output_sequence_length=max_bp,
+            name="seq_tokenizer",
+            vocabulary=["", "[UNK]", "g", "a", "t", "c"],
         )
+
+        def apply(val=False, shuffle_buf=100):
+            def _inner(ds):
+                def filter(samples, data, gotu_data):
+                    samples = tf.cast(samples, dtype=tf.int32)
+                    data = tf.cast(data, dtype=tf.int32)
+                    gotu_data = tf.cast(gotu_data, dtype=tf.int32)
+                    features_per_sample = tf.sparse.reduce_sum(
+                        tf.sparse.map_values(tf.ones_like, gotu_data), axis=-1
+                    )  # [n, 1] output
+                    max_features = tf.cast(tf.reduce_max(features_per_sample), dtype=tf.int32)
+                    @tf.function
+                    def _helper(sparse_row):
+                        indices = tf.cast(sparse_row.indices, dtype=tf.int32)  # [1, m]
+                        features = tf.pad(
+                            indices,
+                            [[0, max_features - tf.cast(tf.shape(sparse_row.values)[0], dtype=tf.int32)], [0, 0]],
+                            constant_values=0,
+                        )
+                        return features  # [max_features]
+
+                    features = tf.map_fn(_helper, gotu_data, fn_output_signature=tf.int32)  #  [n, max_features]
+                    return samples, data, features
+
+                ds = ds.shuffle(shuffle_buf)
+                ds = ds.batch(8)
+                ds = ds.map(filter)
+
+                if val:
+                    ds = ds.take(100)
+                return ds
+
+            return _inner
+
+        samples = tf.data.Dataset.from_tensor_slices(list(range(len(sample_ids))))
+        dataset = tf.data.Dataset.zip(samples, table_dataset, gotu_dataset)
+        training_dataset = dataset.apply(apply(val=False, shuffle_buf=len(o_ids)))
+        validation_dataset = dataset.apply(apply(val=True, shuffle_buf=len(o_ids)))
+
         return {
             "table": table,
             "sample_ids": sample_ids,
@@ -250,12 +257,39 @@ def load_data(
             "gotu_ids": gotu_o_ids,
             "gotu_dataset": gotu_dataset,
             "num_gotus": gotu_count,
-            "gotu_tokenizer": gotu_tokenizer,
             "training_dataset": training_dataset,
             "validation_dataset": validation_dataset,
             "mean": 0,
             "std": 1,
         }
+
+
+# def iterate(iterator1, iterator2):
+#     def run_step(item1, item2):
+#         tf.print("16s", tf.shape(item1.indices), tf.shape(item1.values), item1.dense_shape)
+#         tf.print("GOTU", tf.shape(item2.indices), tf.shape(item2.values), item2.dense_shape)
+
+#         return item1, item2
+
+#     run_step = tf.function(run_step)
+#     for data1, data2 in zip(iterator1, iterator2):
+#         run_step(data1, data2)
+
+
+#     return
+def iterate(iterator):
+    def run_step(item1, item2, item3):
+        tf.print("sample#", tf.shape(item1))
+        tf.print("16s", tf.shape(item2.indices), tf.shape(item2.values), item2.dense_shape)
+        tf.print("GOTU", tf.shape(item3))
+
+        return item1, item2, item3
+
+    run_step = tf.function(run_step)
+    for data1, data2, data3 in iterator:
+        run_step(data1, data2, data3)
+
+    return
 
 
 if __name__ == "__main__":
@@ -265,5 +299,5 @@ if __name__ == "__main__":
         batch_size=8,
         biom_path="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/gotu_ordered_table_filtered.biom",
     )
-    for element in loaded_data["training_dataset"].take(1):
-        print(element)
+    print(type(loaded_data["training_dataset"]))
+    iterate(loaded_data["training_dataset"])

@@ -130,7 +130,6 @@ class BaseNucleotideModel(tf.keras.Model):
         """
         simulate model execution using symbolic tensors
         """
-        print("how'd we get here")
         input_seq = tf.keras.Input(
             shape=[None, self.max_bp],
             batch_size=self.batch_size,
@@ -201,6 +200,7 @@ class BaseNucleotideModel(tf.keras.Model):
         """
         Need to add checks to verify input/output tuples are formatted correctly
         """
+
         inputs, y = self._extract_data(data)
         with tf.GradientTape() as tape:
             # Forward pass
