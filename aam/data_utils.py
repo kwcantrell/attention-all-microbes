@@ -52,7 +52,9 @@ def batch_dataset(
 
     if shuffle:
         training_dataset = training_dataset.shuffle(size, reshuffle_each_iteration=True)
-    training_dataset = training_dataset.batch(batch_size, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE)
+    training_dataset = training_dataset.batch(
+        batch_size, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE
+    )
 
     if repeat > 1:
         training_dataset = training_dataset.repeat(repeat).prefetch(10)
@@ -154,7 +156,9 @@ def load_data(
         o_ids, table_dataset, sequence_tokenizer = get_table_data(table.copy(), max_bp)
 
         regression_data = extract_col(metadata, metadata_col, output_dtype=np.float32)
-        regression_dataset, mean, std = convert_to_normalized_dataset(regression_data, "z")
+        regression_dataset, mean, std = convert_to_normalized_dataset(
+            regression_data, "z"
+        )
 
         training_dataset, validation_dataset = batch_dataset(
             table_dataset,
@@ -186,7 +190,9 @@ def load_data(
             col_ind = data.col
             values = data.data
             indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-            table_data = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=table.shape)
+            table_data = tf.sparse.SparseTensor(
+                indices=indices, values=values, dense_shape=table.shape
+            )
             table_data = tf.sparse.reorder(table_data)
 
             table_dataset = tf.data.Dataset.from_tensor_slices(table_data)
@@ -220,21 +226,36 @@ def load_data(
                     features_per_sample = tf.sparse.reduce_sum(
                         tf.sparse.map_values(tf.ones_like, gotu_data), axis=-1
                     )  # [n, 1] output
-                    max_features = tf.cast(tf.reduce_max(features_per_sample), dtype=tf.int32)
+                    max_features = tf.cast(
+                        tf.reduce_max(features_per_sample), dtype=tf.int32
+                    )
+
                     @tf.function
                     def _helper(sparse_row):
                         indices = tf.cast(sparse_row.indices, dtype=tf.int32)  # [1, m]
                         features = tf.pad(
                             indices,
-                            [[0, max_features - tf.cast(tf.shape(sparse_row.values)[0], dtype=tf.int32)], [0, 0]],
+                            [
+                                [
+                                    0,
+                                    max_features
+                                    - tf.cast(
+                                        tf.shape(sparse_row.values)[0], dtype=tf.int32
+                                    ),
+                                ],
+                                [0, 0],
+                            ],
                             constant_values=0,
                         )
                         return features  # [max_features]
 
-                    features = tf.map_fn(_helper, gotu_data, fn_output_signature=tf.int32)  #  [n, max_features]
+                    features = tf.map_fn(
+                        _helper, gotu_data, fn_output_signature=tf.int32
+                    )  #  [n, max_features]
                     return samples, data, features
 
-                ds = ds.shuffle(shuffle_buf)
+                if shuffle_samples is True:
+                    ds = ds.shuffle(shuffle_buf)
                 ds = ds.batch(8)
                 ds = ds.map(filter)
 
@@ -280,7 +301,9 @@ def load_data(
 def iterate(iterator):
     def run_step(item1, item2, item3):
         tf.print("sample#", tf.shape(item1))
-        tf.print("16s", tf.shape(item2.indices), tf.shape(item2.values), item2.dense_shape)
+        tf.print(
+            "16s", tf.shape(item2.indices), tf.shape(item2.values), item2.dense_shape
+        )
         tf.print("GOTU", tf.shape(item3))
 
         return item1, item2, item3

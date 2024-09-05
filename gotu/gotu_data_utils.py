@@ -90,45 +90,55 @@ def load_biom_table(fp):
 
 
 def convert_to_tf_dataset(data):
-    o_ids = tf.constant(data.ids(axis='observation'))
+    o_ids = tf.constant(data.ids(axis="observation"))
     data = data.transpose()
     table = data.matrix_data.tocoo()
     row_ind = table.row
     col_ind = table.col
     values = table.data
     indices = [[r, c] for r, c in zip(row_ind, col_ind)]
-    sparse_tensor = tf.sparse.SparseTensor(indices=indices, values=values, dense_shape=data.shape)
+    sparse_tensor = tf.sparse.SparseTensor(
+        indices=indices, values=values, dense_shape=data.shape
+    )
     sparse_tensor = tf.sparse.reorder(sparse_tensor)
     get_id = lambda x: tf.gather(o_ids, x.indices)
-    
-    return (tf.data.Dataset.from_tensor_slices(sparse_tensor)
-            .map(get_id, num_parallel_calls=tf.data.AUTOTUNE)
-            .prefetch(tf.data.AUTOTUNE)
-            )
 
+    return (
+        tf.data.Dataset.from_tensor_slices(sparse_tensor)
+        .map(get_id, num_parallel_calls=tf.data.AUTOTUNE)
+        .prefetch(tf.data.AUTOTUNE)
+    )
 
 
 def gotu_encode_and_convert(data):
     gotu_dataset = convert_to_tf_dataset(data)
-    o_ids = tf.data.Dataset.from_tensor_slices(data.ids(axis='observation'))
+    o_ids = tf.data.Dataset.from_tensor_slices(data.ids(axis="observation"))
     gotu_count = o_ids.cardinality().numpy()
     sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens= gotu_count + 1, # len of gotus + 1 for padding
-        output_mode='int',
-        output_sequence_length=1)
+        max_tokens=gotu_count + 1,  # len of gotus + 1 for padding
+        output_mode="int",
+        output_sequence_length=1,
+    )
 
     sequence_tokenizer.adapt(o_ids)
-    gotu_list = data.ids(axis='observation')
+    gotu_list = data.ids(axis="observation")
     gotu_tokens = sequence_tokenizer(gotu_list) + 2
 
     gotu_dict = {
-        int(t): gotu for t, gotu in zip(list(tf.squeeze(gotu_tokens, axis=-1).numpy()), gotu_list)
+        int(t): gotu
+        for t, gotu in zip(list(tf.squeeze(gotu_tokens, axis=-1).numpy()), gotu_list)
     }
-    
-    gotu_dataset = gotu_dataset.map(lambda x:(
-        tf.concat(
-            [tf.constant([[1]], dtype=tf.int64), sequence_tokenizer(x) + 2, tf.constant([[2]], dtype=tf.int64)],
-            axis=0)
-        ))
-    return gotu_dataset, gotu_dict, gotu_count
 
+    gotu_dataset = gotu_dataset.map(
+        lambda x: (
+            tf.concat(
+                [
+                    tf.constant([[1]], dtype=tf.int64),
+                    sequence_tokenizer(x) + 2,
+                    tf.constant([[2]], dtype=tf.int64),
+                ],
+                axis=0,
+            )
+        )
+    )
+    return gotu_dataset, gotu_dict, gotu_count

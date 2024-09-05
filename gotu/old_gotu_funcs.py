@@ -1,4 +1,3 @@
-
 def gotu_classification(batch_size: int, load_model: False, model_fp: None, **kwargs):
     model = gotu_model_base(batch_size, **kwargs)
     if load_model:
@@ -39,7 +38,9 @@ def gotu_predict(batch_size: int, model_fp: str, **kwargs):
     return model
 
 
-def run_gotu_predictions(asv_fp: str, gotu_fp: str, model_fp: str, pred_out_path: str) -> None:
+def run_gotu_predictions(
+    asv_fp: str, gotu_fp: str, model_fp: str, pred_out_path: str
+) -> None:
     gpus = tf.config.experimental.list_physical_devices("GPU")
     if gpus:
         try:

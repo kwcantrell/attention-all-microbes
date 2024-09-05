@@ -1,10 +1,10 @@
 """gotu_preproccessing.py"""
 
 import os
-
 from typing import Tuple
-from bp import parse_newick
+
 import biom
+from bp import parse_newick
 
 
 def write_biom_table(
@@ -54,9 +54,7 @@ class FormatBiomTables:
         Exception: If any file paths are invalid or the files cannot be loaded.
     """
 
-    def __init__(
-        self, newick_fp: str, gotu_biom_fp: str, asv_biom_fp: str
-    ) -> None:
+    def __init__(self, newick_fp: str, gotu_biom_fp: str, asv_biom_fp: str) -> None:
         """
         Initializes the FormatBiomTables class by loading and parsing the provided Newick and BIOM files.
 
@@ -86,9 +84,7 @@ class FormatBiomTables:
         try:
             self.gotu_table = biom.load_table(gotu_biom_fp)
         except FileNotFoundError:
-            print(
-                f"Error: The gOTU BIOM file at '{gotu_biom_fp}' was not found."
-            )
+            print(f"Error: The gOTU BIOM file at '{gotu_biom_fp}' was not found.")
             raise
         except (
             IOError,
@@ -100,9 +96,7 @@ class FormatBiomTables:
         try:
             self.asv_table = biom.load_table(asv_biom_fp)
         except FileNotFoundError:
-            print(
-                f"Error: The ASV BIOM file at '{asv_biom_fp}' was not found."
-            )
+            print(f"Error: The ASV BIOM file at '{asv_biom_fp}' was not found.")
             raise
         except (
             IOError,
@@ -127,9 +121,7 @@ class FormatBiomTables:
         gotu_table_ids = set(self.gotu_table.ids("sample"))
         asv_table_ids = set(self.asv_table.ids("sample"))
         merged_ids = list(asv_table_ids.intersection(gotu_table_ids))
-        gotu_table_intersect = self.gotu_table.filter(
-            merged_ids, axis="sample"
-        )
+        gotu_table_intersect = self.gotu_table.filter(merged_ids, axis="sample")
         asv_table_intersect = self.asv_table.filter(merged_ids, axis="sample")
         return (gotu_table_intersect, asv_table_intersect)
 
@@ -162,12 +154,8 @@ class FormatBiomTables:
         for name in name_list:
             pool.setdefault(name, len(pool))
 
-        gotu_table_intersect_samples = set(
-            gotu_table_intersect.ids("observation")
-        )
-        asv_table_intersect_samples = set(
-            asv_table_intersect.ids("observation")
-        )
+        gotu_table_intersect_samples = set(gotu_table_intersect.ids("observation"))
+        asv_table_intersect_samples = set(asv_table_intersect.ids("observation"))
 
         gotu_index_order = {}
         ids_not_found = []
@@ -176,9 +164,7 @@ class FormatBiomTables:
                 gotu_index_order.setdefault(pool[id], id)
             else:
                 ids_not_found.append(id)
-        print(
-            f"Original number of GOTU features: {len(gotu_table_intersect_samples)}"
-        )
+        print(f"Original number of GOTU features: {len(gotu_table_intersect_samples)}")
         print(f"len of index list: {len(gotu_index_order)}")
         print(f"len of IDs not found {len(ids_not_found)}")
 
@@ -190,9 +176,7 @@ class FormatBiomTables:
                     asv_index_order.setdefault(pool[id], id)
             except ValueError:
                 ids_not_found.append(id)
-        print(
-            f"Original Number of ASV features: {len(asv_table_intersect_samples)}"
-        )
+        print(f"Original Number of ASV features: {len(asv_table_intersect_samples)}")
         print(f"len of index list: {len(asv_index_order)}")
         print(f"len of IDs not found {len(ids_not_found)}")
 
