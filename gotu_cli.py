@@ -4,18 +4,17 @@ import json
 import os
 from datetime import datetime
 
+import aam._parameter_descriptions as desc
 import biom
 import click
 import numpy as np
 import tensorflow as tf
-from tqdm import tqdm
-
-import aam._parameter_descriptions as desc
 from aam.callbacks import SaveModel
 from aam.data_utils import load_data
 from aam.utils import LRDecrease
 from attention_regression.callbacks import MAE_Scatter
 from gotu.gotu_model import GOTUModel
+from tqdm import tqdm
 
 
 @click.group()
@@ -31,7 +30,9 @@ aam_globals = _aam_globals()
 
 
 @cli.command()
-@click.option("--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True))
+@click.option(
+    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+)
 @click.option(
     "--i-gotu-path",
     required=True,
@@ -54,7 +55,9 @@ aam_globals = _aam_globals()
 @click.option("--p-report-back-after", default=5, show_default=True, type=int)
 @click.option("--p-base-model-path", required=True, type=click.Path(exists=True))
 @click.option("--p-output-dir", required=True)
-@click.option("--p-model-weights-path", default=None, required=False, type=click.Path(exists=True))
+@click.option(
+    "--p-model-weights-path", default=None, required=False, type=click.Path(exists=True)
+)
 def sequence2sequence(
     i_table_path: str,
     i_gotu_path: str,
@@ -109,7 +112,8 @@ def sequence2sequence(
         dff=p_ff_d_model,
     )
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=LRDecrease(),
+        learning_rate=0.0001,
+        # learning_rate=LRDecrease(),
         beta_1=0.9,
         beta_2=0.98,
         epsilon=1e-9,
@@ -121,7 +125,7 @@ def sequence2sequence(
         o_ids=data_obj["o_ids"],
         gotu_ids=data_obj["gotu_ids"],
         sequence_tokenizer=data_obj["sequence_tokenizer"],
-        # weighted_metrics=[],
+        weighted_metrics=[],
     )
 
     #   gotu_model.build(input_shape=[(p_batch_size, None, 150), (p_batch_size, None)])
@@ -136,7 +140,9 @@ def sequence2sequence(
     gotu_model.summary()
 
     core_callbacks = [
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="loss", factor=0.8, patience=10, min_lr=0.0001),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="loss", factor=0.8, patience=10, min_lr=0.0001
+        ),
         tf.keras.callbacks.EarlyStopping(monitor="loss", patience=20),
         tf.keras.callbacks.ModelCheckpoint(
             filepath=os.path.join(p_output_dir, "best_model"),
@@ -157,7 +163,9 @@ def sequence2sequence(
 
 
 @cli.command()
-@click.option("--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True))
+@click.option(
+    "--i-table-path", required=True, help=desc.TABLE_DESC, type=click.Path(exists=True)
+)
 @click.option(
     "--i-gotu-path",
     required=True,
@@ -180,7 +188,9 @@ def sequence2sequence(
 @click.option("--p-report-back-after", default=5, show_default=True, type=int)
 @click.option("--p-base-model-path", required=True, type=click.Path(exists=True))
 @click.option("--p-output-dir", required=True)
-@click.option("--p-model-weights-path", default=None, required=True, type=click.Path(exists=True))
+@click.option(
+    "--p-model-weights-path", default=None, required=True, type=click.Path(exists=True)
+)
 def predict_s2s(
     i_table_path: str,
     i_gotu_path: str,
@@ -202,6 +212,55 @@ def predict_s2s(
     p_output_dir: str,
     p_model_weights_path: str,
 ):
+    @tf.function
+    def process_batch_loop(gotu_model, dataset, num_gotus):
+        target_shape = (8, num_gotus)
+        col_index = tf.constant(0, dtype=tf.int32)
+        batch_preds = tf.TensorArray(dtype=tf.int64, size=0, dynamic_size=True)
+
+        for data in dataset:
+            x, y = gotu_model._extract_data(data)
+            result = gotu_model(x)
+            y_pred = tf.argmax(result[0][0], axis=-1)
+
+            current_batch_size = tf.shape(y_pred)[0]
+            required_padding = target_shape[0] - current_batch_size
+
+            y_pred_padded = tf.cond(
+                required_padding > 0,
+                lambda: tf.pad(
+                    y_pred, [[0, required_padding], [0, 0]], constant_values=-1
+                ),
+                lambda: y_pred,
+            )
+
+            y_pred_padded = tf.pad(
+                y_pred_padded,
+                [[0, 0], [0, target_shape[1] - tf.shape(y_pred_padded)[1]]],
+                constant_values=-1,
+            )
+
+            batch_preds = batch_preds.write(col_index, y_pred_padded)
+
+            tf.print("Processed batch", col_index)
+            col_index += 1
+
+        return batch_preds.stack()
+
+    def post_process_gotu_codes(batch_preds, sample_ids, gotu_dict):
+        col_index = 0
+        pred_biom_data = np.zeros((len(gotu_dict), len(sample_ids)))
+
+        for y_pred in batch_preds:
+            for i in range(len(y_pred)):
+                for j in range(len(y_pred[i])):
+                    gotu_code = y_pred[i][j]
+                    if gotu_code > 0:
+                        pred_biom_data[gotu_code, col_index] = 1
+            col_index += 1
+
+        return pred_biom_data
+
     if not os.path.exists(p_output_dir):
         os.makedirs(p_output_dir)
 
@@ -258,42 +317,33 @@ def predict_s2s(
     for data in data_obj["training_dataset"].take(1):
         x, y = gotu_model._extract_data(data)
         gotu_model(x)
-
-    # for layer in gotu_model.layers:  # eventually setup as load test
-    #     tf.print(layer.get_weights())
+        tf.print(x[0].shape)
+        tf.print(type(x[0]))
+        tf.print(x[1].shape)
+        tf.print(type(x[1]))
 
     gotu_model.summary()
-    
-    with open("/home/jokirkland/data/asv2gotu/paired_asv_gotu_data/gotu_dict.json", "r") as file:
+
+    with open(
+        "/home/jokirkland/data/asv2gotu/paired_asv_gotu_data/gotu_dict.json", "r"
+    ) as file:
         gotu_dict = json.load(file)
     gotu_dict = {int(key): value for key, value in gotu_dict.items()}
-    col_index = 0
-    pred_biom_data = np.zeros((len(gotu_dict), len(data_obj["sample_ids"])))
-    gotu_obv_dict = {}
-    for i in range(len(gotu_dict)):
-        gotu_obv_dict[gotu_dict[i]] = i
-
-    for data in tqdm(data_obj["training_dataset"], desc="Processing data"):
-        x, y = gotu_model._extract_data(data)
-        result = gotu_model(x)
-        y_pred = tf.argmax(result[0][0], axis=-1)
-
-        for i in range(len(y_pred)):
-            for j in range(len(y_pred[i, :])):
-                gotu_code = y_pred[i, :][j]
-                if gotu_code:
-                    pred_biom_data[gotu_code, col_index] = 1
-            col_index += 1
-
-    pred_biom = biom.table.Table(pred_biom_data, list(gotu_dict.values()), data_obj["sample_ids"])
-    with biom.util.biom_open("/home/jokirkland/data/asv2gotu/aam_testing/predictions/test_pred.biom", "w") as f:
+    batch_preds = process_batch_loop(
+        gotu_model, data_obj["training_dataset"], num_gotus=len(gotu_dict)
+    )
+    batch_preds = batch_preds.numpy()
+    tf.print("finished batch_preds")
+    pred_biom_data = post_process_gotu_codes(
+        batch_preds, data_obj["sample_ids"], gotu_dict
+    )
+    pred_biom = biom.table.Table(
+        pred_biom_data, list(gotu_dict.values()), data_obj["sample_ids"]
+    )
+    with biom.util.biom_open(
+        "/home/jokirkland/data/asv2gotu/aam_testing/predictions/test_pred.biom", "w"
+    ) as f:
         pred_biom.to_hdf5(f, "Predicted GOTUs Using DeepLearning")
-
-    # prediction_output_path = f"{p_output_dir}/test_pred.csv"
-    # tf.print(prediction_output_path)
-    # tf.print(predictions)
-    # tf.print(predictions, output_stream=f"{prediction_output_path}")
-    # tf.print(f"Predictions saved to {prediction_output_path}")
 
 
 def main():
