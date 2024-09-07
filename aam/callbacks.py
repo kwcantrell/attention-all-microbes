@@ -89,6 +89,9 @@ class SaveModel(tf.keras.callbacks.Callback):
                 os.path.join(self.output_dir, "model.keras"), save_format="keras"
             )
 
+        # def on_test_batch_end(self, batch, logs=None):
+        logs["lr"] = self.model.optimizer.lr
+
     def get_config(self):
         base_config = super().get_config()
         config = {"output_dir": self.output_dir, "report_back": self.report_back}

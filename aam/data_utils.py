@@ -25,8 +25,10 @@ def get_table_data(table, max_bp):
         split="character",
         output_mode="int",
         output_sequence_length=max_bp,
+        name="tokenizer",
+        vocabulary=["", "[UNK]", "g", "a", "t", "c"],
     )
-    sequence_tokenizer.adapt(o_ids[:10])
+    # sequence_tokenizer.adapt(o_ids[:10])
 
     return (o_ids, table_dataset, sequence_tokenizer)
 
@@ -50,7 +52,7 @@ def convert_to_normalized_dataset(values, normalize):
 
 def get_unifrac_dataset(table_path, tree_path):
     distance = unweighted(table_path, tree_path).data
-    return tf.data.Dataset.from_tensor_slices(distance)
+    return tf.data.Dataset.from_tensors(distance)
 
 
 def batch_dataset(
@@ -76,16 +78,16 @@ def batch_dataset(
     training_dataset = training_dataset
 
     if shuffle:
-        training_dataset = training_dataset.shuffle(size)
+        training_dataset = training_dataset.shuffle(size, reshuffle_each_iteration=True)
     training_dataset = training_dataset.batch(
         batch_size, drop_remainder=True, num_parallel_calls=tf.data.AUTOTUNE
     )
 
     if repeat > 1:
-        training_dataset = training_dataset.repeat(repeat)
+        training_dataset = training_dataset.repeat(repeat).prefetch(10)
 
     if train_percent:
-        validation_dataset = dataset.skip(size).batch(8, drop_remainder=True)
+        validation_dataset = dataset.skip(size).batch(batch_size, drop_remainder=True)
         return training_dataset, validation_dataset
     else:
         return training_dataset
@@ -133,40 +135,91 @@ def load_data(
     max_bp,
     batch_size,
     repeat=1,
-    shuffle_samples=False,
+    shuffle_samples=True,
     train_percent=0.9,
     tree_path=None,
     metadata_path=None,
     metadata_col=None,
     missing_samples_flag=None,
 ):
-    table = load_table(table_path)
-    if shuffle_samples:
-        table = shuffle_table(table)
+    if isinstance(table_path, str):
+        table = load_table(table_path)
+    else:
+        table = table_path
+
+    # if shuffle_samples:
+    #     table = shuffle_table(table)
 
     if tree_path:
-        sample_ids = table.ids(axis="sample")
-        o_ids, table_dataset, sequence_tokenizer = get_table_data(table, max_bp)
-        unifrac_dataset = get_unifrac_dataset(table_path, tree_path)
-        training_dataset, validation_dataset = batch_dataset(
-            table_dataset,
-            unifrac_dataset,
-            batch_size,
-            shuffle=shuffle_samples,
-            repeat=repeat,
-            train_percent=train_percent,
+
+        def _get_unifrac_data(table_path, tree_path):
+            distance = unweighted(table_path, tree_path).data
+            return tf.data.Dataset.from_tensor_slices(distance)
+
+        def _get_table_data(table_path):
+            table_data = load_table(table_path)
+            coo = table_data.transpose().matrix_data.tocoo()
+            (data, (row, col)) = (coo.data, coo.coords)
+            data = data
+            row = row
+            col = col
+            return data, row, col
+
+        data, row, col = _get_table_data(table_path)
+        unifrac_data = _get_unifrac_data(table_path, tree_path)
+
+        table = load_table(table_path)
+        s_ids = table.ids()
+        o_ids = table.ids(axis="observation")
+        indices = tf.concat(
+            [tf.expand_dims(row, axis=1), tf.expand_dims(col, axis=1)], axis=1
         )
-        return {
-            "table": table,
-            "sample_ids": sample_ids,
-            "o_ids": o_ids,
+        table = tf.sparse.SparseTensor(
+            indices=tf.cast(indices, dtype=tf.int64),
+            values=data,
+            dense_shape=[len(s_ids), len(o_ids)],
+        )
+        table = tf.sparse.reorder(table)
+        table = tf.data.Dataset.from_tensor_slices(table)
+
+        def apply(val=False, shuffle_buf=100):
+            def _inner(ds):
+                def filter(samples, data, unifrac_data):
+                    return (samples, data), tf.gather(unifrac_data, samples, axis=1)
+
+                if shuffle_samples:
+                    ds = ds.shuffle(shuffle_buf)
+                ds = ds.batch(8)
+                ds = ds.map(filter)
+
+                if val:
+                    ds = ds.take(100)
+                return ds
+
+            return _inner
+
+        samples = tf.data.Dataset.from_tensor_slices(list(range(len(s_ids))))
+        dataset = tf.data.Dataset.zip(samples, table, unifrac_data)
+        train_dataset = dataset.apply(apply(val=False, shuffle_buf=len(o_ids)))
+        val_dataset = dataset.apply(apply(val=True, shuffle_buf=len(o_ids)))
+        sequence_tokenizer = tf.keras.layers.TextVectorization(
+            max_tokens=8,
+            split="character",
+            output_mode="int",
+            output_sequence_length=150,
+            name="tokenizer",
+            vocabulary=["", "[UNK]", "g", "a", "t", "c"],
+        )
+        data_obj = {
+            "sample_ids": s_ids,
+            "o_ids": tf.constant(o_ids),
             "sequence_tokenizer": sequence_tokenizer,
-            "unifrac_dataset": unifrac_dataset,
-            "training_dataset": training_dataset,
-            "validation_dataset": validation_dataset,
+            "training_dataset": train_dataset,
+            "validation_dataset": val_dataset,
             "mean": 0,
             "std": 1,
         }
+        return data_obj
 
     if metadata_path:
         metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)

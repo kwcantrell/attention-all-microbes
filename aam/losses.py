@@ -29,9 +29,9 @@ def _pairwise_distances(embeddings, squared=False):
     # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
     # shape (batch_size, batch_size)
     distances = (
-        tf.expand_dims(square_norm, 1)
+        tf.expand_dims(square_norm, 0)
         - 2.0 * dot_product
-        + tf.expand_dims(square_norm, 0)
+        + tf.expand_dims(square_norm, 1)
     )
 
     # Because of computation errors, some distances might be negative so we
@@ -65,15 +65,16 @@ class PairwiseLoss(tf.keras.losses.Loss):
         def pairwise_loss(y_true, y_pred):
             # batch_size = tf.shape(y_pred)[0]
             y_pred_dist = _pairwise_distances(y_pred, squared=False)
-            difference = tf.math.reduce_sum(
-                tf.math.square(y_true - y_pred_dist), axis=-1
-            )
-            return difference
+            differences = tf.math.square(y_pred_dist - y_true)
+            # distances = tf.linalg.band_part(differences, 0, -1)
+            # distances = tf.reduce_sum(differences, axis=-1, keepdims=True)
+            distances = tf.reduce_sum(differences, axis=-2)
+            return distances
 
         self.loss = tf.function(pairwise_loss)
 
     def call(self, y_true, y_pred):
-        return (self.loss(y_true, y_pred),)
+        return self.loss(y_true, y_pred)
 
     def get_config(self):
         return super().get_config()
@@ -106,15 +107,14 @@ def pairwise_residual_mse(batch_size, mean=None, std=None):
     return inner
 
 
-def denormalize(tensor, mean, std):
-    return tensor * std + mean
+def denormalize(tensor, shift, scale):
+    return tensor * scale + shift
 
 
-def mae_loss(mean=None, std=None):
+def mae_loss(shift=0, scale=1):
     def mae(y_true, y_pred):
-        if mean is not None:
-            y_true = denormalize(y_true, mean, std)
-            y_pred = denormalize(y_pred, mean, std)
+        y_true = denormalize(y_true, shift, scale)
+        y_pred = denormalize(y_pred, shift, scale)
         return tf.abs(y_true - y_pred)
 
     return mae
@@ -131,7 +131,7 @@ def mse_loss(mean=None, std=None):
 
 def real_feature_mask(total_features, size):
     total_features = tf.expand_dims(total_features, axis=-1)
-    mask = tf.cast(tf.range(size), dtype=tf.int64)
+    mask = tf.cast(tf.range(size), dtype=tf.int32)
     mask = tf.less(mask, total_features)
     return mask
 
