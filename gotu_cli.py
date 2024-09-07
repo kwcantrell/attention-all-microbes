@@ -110,10 +110,12 @@ def sequence2sequence(
         num_layers=p_enc_layers,
         num_attention_heads=p_enc_heads,
         dff=p_ff_d_model,
+        start_token=data_obj["start_token"],
+        end_token=data_obj["end_token"],
+
     )
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=0.0001,
-        # learning_rate=LRDecrease(),
+        learning_rate=LRDecrease(lr=0.0003),
         beta_1=0.9,
         beta_2=0.98,
         epsilon=1e-9,
@@ -128,7 +130,6 @@ def sequence2sequence(
         weighted_metrics=[],
     )
 
-    #   gotu_model.build(input_shape=[(p_batch_size, None, 150), (p_batch_size, None)])
     for data in data_obj["training_dataset"].take(1):
         x, y = gotu_model._extract_data(data)
         gotu_model(x)

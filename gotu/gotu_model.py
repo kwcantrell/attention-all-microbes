@@ -24,6 +24,8 @@ class GOTUModel(BaseNucleotideModel):
         num_attention_heads=8,
         dff=32,
         use_attention_loss=False,
+        start_token=None,
+        end_token=None,
         **kwargs,
     ):
         super().__init__(
@@ -43,6 +45,8 @@ class GOTUModel(BaseNucleotideModel):
         self.regresssion_loss = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True
         )
+        self.start_token = start_token
+        self.end_token = end_token
         self.metric_traker = tf.keras.metrics.Mean(name="loss")
 
         self.input_layer = InputLayer(name="input_layer")
@@ -106,6 +110,9 @@ class GOTUModel(BaseNucleotideModel):
 
     def model_step(self, inputs, training=False):
         encoder_inputs, rclr, decoder_inputs = inputs
+        decoder_inputs = tf.pad(
+            decoder_inputs, [[0, 0], [1, 0], [0, 0]], constant_values=self.start_token
+        )
         encoder_output = self.base_model.feature_emb(
             (encoder_inputs, rclr), return_nuc_attention=False, training=training
         )
@@ -116,12 +123,17 @@ class GOTUModel(BaseNucleotideModel):
         encoder_mask = float_mask(encoder_mask)
         decoder_mask = float_mask(decoder_inputs)
         cross_attention_mask = tf.cast(
-            tf.matmul(decoder_mask, encoder_mask, transpose_b=True), dtype=tf.bool
+            tf.matmul(decoder_mask, encoder_mask, transpose_b=True),
+            dtype=self.compute_dtype,
         )
         attention_mask = tf.cast(
-            tf.matmul(decoder_mask, decoder_mask, transpose_b=True), dtype=tf.bool
+            tf.matmul(decoder_mask, decoder_mask, transpose_b=True),
+            dtype=self.compute_dtype,
         )
-
+        timestep_mask = tf.linalg.band_part(
+            tf.ones_like(attention_mask, dtype=self.compute_dtype), 0, -1
+        )
+        attention_mask = tf.multiply(attention_mask, timestep_mask)
         decoder_embeddings = self.decoder_embedding(decoder_inputs)
         decoder_embeddings = tf.squeeze(decoder_embeddings, axis=-2)
         transformer_output = self.transformer_decoder(
@@ -131,7 +143,7 @@ class GOTUModel(BaseNucleotideModel):
             cross_attention_mask=cross_attention_mask,
             training=training,
         )
-
+        transformer_output = transformer_output[:, :-1, :]
         output = self.dense_output(transformer_output)
         output = self.linear_activation(output)
         transformer_output_fake = self.linear_activation(

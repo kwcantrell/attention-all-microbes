@@ -221,7 +221,8 @@ def load_data(
             name="seq_tokenizer",
             vocabulary=["", "[UNK]", "g", "a", "t", "c"],
         )
-
+        start_token = gotu_count + 1
+        end_token = gotu_count + 2
         def apply(val=False, shuffle_buf=100):
             def _inner(ds):
                 def filter(samples, data, gotu_data):
@@ -250,7 +251,7 @@ def load_data(
                                 ],
                                 [0, 0],
                             ],
-                            constant_values=0,
+                            constant_values=end_token,
                         )
                         return features  # [max_features]
 
@@ -287,6 +288,8 @@ def load_data(
             "validation_dataset": validation_dataset,
             "mean": 0,
             "std": 1,
+            "start_token": start_token,
+            "end_token": end_token,
         }
 
 
