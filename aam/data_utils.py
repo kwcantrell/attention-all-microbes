@@ -183,15 +183,20 @@ def load_data(
 
     if biom_path:
 
-        def get_table_data(table):
+        def get_table_data(table, add_by_1=False):
             table = table.transpose()
             data = table.matrix_data.tocoo()
             row_ind = data.row
             col_ind = data.col
+            dense_shape = list(table.shape)
+            if add_by_1:
+                dense_shape[1] += 1
+                col_ind += 1
+
             values = data.data
             indices = [[r, c] for r, c in zip(row_ind, col_ind)]
             table_data = tf.sparse.SparseTensor(
-                indices=indices, values=values, dense_shape=table.shape
+                indices=indices, values=values, dense_shape=dense_shape
             )
             table_data = tf.sparse.reorder(table_data)
 
@@ -206,7 +211,7 @@ def load_data(
         gotu_table = load_table(biom_path)
         gotu_o_ids = gotu_table.ids(axis="observation")
         gotu_count = len(gotu_o_ids)
-        gotu_dataset = get_table_data(gotu_table.copy())
+        gotu_dataset = get_table_data(gotu_table.copy(), add_by_1=True)
 
         sequence_tokenizer = tf.keras.layers.TextVectorization(
             max_tokens=8,
