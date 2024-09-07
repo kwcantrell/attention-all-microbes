@@ -187,6 +187,7 @@ def sequence2sequence(
 @click.option("--p-lr", default=0.01, show_default=True, type=float)
 @click.option("--p-report-back-after", default=5, show_default=True, type=int)
 @click.option("--p-base-model-path", required=True, type=click.Path(exists=True))
+@click.option("--p-output-fn", required=True, type=str)
 @click.option("--p-output-dir", required=True)
 @click.option(
     "--p-model-weights-path", default=None, required=True, type=click.Path(exists=True)
@@ -209,6 +210,7 @@ def predict_s2s(
     p_lr: float,
     p_report_back_after: int,
     p_base_model_path: str,
+    p_output_fn: str,
     p_output_dir: str,
     p_model_weights_path: str,
 ):
@@ -220,8 +222,8 @@ def predict_s2s(
 
         for data in dataset:
             x, y = gotu_model._extract_data(data)
-            result = gotu_model(x)
-            y_pred = tf.argmax(result[0][0], axis=-1)
+            (result, _), _ = gotu_model(x)
+            y_pred = tf.argmax(result, axis=-1)
 
             current_batch_size = tf.shape(y_pred)[0]
             required_padding = target_shape[0] - current_batch_size
@@ -237,27 +239,25 @@ def predict_s2s(
             y_pred_padded = tf.pad(
                 y_pred_padded,
                 [[0, 0], [0, target_shape[1] - tf.shape(y_pred_padded)[1]]],
-                constant_values=-1,
+                constant_values=0,
             )
 
             batch_preds = batch_preds.write(col_index, y_pred_padded)
 
             tf.print("Processed batch", col_index)
             col_index += 1
+        t2return = tf.reshape(batch_preds.stack(), shape=(-1, num_gotus))
+        tf.print(t2return.shape)
+        return t2return
 
-        return batch_preds.stack()
-
-    def post_process_gotu_codes(batch_preds, sample_ids, gotu_dict):
-        col_index = 0
+    def post_process_gotu_codes(y_pred, sample_ids, gotu_dict):
         pred_biom_data = np.zeros((len(gotu_dict), len(sample_ids)))
 
-        for y_pred in batch_preds:
-            for i in range(len(y_pred)):
-                for j in range(len(y_pred[i])):
-                    gotu_code = y_pred[i][j]
-                    if gotu_code > 0:
-                        pred_biom_data[gotu_code, col_index] = 1
-            col_index += 1
+        for i in range(len(y_pred)):
+            for j in range(len(y_pred[i])):
+                gotu_code = y_pred[i][j]
+                if gotu_code > 0:
+                    pred_biom_data[gotu_code, i] = 1
 
         return pred_biom_data
 
@@ -340,9 +340,8 @@ def predict_s2s(
     pred_biom = biom.table.Table(
         pred_biom_data, list(gotu_dict.values()), data_obj["sample_ids"]
     )
-    with biom.util.biom_open(
-        "/home/jokirkland/data/asv2gotu/aam_testing/predictions/test_pred.biom", "w"
-    ) as f:
+    outfile_full_path = f"{p_output_dir}/{p_output_fn}.biom"
+    with biom.util.biom_open(outfile_full_path, "w") as f:
         pred_biom.to_hdf5(f, "Predicted GOTUs Using DeepLearning")
 
 
