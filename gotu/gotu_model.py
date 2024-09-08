@@ -61,7 +61,9 @@ class GOTUModel(BaseNucleotideModel):
             input_length=1,
             name="decoder_embedding",
         )
-
+        self.positional_encodings = tfm.nlp.layers.PositionEmbedding(
+            max_length=num_gotus + 4, seq_axis=1
+        )
         self.transformer_decoder = tfm.nlp.models.TransformerDecoder(
             num_layers=self.num_layers,
             dropout_rate=self.dropout_rate,
@@ -136,6 +138,7 @@ class GOTUModel(BaseNucleotideModel):
         attention_mask = tf.multiply(attention_mask, timestep_mask)
         decoder_embeddings = self.decoder_embedding(decoder_inputs)
         decoder_embeddings = tf.squeeze(decoder_embeddings, axis=-2)
+        decoder_embeddings = decoder_embeddings + self.positional_encodings(decoder_embeddings)
         transformer_output = self.transformer_decoder(
             decoder_embeddings,
             encoder_output,
