@@ -20,9 +20,9 @@ class GOTUModel(BaseNucleotideModel):
         max_bp,
         num_gotus,
         count_ff_dim=32,
-        num_layers=2,
+        num_layers=4,
         num_attention_heads=8,
-        dff=32,
+        dff=1024,
         use_attention_loss=False,
         start_token=None,
         end_token=None,
@@ -43,7 +43,7 @@ class GOTUModel(BaseNucleotideModel):
         self.num_gotus = num_gotus
         self.use_attention_loss = False
         self.regresssion_loss = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True
+            from_logits=True, ignore_class=0
         )
         self.start_token = start_token
         self.end_token = end_token
@@ -62,11 +62,11 @@ class GOTUModel(BaseNucleotideModel):
             name="decoder_embedding",
         )
         self.positional_encodings = tfm.nlp.layers.PositionEmbedding(
-            max_length=num_gotus + 4, seq_axis=1
+            max_length=1500, seq_axis=1
         )
         self.transformer_decoder = tfm.nlp.models.TransformerDecoder(
             num_layers=self.num_layers,
-            dropout_rate=self.dropout_rate,
+            # dropout_rate=0.1,
             num_attention_heads=self.num_attention_heads,
             intermediate_size=self.dff,
             norm_first=True,
@@ -81,7 +81,32 @@ class GOTUModel(BaseNucleotideModel):
         """
         simulate model execution using symbolic tensors
         """
-        self.built = True
+        input_seq = tf.keras.Input(
+            shape=[None, self.max_bp],
+            batch_size=self.batch_size,
+            dtype=tf.int32,
+        )
+        input_rclr = tf.keras.Input(
+            shape=[None],
+            batch_size=self.batch_size,
+            dtype=tf.float32,
+        )
+        input_decoder = tf.keras.Input(
+            shape=[None, 1], batch_size=self.batch_size, dtype=tf.int32
+        )
+        outputs = self.model_step(
+            (input_seq, input_rclr, input_decoder), training=False
+        )
+        self.inputs = (input_seq, input_rclr, input_decoder)
+        self.outputs = outputs
+
+        # super().build(
+        #     (
+        #         tf.TensorShape((None, None, 150)),
+        #         tf.TensorShape((None, None)),
+        #         tf.TensorShape((None, None, 1)),
+        #     )
+        # )
 
     def make_call_function(self):
         """
@@ -112,9 +137,7 @@ class GOTUModel(BaseNucleotideModel):
 
     def model_step(self, inputs, training=False):
         encoder_inputs, rclr, decoder_inputs = inputs
-        decoder_inputs = tf.pad(
-            decoder_inputs, [[0, 0], [1, 0], [0, 0]], constant_values=self.start_token
-        )
+
         encoder_output = self.base_model.feature_emb(
             (encoder_inputs, rclr), return_nuc_attention=False, training=training
         )
@@ -123,7 +146,20 @@ class GOTUModel(BaseNucleotideModel):
             encoder_mask, paddings=[[0, 0], [0, 1], [0, 0]], constant_values=1
         )
         encoder_mask = float_mask(encoder_mask)
+
+        decoder_inputs = tf.pad(
+            decoder_inputs, [[0, 0], [1, 0], [0, 0]], constant_values=self.start_token
+        )
+
         decoder_mask = float_mask(decoder_inputs)
+
+        # if self.trainable and training:
+        #     random_mask = tf.random.uniform(
+        #         tf.shape(decoder_inputs), minval=0, maxval=1, dtype=tf.float32
+        #     )
+        #     random_mask = tf.less_equal(random_mask, 0.9)
+        #     random_mask = tf.cast(random_mask, dtype=tf.int32)
+        #     decoder_inputs = tf.multiply(decoder_inputs, random_mask)
         cross_attention_mask = tf.cast(
             tf.matmul(decoder_mask, encoder_mask, transpose_b=True),
             dtype=self.compute_dtype,
@@ -133,12 +169,15 @@ class GOTUModel(BaseNucleotideModel):
             dtype=self.compute_dtype,
         )
         timestep_mask = tf.linalg.band_part(
-            tf.ones_like(attention_mask, dtype=self.compute_dtype), 0, -1
+            tf.ones_like(attention_mask, dtype=self.compute_dtype), -1, 0
         )
         attention_mask = tf.multiply(attention_mask, timestep_mask)
         decoder_embeddings = self.decoder_embedding(decoder_inputs)
         decoder_embeddings = tf.squeeze(decoder_embeddings, axis=-2)
-        decoder_embeddings = decoder_embeddings + self.positional_encodings(decoder_embeddings)
+        decoder_embeddings = decoder_embeddings + self.positional_encodings(
+            decoder_embeddings
+        )
+
         transformer_output = self.transformer_decoder(
             decoder_embeddings,
             encoder_output,
@@ -153,6 +192,49 @@ class GOTUModel(BaseNucleotideModel):
             transformer_output
         )  # cheezy hack, might remove later
         return (output, transformer_output_fake), output
+
+    @tf.function
+    def infer(self, inputs):
+        encoder_output, encoder_mask, decoder_inputs = inputs
+        decoder_inputs = tf.expand_dims(decoder_inputs, axis=-1)
+        # tf.print("ENCODER INPUTS", encoder_inputs.shape)
+        # tf.print("DECODER_INPUTS", decoder_inputs.shape)
+        decoder_mask = float_mask(decoder_inputs)
+        cross_attention_mask = tf.cast(
+            tf.matmul(decoder_mask, encoder_mask, transpose_b=True),
+            dtype=self.compute_dtype,
+        )
+        attention_mask = tf.cast(
+            tf.matmul(decoder_mask, decoder_mask, transpose_b=True),
+            dtype=self.compute_dtype,
+        )
+        timestep_mask = tf.linalg.band_part(
+            tf.ones_like(attention_mask, dtype=self.compute_dtype), -1, 0
+        )
+        attention_mask = tf.multiply(attention_mask, timestep_mask)
+        decoder_embeddings = self.decoder_embedding(decoder_inputs)
+        # tf.print(
+        #     "DECODER EMBEDDINGS", decoder_embeddings.shape, "\n", decoder_embeddings
+        # )
+        decoder_embeddings = tf.squeeze(decoder_embeddings, axis=-2)
+        decoder_embeddings = decoder_embeddings + self.positional_encodings(
+            decoder_embeddings
+        )
+        transformer_output = self.transformer_decoder(
+            decoder_embeddings,
+            encoder_output,
+            self_attention_mask=attention_mask,
+            cross_attention_mask=cross_attention_mask,
+        )
+        output = transformer_output[:, -1, :]
+        output = self.dense_output(output)
+        # output = self.linear_activation(output)
+        # transformer_output_fake = self.linear_activation(
+        #     transformer_output
+        # )  # cheezy hack, might remove later
+        # tf.print("OUTPUT", output.shape)
+
+        return output
 
     def _extract_data(self, data):
         _, table_info, gotu_features = data
@@ -173,6 +255,8 @@ class GOTUModel(BaseNucleotideModel):
                 "num_attention_heads": self.num_attention_heads,
                 "dff": self.dff,
                 "use_attention_loss": self.use_attention_loss,
+                "start_token": self.start_token,
+                "end_token": self.end_token,
             }
         )
         return config
