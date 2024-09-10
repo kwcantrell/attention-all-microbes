@@ -159,6 +159,9 @@ class BaseNucleotideModel(tf.keras.Model):
         sequence_tokenizer=None,
         optimizer="rmsprop",
         polyval=None,
+        start_token=None,
+        end_token=None,
+        accuracy_tracker=None,
         **kwargs,
     ):
         if sequence_tokenizer is not None:
@@ -169,7 +172,12 @@ class BaseNucleotideModel(tf.keras.Model):
 
         if polyval is not None:
             self.feature_emb.pca_layer.polyval = polyval
-
+        if start_token is not None:
+            self.start_token = start_token
+        if end_token is not None:
+            self.end_token = end_token
+        if accuracy_tracker is not None:
+            self.accuracy_tracker = accuracy_tracker
         if o_ids is not None:
             self.o_ids = o_ids
             self.make_call_function()
@@ -209,7 +217,8 @@ class BaseNucleotideModel(tf.keras.Model):
             outputs, seq = self(inputs, training=True)
             reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
             # Compute regression loss
-            reg_loss = tf.reduce_mean(self.regresssion_loss(y, reg_out))
+
+            reg_loss = tf.reduce_mean(self.regresssion_loss(tf.squeeze(y, axis=-1), reg_out))
             loss = reg_loss
             if self.use_attention_loss:
                 seq_cat = tf.one_hot(seq, depth=6)  # san -> san6
@@ -255,17 +264,20 @@ class BaseNucleotideModel(tf.keras.Model):
         # Compute our own metrics
         self.loss_tracker.update_state(loss)
         self.metric_traker.update_state(reg_loss)
+        self.accuracy_tracker.update_state(y, reg_out)
         if self.use_attention_loss:
             self.confidence_tracker.update_state(asv_loss)
             return {
                 "loss": self.loss_tracker.result(),
                 "confidence": self.confidence_tracker.result(),
                 "mae": self.metric_traker.result(),
+                "accuracy": self.accuracy_tracker.result(),
             }
         else:
             return {
                 "loss": self.loss_tracker.result(),
                 "mae": self.metric_traker.result(),
+                "accuracy": self.accuracy_tracker.result(),
             }
 
     def test_step(self, data):
@@ -308,6 +320,7 @@ class BaseNucleotideModel(tf.keras.Model):
         # loss = tf.squeeze(loss, axis=-1)
         # loss = tf.reduce_mean(loss)
         self.loss_tracker.update_state(loss)
+        self.accuracy_tracker.update_state(y, reg_out)
 
         # Compute our own metrics
         self.metric_traker.update_state(reg_loss)
@@ -317,11 +330,13 @@ class BaseNucleotideModel(tf.keras.Model):
                 "loss": self.loss_tracker.result(),
                 "confidence": self.confidence_tracker.result(),
                 "mae": self.metric_traker.result(),
+                "accuracy": self.accuracy_tracker.result(),
             }
         else:
             return {
                 "loss": self.loss_tracker.result(),
                 "mae": self.metric_traker.result(),
+                "accuracy": self.accuracy_tracker.result(),
             }
 
     def summary(

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import biom
 from biom import load_table
 from unifrac import unweighted
 
@@ -204,12 +205,27 @@ def load_data(
 
             return table_dataset
 
+        def rarify_top_obs(biom_table: biom.Table, top_n=1000):
+            def filter_top_n(o_values, sample_id, table):
+                sorted_indices = np.argsort(o_values)[::-1]
+                top_indices = sorted_indices[:top_n]
+                new_values = np.zeros_like(o_values)
+                new_values[top_indices] = o_values[top_indices]
+                return new_values
+
+            rarified_table = biom_table.transform(
+                filter_top_n, axis="sample", inplace=False
+            )
+            return rarified_table
+
         sample_ids = table.ids(axis="sample")
         o_ids = table.ids(axis="observation")
         table_dataset = get_table_data(table.copy())
 
         gotu_table = load_table(biom_path)
+        gotu_table = rarify_top_obs(gotu_table)
         gotu_o_ids = gotu_table.ids(axis="observation")
+
         gotu_count = len(gotu_o_ids)
         gotu_dataset = get_table_data(gotu_table.copy(), add_by_1=True)
 
@@ -223,6 +239,7 @@ def load_data(
         )
         start_token = gotu_count + 1
         end_token = gotu_count + 2
+
         def apply(val=False, shuffle_buf=100):
             def _inner(ds):
                 def filter(samples, data, gotu_data):
@@ -239,6 +256,9 @@ def load_data(
                     @tf.function
                     def _helper(sparse_row):
                         indices = tf.cast(sparse_row.indices, dtype=tf.int32)  # [1, m]
+                        indices = tf.pad(
+                            indices, [[0, 1], [0, 0]], constant_values=end_token
+                        )
                         features = tf.pad(
                             indices,
                             [
@@ -251,7 +271,7 @@ def load_data(
                                 ],
                                 [0, 0],
                             ],
-                            constant_values=end_token,
+                            constant_values=0,
                         )
                         return features  # [max_features]
 
