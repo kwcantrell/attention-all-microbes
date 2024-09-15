@@ -1,10 +1,6 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from aam.sequence_utils import (
-    add_seq_and_count_pad,
-    sequence_attention_mask,
-)
 from aam.utils import float_mask
 
 
@@ -25,7 +21,7 @@ class ActivityRegularizationLayer(tf.keras.layers.Layer):
 @tf.keras.saving.register_keras_serializable(package="InputLayer")
 class InputLayer(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super(InputLayer, self).__init__(**kwargs)
         self.trainable = False
 
     def call(self, inputs):
@@ -45,10 +41,9 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         attention_layers,
         attention_ff,
         dropout_rate,
-        polyval=1.0,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super(NucleotideEmbedding, self).__init__(**kwargs)
         self.token_dim = token_dim
         self.max_bp = max_bp
         self.pca_hidden_dim = pca_hidden_dim
@@ -58,7 +53,6 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         self.attention_layers = attention_layers
         self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
-        self.random_generator = tf.random.Generator.from_non_deterministic_state()
 
         self.base_tokens = 6
         self.num_tokens = self.base_tokens * 150 + 2
@@ -72,6 +66,7 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             128, num_heads=2, num_layers=3, dropout=0.0
         )
 
+        self.asv_pos = tfm.nlp.layers.PositionEmbedding(500, name="asv_pos")
         self.sample_attention = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
@@ -88,58 +83,54 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
             initializer=tf.keras.initializers.GlorotNormal(),
             trainable=True,
         )
-        self.add_seq_and_count_pad = tf.function(add_seq_and_count_pad)
-        self.sequence_attention_mask = tf.function(sequence_attention_mask)
 
     def call(self, inputs, return_nuc_attention=True, training=False):
-        seq, _ = inputs
+        seq, counts = inputs
 
-        token_adjustment = (
-            tf.reshape(tf.range(self.max_bp), shape=[1, 1, self.max_bp])
-            * self.base_tokens
-        )
-        seq = seq + token_adjustment
-        # if self.trainable and training:
-        #     seq_mask = tf.random.uniform(
-        #         tf.shape(seq), minval=0, maxval=1, dtype=tf.float32
-        #     )
-        #     seq_mask = tf.greater(seq_mask, 0.9)
-        #     seq_mask = tf.cast(seq_mask, dtype=tf.int32)
-        #     seq = tf.multiply(seq, 1 - seq_mask)
+        ### Nucleotide level mask ###
+        asv_mask = tf.reduce_min(seq, axis=-1, keepdims=True)
+        asv_mask = float_mask(asv_mask, dtype=self.compute_dtype)
+
+        # randomly mask 2% in each ASV
+        if self.trainable and training:
+            seq_mask = tf.random.uniform(
+                tf.shape(seq), minval=0, maxval=1, dtype=tf.float32
+            )
+            seq_mask = tf.less_equal(seq_mask, 0.98)
+            seq_mask = tf.cast(seq_mask, dtype=tf.int32)
+            seq = tf.multiply(seq, seq_mask)
+
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=self.num_tokens - 1)
-
         output = self.emb_layer(seq)
         nuc_attention = self.avs_attention(output, training=training)
-
         output = nuc_attention[:, :, -1, :]
-
-        ### Masking ASVs ###
-        # if the first "nucleotide" is zero then the entire ASV was a pad
-        asv_mask = seq[:, :, :1]
-        asv_mask = tf.reduce_max(asv_mask, axis=-1, keepdims=True)
-        asv_mask = tf.cast(asv_mask, dtype=self.compute_dtype)
         output = output * asv_mask
-        ### Nucleotide Level ###
 
-        batch_dim = tf.shape(output)[0]
-        output = tf.concat(
-            [output, tf.tile(self.sample_embedding, (batch_dim, 1, 1))],
-            axis=1,
-        )
-        ### Mask ASV ###
+        # sample level embedding vector
+        output_shape = tf.shape(output)
+        batch_len = output_shape[0]
+        emb_len = output_shape[-1]
+        sample_emb_shape = [1 for _ in output.get_shape().as_list()]
+        sample_emb_shape[0] = batch_len
+        sample_emb_shape[-1] = emb_len
+        sample_embedding = tf.broadcast_to(self.sample_embedding, sample_emb_shape)
+        output = tf.concat([output, sample_embedding], axis=1)
+
+        ### Sample level mask ###
         attention_mask = tf.pad(asv_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
         attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
         attention_mask = tf.cast(attention_mask, dtype=tf.bool)
-        ### Sample Level ###
 
+        asv_pos = self.asv_pos(output)
+        output = output + asv_pos
         attention_output = self.sample_attention(
             output, attention_mask=attention_mask, training=training
         )
 
         if return_nuc_attention:
-            return (attention_output[:, -1, :], nuc_attention[:, :, :-1, :])
+            return attention_output[:, -1, :], nuc_attention[:, :, :-1, :]
         else:
-            return attention_output
+            return attention_output, counts
 
     def sequence_embedding(self, seq):
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=self.num_tokens - 1)
@@ -148,72 +139,79 @@ class NucleotideEmbedding(tf.keras.layers.Layer):
         return output[:, :, -1, :]
 
     def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "token_dim": self.token_dim,
-            "max_bp": self.max_bp,
-            "pca_hidden_dim": self.pca_hidden_dim,
-            "pca_heads": self.pca_heads,
-            "pca_layers": self.pca_layers,
-            "attention_heads": self.attention_heads,
-            "attention_layers": self.attention_layers,
-            "attention_ff": self.attention_ff,
-            "dropout_rate": self.dropout_rate,
-        }
-        return {**base_config, **config}
+        config = super(NucleotideEmbedding, self).get_config()
+        config.update(
+            {
+                "token_dim": self.token_dim,
+                "max_bp": self.max_bp,
+                "pca_hidden_dim": self.pca_hidden_dim,
+                "pca_heads": self.pca_heads,
+                "pca_layers": self.pca_layers,
+                "attention_heads": self.attention_heads,
+                "attention_layers": self.attention_layers,
+                "attention_ff": self.attention_ff,
+                "dropout_rate": self.dropout_rate,
+            }
+        )
+        return config
 
 
 @tf.keras.saving.register_keras_serializable(package="NucleotideAttention")
 class NucleotideAttention(tf.keras.layers.Layer):
     def __init__(self, hidden_dim, num_heads, num_layers, dropout, **kwargs):
-        super().__init__(**kwargs)
+        super(NucleotideAttention, self).__init__(**kwargs)
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
+        self.epsilon = 0.000001
 
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+            max_length=151, seq_axis=2, name="nuc_pos"
+        )
         self.attention_layers = []
         for i in range(self.num_layers):
             self.attention_layers.append(
                 NucleotideAttentionBlock(
                     num_heads=self.num_heads,
                     dropout=self.dropout,
+                    epsilon=self.epsilon,
                     name=("layer_%d" % i),
                 )
             )
-
-    def build(self, input_shape):
-        # token for asv
-        self.emd_dim = 64
-        self.ff = tf.keras.layers.Dense(self.emd_dim, use_bias=False)
-
-        # position encoding sublayer
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(max_length=151, seq_axis=2)
-
-        # output sublayer
-        self.ff_output = tf.keras.layers.Dense(self.hidden_dim, use_bias=False)
+        self.output_normalization = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
 
     def call(self, attention_input, attention_mask=None, training=False):
-        # add asv token
-        attention_input = self.ff(attention_input)
         attention_input = attention_input + self.pos_emb(attention_input)
-
         for layer_idx in range(self.num_layers):
             attention_input = self.attention_layers[layer_idx](
                 attention_input, training=training
             )
-        # extract asv token
-        nucleotide_output = self.ff_output(attention_input)
-        return nucleotide_output
+        output = self.output_normalization(attention_input)
+        return tf.cast(output, dtype=self.compute_dtype)
+
+    def get_config(self):
+        config = super(NucleotideAttention, self).get_config()
+        config.update(
+            {
+                "hidden_dim": self.hidden_dim,
+                "num_heads": self.num_heads,
+                "num_layers": self.num_layers,
+                "dropout": self.dropout,
+            }
+        )
+        return config
 
 
 @tf.keras.saving.register_keras_serializable(package="NucleotideAttentionBlock")
 class NucleotideAttentionBlock(tf.keras.layers.Layer):
-    def __init__(self, num_heads, dropout, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, num_heads, dropout, epsilon=0.000001, **kwargs):
+        super(NucleotideAttentionBlock, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.dropout = dropout
-        self.singular_values = 8
+        self.epsilon = epsilon
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
@@ -242,7 +240,9 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
             tf.math.sqrt(float(self.head_size)), dtype=self.compute_dtype
         )
         self.attention_dropout = tf.keras.layers.Dropout(self.dropout)
-        self.attention_norm = tf.keras.layers.LayerNormalization(epsilon=0.0001)
+        self.attention_norm = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
 
         self.multihead_value_einsum = "sahnj,sahjk->sanhk"
         self.o_dense = tf.keras.layers.Dense(self.hidden_dim, use_bias=False)
@@ -286,95 +286,164 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
             ],
             reduce_retracing=True,
         )
-        print(attention_input_shape)
 
-        self.ff = tf.keras.Sequential(
-            [
-                tf.keras.layers.LayerNormalization(epsilon=0.0001),
-                tf.keras.layers.Dense(128, activation="relu"),
-                tf.keras.layers.Dense(self.num_heads * self.head_size),
-            ]
+        self.ff_norm = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
         )
+        self.inter_ff = tf.keras.layers.Dense(128, activation="relu")
+        self.outer_ff = tf.keras.layers.Dense(self.num_heads * self.head_size)
         self.ff_dropout = tf.keras.layers.Dropout(self.dropout)
 
-        super().build(attention_input_shape)
+        super(NucleotideAttentionBlock, self).build(attention_input_shape)
 
     def call(self, attention_input, batch_size=8, training=False):
         # scaled dot product attention sublayer
         attention_input = self.attention_norm(attention_input)
+        attention_input = tf.cast(attention_input, dtype=self.compute_dtype)
+
         attention_output = self.scaled_dot_attention(attention_input)
         attention_output = self.attention_dropout(attention_output, training=training)
 
         ff_input = attention_input + attention_output
-        ff_output = self.ff(ff_input) + ff_input
-        return self.ff_dropout(ff_output)
+        ff_output = self.ff_norm(ff_input)
+        ff_output = self.inter_ff(ff_output)
+        ff_output = self.outer_ff(ff_output)
+        return self.ff_dropout(ff_output + ff_input)
 
     def get_config(self):
-        base_config = super().get_config()
+        config = super(NucleotideAttentionBlock, self).get_config()
 
-        config = {
-            "hidden_dim": self.hidden_dim,
-            "num_heads": self.num_heads,
-            "num_layers": self.num_layers,
-            "dropout": self.dropout,
-        }
+        config.update(
+            {
+                "hidden_dim": self.hidden_dim,
+                "num_heads": self.num_heads,
+                "num_layers": self.num_layers,
+                "dropout": self.dropout,
+                "epsilon": self.epsilon,
+            }
+        )
 
-        return {**base_config, **config}
+        return config
 
 
 @tf.keras.saving.register_keras_serializable(package="TransferAttention")
 class TransferAttention(tf.keras.layers.Layer):
     def __init__(
         self,
-        dropout_rate=0,
-        d_model=128,
+        dropout_rate=0.0,
+        hidden_dim=128,
         **kwargs,
     ):
-        super().__init__(**kwargs)
-        self.sample_attention = tfm.nlp.models.TransformerEncoder(
+        super(TransferAttention, self).__init__(**kwargs)
+        self.epsilon = 0.000001
+        self.num_heads = 4
+        self.hidden_dim = hidden_dim
+        self.dropout = dropout_rate
+        self.head_size = int(self.hidden_dim / self.num_heads)
+
+        self.feature_multihead_attention = tf.keras.layers.MultiHeadAttention(
+            self.num_heads, hidden_dim, use_bias=False, dropout=self.dropout
+        )
+        self.feature_rank = tfm.nlp.layers.PositionEmbedding(500)
+
+        self.count_multihead_attention = tf.keras.layers.MultiHeadAttention(
+            self.num_heads, hidden_dim, use_bias=True, dropout=self.dropout
+        )
+        self.count_inter_ff = tf.keras.layers.Dense(1024, use_bias=True)
+        self.count_outer_ff = tf.keras.layers.Dense(128, activation="relu")
+        self.count_rank = tfm.nlp.layers.PositionEmbedding(500)
+        self.count_norm = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
+
+        self.ff_norm = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
+        self.inter_ff = tf.keras.layers.Dense(128, activation="relu")
+        self.outer_ff = tf.keras.layers.Dense(self.num_heads * self.head_size)
+
+        self.encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
-            dropout_rate=0.0,
             intermediate_size=1024,
-            norm_first=True,
-            activation="relu",
-            name="transfer_attention",
+            dropout_rate=self.dropout,
         )
+        self.reg_in = tf.keras.layers.Dense(128, activation="relu")
         self.reg_out = tf.keras.layers.Dense(1, use_bias=True)
-
-    def build(self, input_shape):
-        seq_shape, _ = input_shape
-        # hidden_dim = seq_shape[-1]
-        # self.count_ff = tf.keras.Sequential(
-        #     [
-        #         tf.keras.layers.Dense(1024, use_bias=True, activation="relu"),
-        #         tf.keras.layers.Dense(hidden_dim, use_bias=True),
-        #         tf.keras.layers.LayerNormalization(),
-        #         tf.keras.layers.Dropout(0.0),
-        #     ]
-        # )
+        self.dropout_layer = tf.keras.layers.Dropout(self.dropout)
 
     def call(self, inputs, training=False):
-        attention_input, rel_count = inputs
+        features, counts = inputs
 
-        attention_mask = tf.pad(rel_count, [[0, 0], [0, 1]], constant_values=1)
+        # # convert to rel_abundance
+        # counts = counts / tf.reduce_sum(counts, axis=-1, keepdims=True)
+
+        # get attention mask
+        attention_mask = float_mask(counts)
+        attention_mask = tf.pad(attention_mask, [[0, 0], [0, 1]], constant_values=1)
         attention_mask = tf.expand_dims(attention_mask, axis=-1)
-        attention_mask = float_mask(
-            tf.matmul(attention_mask, attention_mask, transpose_b=True),
-            dtype=self.compute_dtype,
+        attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
+
+        # add pad to account for sample token
+        counts = tf.pad(counts, [[0, 0], [0, 1]], constant_values=0)
+        counts = tf.expand_dims(counts, axis=-1)
+
+        # shift tensors such that sample token is at the front of tensor
+        counts = tf.roll(counts, shift=1, axis=1)
+        features = tf.roll(features, shift=1, axis=1)
+        attention_mask = tf.roll(attention_mask, shift=1, axis=1)
+
+        # project counts
+        counts = self.count_inter_ff(counts)
+        counts = self.count_outer_ff(counts)
+        # counts = tf.cast(self.count_norm(counts), dtype=self.compute_dtype)
+
+        # add rank
+        counts = counts + self.count_rank(counts)
+        features = features + self.feature_rank(features)
+
+        # compute attention
+        count_value_attention = self.count_multihead_attention(
+            counts,
+            counts,
+            return_attention_scores=False,
+            attention_mask=attention_mask,
+            training=training,
         )
-
-        rel_count = tf.expand_dims(rel_count, axis=-1)
-        # rel_count = self.count_ff(rel_count)
-        rel_count = tf.pad(rel_count, [[0, 0], [0, 1], [0, 0]], constant_values=0)
-
-        attention_input = attention_input + rel_count
-        attention_input = self.sample_attention(
-            attention_input, attention_mask=attention_mask, training=training
+        feature_value_attention = self.feature_multihead_attention(
+            features,
+            features,
+            return_attention_scores=False,
+            attention_mask=attention_mask,
+            training=training,
         )
+        attention_output = count_value_attention + feature_value_attention
 
-        reg_out = self.reg_out(attention_input[:, -1, :])
+        # send attention_output through ff network
+        normalize_attention = tf.cast(
+            self.ff_norm(attention_output), dtype=self.compute_dtype
+        )
+        normalize_attention = self.inter_ff(normalize_attention)
+        normalize_attention = self.outer_ff(normalize_attention)
+
+        final_attention = attention_output + normalize_attention
+        final_attention = self.dropout_layer(final_attention, training=training)
+
+        # regression on sample embedding
+        reg_out = self.encoder(
+            # final_attention, attention_mask=attention_mask, training=training
+            count_value_attention + features,
+            attention_mask=attention_mask,
+            training=training,
+        )
+        reg_out = self.reg_in(reg_out[:, 0, :])
+        reg_out = self.reg_out(reg_out)
         return reg_out
+
+    def get_config(self):
+        config = super(TransferAttention, self).get_config()
+        config.update({"dropout_rate": self.dropout_rate, "d_model": self.d_model})
+        return config
 
 
 @tf.keras.saving.register_keras_serializable(package="ReadHead")
@@ -390,7 +459,7 @@ class ReadHead(tf.keras.layers.Layer):
         reg_ff=1024,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super(ReadHead, self).__init__(**kwargs)
         self.max_bp = max_bp
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -399,22 +468,40 @@ class ReadHead(tf.keras.layers.Layer):
         self.output_nuc = output_nuc
 
         if output_nuc:
-            self.attention_out = tf.keras.Sequential(
-                [
-                    # tf.keras.layers.Dense(1024, use_bias=True, activation="relu"),
-                    tf.keras.layers.Dense(128, use_bias=True, activation="relu"),
-                    tf.keras.layers.LayerNormalization(epsilon=0.0001),
-                    tf.keras.layers.Dense(6),
-                ]
-            )
+            self.att_ff = tf.keras.layers.Dense(6)
+            self.softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
 
     def call(self, inputs):
         reg_out, seq_out = inputs
 
         if self.output_nuc:
-            seq_out = self.attention_out(seq_out)
+            seq_out = self.att_ff(seq_out)
+            seq_out = self.softmax(seq_out)
 
-        return (reg_out, seq_out)
+        return reg_out, seq_out
+
+    #     self.reg_inter_ff = tf.keras.layers.Dense(128, activation="relu")
+    #     self.reg_out_ff = tf.keras.layers.Dense(128)
+    #
+    #     if output_nuc:
+    #         self.att_inter_ff = tf.keras.layers.Dense(128, activation="relu")
+    #         self.att_out_ff = tf.keras.layers.Dense(128, activation="relu")
+    #         self.seq_logits = tf.keras.layers.Dense(6)
+    #         self.softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
+    #
+    # def call(self, inputs):
+    #     reg_out, seq_out = inputs
+    #
+    #     reg_out = self.reg_inter_ff(reg_out)
+    #     reg_out = self.reg_out_ff(reg_out)
+    #
+    #     if self.output_nuc:
+    #         seq_out = self.att_inter_ff(seq_out)
+    #         seq_out = self.att_out_ff(seq_out)
+    #         seq_out = self.seq_logits(seq_out)
+    #         seq_out = self.softmax(seq_out)
+    #
+    #     return reg_out, seq_out
 
     def sequence_logits(self, sequence_embeddings):
         seq_out = tf.reshape(
@@ -429,12 +516,16 @@ class ReadHead(tf.keras.layers.Layer):
         return seq_out
 
     def get_config(self):
-        base_config = super().get_config()
-        config = {
-            "max_bp": self.max_bp,
-            "hidden_dim": self.hidden_dim,
-            "num_heads": self.num_heads,
-            "num_layers": self.num_layers,
-            "output_dim": self.output_dim,
-        }
-        return {**base_config, **config}
+        config = super(ReadHead, self).get_config()
+        config.update(
+            {
+                "max_bp": self.max_bp,
+                "hidden_dim": self.hidden_dim,
+                "num_heads": self.num_heads,
+                "num_layers": self.num_layers,
+                "output_dim": self.output_dim,
+                "output_nuc": self.output_nuc,
+                "reg_ff": self.reg_ff,
+            }
+        )
+        return config

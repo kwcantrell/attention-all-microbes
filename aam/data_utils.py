@@ -75,7 +75,6 @@ def batch_dataset(
         training_dataset = dataset.take(size)
     else:
         training_dataset = dataset
-    training_dataset = training_dataset
 
     if shuffle:
         training_dataset = training_dataset.shuffle(size, reshuffle_each_iteration=True)
@@ -141,6 +140,8 @@ def load_data(
     metadata_path=None,
     metadata_col=None,
     missing_samples_flag=None,
+    is_16S=True,
+    max_token_per_sample=1500,
 ):
     if isinstance(table_path, str):
         table = load_table(table_path)
@@ -221,7 +222,7 @@ def load_data(
         }
         return data_obj
 
-    if metadata_path:
+    if metadata_path and is_16S:
         metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
         table, metadata = validate_metadata(table, metadata, missing_samples_flag)
         sample_ids = table.ids(axis="sample")
@@ -230,7 +231,7 @@ def load_data(
 
         regression_data = extract_col(metadata, metadata_col, output_dtype=np.float32)
         regression_dataset, mean, std = convert_to_normalized_dataset(
-            regression_data, "z"
+            regression_data, "none"
         )
 
         training_dataset, validation_dataset = batch_dataset(
@@ -253,3 +254,103 @@ def load_data(
             "mean": mean,
             "std": std,
         }
+    if metadata_path and not is_16S:
+        metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
+
+        table = load_table(table_path)
+
+        def _get_table_data(table_data):
+            coo = table_data.transpose().matrix_data.tocoo()
+            (data, (row, col)) = (coo.data, coo.coords)
+            data = data
+            row = row
+            col = col
+            return data, row, col
+
+        table, metadata = validate_metadata(table, metadata, missing_samples_flag)
+        sample_ids = table.ids(axis="sample")
+        np.random.shuffle(sample_ids)
+        metadata = filter_and_reorder(metadata, sample_ids)
+        s_ids = table.ids()
+        o_ids = table.ids(axis="observation")
+
+        regression_data = extract_col(metadata, metadata_col, output_dtype=np.float32)
+        regression_dataset, mean, std = convert_to_normalized_dataset(
+            regression_data, "none"
+        )
+        # uni_dist = unweighted(table_path, "/home/kalen/amplicon-gpt/tree.nwk").data
+        # uni_dataset = tf.data.Dataset.from_tensor_slices(uni_dist)
+
+        data, row, col = _get_table_data(table)
+
+        indices = tf.concat(
+            [tf.expand_dims(row, axis=1), tf.expand_dims(col, axis=1)], axis=1
+        )
+        table = tf.sparse.SparseTensor(
+            indices=tf.cast(indices, dtype=tf.int64),
+            values=data,
+            dense_shape=[len(s_ids), len(o_ids)],
+        )
+        table = tf.sparse.reorder(table)
+        table = tf.data.Dataset.from_tensor_slices(table)
+        training_size = int(len(s_ids) * 0.85)
+
+        def apply(val=False, shuffle_buf=100):
+            def _inner(ds):
+                def filter(sample, data, regression):
+                    sort_order = tf.argsort(data.values, direction="DESCENDING")
+                    sort_order = sort_order[:max_token_per_sample]
+                    obs = data.indices + 1  # account for pad token
+                    obs = tf.gather(obs, sort_order)
+                    obs = tf.squeeze(obs, axis=-1)
+
+                    count = data.values
+                    count = count / tf.reduce_sum(count, axis=-1, keepdims=True)
+                    count = tf.gather(count, sort_order)
+                    # return sample, (obs, count), regression
+                    return (obs, count), regression
+
+                def uni_filter(samples, data, regression):
+                    return data, tf.gather(regression, samples, axis=1)
+
+                if val:
+                    ds = ds.skip(training_size)
+                else:
+                    ds = ds.take(training_size)
+
+                ds = ds.map(filter)
+
+                if shuffle_samples:
+                    ds = ds.shuffle(shuffle_buf)
+
+                ds = ds.padded_batch(8)
+                # ds = ds.map(uni_filter)
+
+                return ds
+
+            return _inner
+
+        samples = tf.data.Dataset.range(len(s_ids))
+        dataset = tf.data.Dataset.zip(samples, table, regression_dataset)
+        train_dataset = dataset.apply(apply(val=False, shuffle_buf=len(o_ids)))
+        val_dataset = dataset.apply(apply(val=True, shuffle_buf=len(o_ids)))
+        sequence_tokenizer = tf.keras.layers.TextVectorization(
+            max_tokens=8,
+            split="character",
+            output_mode="int",
+            output_sequence_length=150,
+            name="tokenizer",
+            vocabulary=["", "[UNK]", "g", "a", "t", "c"],
+        )
+        data_obj = {
+            "sample_ids": s_ids,
+            "total_tokens": len(o_ids) + 5,
+            "max_token_per_sample": max_token_per_sample,
+            "o_ids": tf.constant(o_ids),
+            "sequence_tokenizer": sequence_tokenizer,
+            "training_dataset": train_dataset,
+            "validation_dataset": val_dataset,
+            "mean": 0,
+            "std": 1,
+        }
+        return data_obj

@@ -38,15 +38,16 @@ class MyLRSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 class LRDecrease(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self, lr=0.0005, decay=0.99999):
         self.lr = tf.Variable(lr, trainable=False)
-        self.decay = 0.99995
+        self.decay = 0.9998
 
     def __call__(self, step):
         lr = self.lr * self.decay
-        lr = tf.math.maximum(0.0001, lr)
+        lr = tf.cond(lr < 0.0001, lambda: 0.0001, lambda: lr)
+
         self.lr.assign(lr)
 
         return lr
 
     def get_config(self):
-        config = {}
-        return {**config}
+        config = {"lr": self.lr, "decay": self.decay}
+        return config

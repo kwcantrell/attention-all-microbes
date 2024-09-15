@@ -1,6 +1,5 @@
 import abc
 
-from keras.src.backend import dtype
 import tensorflow as tf
 
 from aam.layers import (
@@ -57,7 +56,7 @@ class BaseNucleotideModel(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.regresssion_loss = None
         self.attention_loss = tf.keras.losses.CategoricalCrossentropy(
-            from_logits=True, reduction="none"
+            from_logits=False, reduction="none"
         )
         self.confidence_tracker = tf.keras.metrics.Mean(name="confidence")
         self.metric_traker = None
@@ -65,6 +64,7 @@ class BaseNucleotideModel(tf.keras.Model):
         self.counter = self.add_weight(
             "counter", initializer="zeros", trainable=False, dtype=tf.float32
         )
+        self.nucleotide_position = tf.range(0, 4 * 150, 4, dtype=tf.int32)
 
         def shift_and_scale(scale, shift):
             def _inner(tensor):
@@ -113,19 +113,24 @@ class BaseNucleotideModel(tf.keras.Model):
 
         # @tf.function
         def one_step(inputs, training=False):
-            print("model trace!", type(inputs), training)
-            table_info = inputs
-            pad_size = self.get_max_unique_asv(table_info)
-            features, rclr = tf.map_fn(
-                lambda x: self.get_table_data(x, pad_size, self.o_ids),
-                table_info,
-                fn_output_signature=(tf.string, tf.float32),
-            )
-            features = tf.cast(self.sequence_tokenizer(features), tf.int32)
-            features = tf.stop_gradient(features)
-            rclr = tf.stop_gradient(rclr)
+            # print("model trace!", type(inputs), training)
+            # table_info = inputs
+            # pad_size = self.get_max_unique_asv(table_info)
+            # features, rclr = tf.map_fn(
+            #     lambda x: self.get_table_data(x, pad_size, self.o_ids),
+            #     table_info,
+            #     fn_output_signature=(tf.string, tf.float32),
+            # )
+            # features = tf.cast(self.sequence_tokenizer(features), tf.int32)
+            # features = tf.stop_gradient(features)
+            # rclr = tf.stop_gradient(rclr)
+            tokens, rclr = inputs
+            token_mask = float_mask(tokens, dtype=tf.int32)
+            features = tokens + tf.reshape(self.nucleotide_position, shape=[1, 1, -1])
+            features = tf.multiply(features, token_mask)
             output = self.model_step((features, rclr), training=training)
-            return (output, features)
+
+            return (output, tokens)
 
         self.call_function = one_step
 
@@ -205,6 +210,7 @@ class BaseNucleotideModel(tf.keras.Model):
             # Forward pass
             outputs, seq = self(inputs, training=True)
             reg_out, logits = tf.nest.flatten(outputs, expand_composites=True)
+
             # Compute regression loss
             reg_loss = tf.reduce_mean(self.regresssion_loss(y, reg_out))
             loss = reg_loss
@@ -228,8 +234,6 @@ class BaseNucleotideModel(tf.keras.Model):
                 # asv_level
                 asv_loss = tf.reduce_sum(asv_loss, axis=-1, keepdims=True)  # sa -> s1
                 asv_loss = asv_loss / asv_counts
-                # asv_loss = asv_loss * tf.cast(asv_loss > 1.5e-4, dtype=tf.float32)
-                # tf.print(tf.shape(loss), tf.shape(asv_loss))
 
                 # total
                 loss = loss + tf.reduce_sum(asv_loss)
@@ -440,8 +444,9 @@ class UnifracModel(BaseNucleotideModel):
         return (reg_out, att_out)
 
     def _extract_data(self, data):
-        (_, table_info), y = data
-        return (table_info, y)
+        # (_, table_info), y = data
+        # return (table_info, y)
+        return data
 
     @tf.function
     def sequence_embedding(self, seq, squeeze=True):
@@ -466,6 +471,7 @@ class UnifracModel(BaseNucleotideModel):
 
         Args:
             seq (StringTensor): ASV sequences.
+
 
         Returns:
             _type_: _description_
@@ -550,16 +556,6 @@ class TransferLearnNucleotideModel(BaseNucleotideModel):
     def model_step(self, inputs, training=False):
         inputs = self.input_layer(inputs)
         seq, rel_count = inputs
-
-        count_mask = tf.random.uniform(
-            tf.shape(rel_count), minval=0, maxval=1, dtype=tf.float16
-        )
-        count_mask = tf.less(count_mask, 0.9)
-        count_mask = tf.cast(count_mask, dtype=tf.float16)
-        rel_count = tf.multiply(rel_count, count_mask)
-
-        count_mask = tf.expand_dims(count_mask, axis=-1)
-        seq = tf.multiply(seq, tf.cast(count_mask, dtype=tf.int32))
 
         embeddings = self.base_model.feature_emb(
             (seq, rel_count), return_nuc_attention=False
