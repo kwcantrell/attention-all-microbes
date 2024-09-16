@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.stats
 import pandas as pd
 import tensorflow as tf
 from biom import load_table
@@ -28,18 +29,23 @@ def filter_and_reorder(metadata, ids):
     return metadata
 
 
-def extract_col(metadata, col, output_dtype=None):
+def extract_col(metadata, col, is_categorical):
     metadata_col = metadata[col]
-    if output_dtype is not None:
-        metadata_col = metadata_col.astype(output_dtype)
+    if not is_categorical:
+        metadata_col = metadata_col.astype(np.float32)
+        return metadata_col
+
+    metadata_col = metadata_col.astype("category")
     return metadata_col
 
 
 def load_data(
     table_path,
+    is_categorical,
+    metadata_path,
+    metadata_col,
+    class_labels=None,
     shuffle_samples=True,
-    metadata_path=None,
-    metadata_col=None,
     missing_samples_flag=None,
     max_token_per_sample=225,
 ):
@@ -52,13 +58,42 @@ def load_data(
         return data, row, col
 
     table = load_table(table_path)
+    shuffle_ids = table.ids()
+    np.random.shuffle(shuffle_ids)
+    table = table.sort_order(shuffle_ids, axis="sample")
+
     df = pd.read_csv(metadata_path, sep="\t", index_col=0)[[metadata_col]]
+    cat_labels = None
     table, df = validate_metadata(table, df, missing_samples_flag)
     filter_ids = table.ids()
     df = filter_and_reorder(df, filter_ids)
-    regression_data = extract_col(df, metadata_col, output_dtype=np.float32)
-    regression_data = tf.expand_dims(regression_data, axis=-1)
-    regression_dataset = tf.data.Dataset.from_tensor_slices(regression_data)
+    target_data = extract_col(df, metadata_col, is_categorical=is_categorical)
+    cat_labels = None
+    cat_counts = None
+    num_classes = None
+    max_density = None
+    mean = None
+    std = None
+    if is_categorical:
+        cat_labels = target_data.cat.categories
+        cat_counts = target_data.value_counts()
+        cat_counts = cat_counts.reindex(cat_labels).to_numpy().astype(np.float32)
+        target_data = target_data.cat.codes
+        num_classes = np.max(target_data) + 1
+        target_data = tf.expand_dims(target_data, axis=-1)
+        target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
+    else:
+        mean = np.mean(target_data)
+        std = np.std(target_data)
+        target_data = (target_data - mean) / std
+        density = scipy.stats.gaussian_kde(target_data)
+        y = density(target_data).astype(np.float32)
+        max_density = np.max(y)
+        target_data = tf.expand_dims(target_data, axis=-1)
+        y = tf.expand_dims(y, axis=-1)
+        target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
+        y_dataset = tf.data.Dataset.from_tensor_slices(y)
+        target_dataset = tf.data.Dataset.zip(target_dataset, y_dataset)
 
     s_ids = table.ids()
     o_ids = table.ids(axis="observation")
@@ -90,7 +125,7 @@ def load_data(
 
     def process_dataset(val=False, shuffle_buf=100):
         def _inner(ds):
-            def process_table(data, regression_data):
+            def process_table(data, target_data):
                 sorted_order = tf.argsort(data.values, axis=-1, direction="DESCENDING")
 
                 asv_indices = tf.reshape(data.indices, shape=[-1])
@@ -102,10 +137,15 @@ def load_data(
 
                 encodings = tf.gather(asv_encodings, sorted_asv_indices)
                 tokens = lookup_table.lookup(encodings).to_tensor()
-                return (tf.cast(tokens, dtype=tf.int32), counts), regression_data
+                if is_categorical:
+                    return (tf.cast(tokens, dtype=tf.int32), counts), tf.squeeze(
+                        target_data, axis=-1
+                    )
+                else:
+                    return (tf.cast(tokens, dtype=tf.int32), counts), target_data
 
-            def filter(table_data, regression_data):
-                return table_data, regression_data
+            def filter(table_data, target_data):
+                return table_data, target_data
 
             if shuffle_samples and not val:
                 ds = ds.shuffle(shuffle_buf)
@@ -120,7 +160,7 @@ def load_data(
     dataset_size = len(s_ids)
     training_size = int(dataset_size * 0.9)
 
-    dataset = tf.data.Dataset.zip(table, regression_dataset)
+    dataset = tf.data.Dataset.zip(table, target_dataset)
     train_dataset = (
         dataset.take(training_size)
         .cache()
@@ -133,22 +173,17 @@ def load_data(
         .apply(process_dataset(val=True))
         .prefetch(tf.data.AUTOTUNE)
     )
-    sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens=8,
-        split="character",
-        output_mode="int",
-        output_sequence_length=150,
-        name="tokenizer",
-        vocabulary=["", "[UNK]", "g", "a", "t", "c"],
-    )
     data_obj = {
         "sample_ids": s_ids,
         "o_ids": o_ids,
-        "sequence_tokenizer": sequence_tokenizer,
         "training_dataset": train_dataset,
         "validation_dataset": val_dataset,
-        "mean": 0,
-        "std": 1,
         "metadata": df,
+        "num_classes": num_classes,
+        "cat_labels": cat_labels,
+        "cat_counts": cat_counts,
+        "max_density": max_density,
+        "mean": mean,
+        "std": std,
     }
     return data_obj

@@ -7,8 +7,6 @@ import scipy
 import seaborn as sns
 import tensorflow as tf
 
-from aam.losses import denormalize
-
 
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0 * np.array(data)
@@ -19,8 +17,11 @@ def mean_confidence_interval(data, confidence=0.95):
 
 
 @tf.keras.saving.register_keras_serializable(package="mean_absolute_error")
-def mean_absolute_error(dataset, y, hue, hue_label, model, fname, shift, scale):
+def mean_absolute_error(dataset, model, fname):
     pred_val, true_val = model.predict(dataset)
+    pred_val = tf.reshape(pred_val, shape=[-1]).numpy()
+    true_val = tf.reshape(true_val, shape=[-1]).numpy()
+
     pred_val = pred_val.astype(np.float32)
     true_val = true_val.astype(np.float32)
     mae = np.mean(np.abs(true_val - pred_val))
@@ -37,19 +38,55 @@ def mean_absolute_error(dataset, y, hue, hue_label, model, fname, shift, scale):
     diag_xx = np.linspace(min_x, max_x, 50)
     diag_yy = p(diag_xx)
     data = {"pred": pred_val, "true": true_val}
-    if hue is not None:
-        data[hue_label] = hue
-        data = pd.DataFrame(data=data)
-        plot = sns.scatterplot(data, x="true", y="pred", hue=hue_label)
-    else:
-        data = pd.DataFrame(data=data)
-        plot = sns.scatterplot(data, x="true", y="pred")
+    data = pd.DataFrame(data=data)
+    plot = sns.scatterplot(data, x="true", y="pred")
     plt.plot(xx, yy)
     plt.plot(diag_xx, diag_yy)
     mae = "%.4g" % mae
     plot.set(xlabel="True")
     plot.set(ylabel="Predicted")
     plot.set(title=f"MAE: {mae}")
+    plt.savefig(fname)
+    plt.close()
+
+
+@tf.keras.saving.register_keras_serializable(package="mean_absolute_error")
+def confusion_matrix(dataset, model, fname, cat_labels=None):
+    y_pred, y_true = model.predict(dataset)
+    cf_matrix = tf.math.confusion_matrix(y_true, y_pred).numpy()
+    group_counts = ["{0:0.0f}".format(value) for value in cf_matrix.flatten()]
+    group_percentages = [
+        "{0:.2%}".format(value) for value in cf_matrix.flatten() / np.sum(cf_matrix)
+    ]
+    labels = [f"{v1}\n{v2}" for v1, v2 in zip(group_counts, group_percentages)]
+    labels = np.asarray(labels).reshape(cf_matrix.shape)
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax = sns.heatmap(
+        cf_matrix,
+        annot=labels,
+        xticklabels=cat_labels,
+        yticklabels=cat_labels,
+        fmt="",
+    )
+    # ax.xaxis.tick_top()
+    # ax.xaxis.set_label_position("top")
+    import textwrap
+
+    # ax.set_xticklabels(labels, rotation=0)
+    # plt.xticks(rotation=45)
+    # plt.yticks(rotation=0)
+
+    def wrap_labels(ax, width, break_long_words=False):
+        labels = []
+        for label in ax.get_xticklabels():
+            text = label.get_text()
+            labels.append(
+                textwrap.fill(text, width=width, break_long_words=break_long_words)
+            )
+        ax.set_xticklabels(labels, rotation=0)
+        ax.set_yticklabels(labels, rotation=0)
+
+    wrap_labels(ax, 10)
     plt.savefig(fname)
     plt.close()
 
@@ -139,12 +176,6 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         self,
         title,
         dataset,
-        metadata,
-        y_col,
-        hue_col=None,
-        hue_label=None,
-        shift=None,
-        scale=None,
         out_dir="",
         report_back_after=5,
         **kwargs,
@@ -152,19 +183,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         super().__init__(**kwargs)
         self.title = title
         self.dataset = dataset
-        self.metadata = metadata
-        self.y_col = y_col
-        self.hue_col = hue_col
-        self.hue_label = hue_label
-        self.shift = shift
-        self.scale = scale
         self.out_dir = out_dir
         self.report_back_after_epochs = report_back_after
-        self.y = metadata[y_col].to_list()
-        if hue_col:
-            self.hue = metadata[hue_col].to_list()
-        else:
-            self.hue = None
 
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
@@ -173,13 +193,8 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         if epoch % self.report_back_after_epochs == 0:
             mean_absolute_error(
                 self.dataset,
-                self.y,
-                self.hue,
-                self.hue_label,
                 self.model,
                 fname=os.path.join(self.out_dir, f"MAE-{self.title}.png"),
-                shift=self.shift,
-                scale=self.scale,
             )
         return super().on_epoch_end(epoch, logs)
 
@@ -188,12 +203,49 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
         config = {
             "title": self.title,
             "dataset": self.dataset,
-            "metadata": self.metadata,
-            "y_col": self.y_col,
-            "hue_col": self.hue_col,
-            "hue_label": self.hue_label,
-            "shift": self.shift,
-            "scale": self.scale,
+            "out_dir": self.out_dir,
+            "report_back_after": self.report_back_after,
+        }
+        return {**base_config, **config}
+
+
+@tf.keras.saving.register_keras_serializable(package="ConfusionMatrix")
+class ConfusionMatrix(tf.keras.callbacks.Callback):
+    def __init__(
+        self,
+        title,
+        dataset,
+        cat_labels=None,
+        out_dir="",
+        report_back_after=5,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.title = title
+        self.dataset = dataset
+        self.cat_labels = cat_labels
+        self.out_dir = out_dir
+        self.report_back_after_epochs = report_back_after
+
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % self.report_back_after_epochs == 0:
+            confusion_matrix(
+                self.dataset,
+                self.model,
+                fname=os.path.join(self.out_dir, f"{self.title}.png"),
+                cat_labels=self.cat_labels,
+            )
+        return super().on_epoch_end(epoch, logs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            "title": self.title,
+            "dataset": self.dataset,
+            "cat_labels": self.cat_labels,
             "out_dir": self.out_dir,
             "report_back_after": self.report_back_after,
         }

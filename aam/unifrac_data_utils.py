@@ -7,22 +7,13 @@ from scipy.stats import rankdata
 from scipy.sparse import csr_matrix
 from biom import Table
 from biom.util import biom_open
-import os
 
 
 def load_data(
     table_path,
-    max_bp,
-    batch_size,
-    repeat=1,
     shuffle_samples=True,
-    train_percent=0.9,
     tree_path=None,
-    metadata_path=None,
-    metadata_col=None,
-    missing_samples_flag=None,
-    is_16S=True,
-    max_token_per_sample=225,
+    max_token_per_sample=300,
     temp_table_path="temp_table.biom",
 ):
     def _get_unifrac_data(table_path, tree_path):
@@ -39,9 +30,6 @@ def load_data(
         return data, row, col
 
     def _preprocess_table(table_path):
-        if os.path.isfile(temp_table_path):
-            print("file exists!")
-            return temp_table_path
         table = load_table(table_path)
         table_data = table.matrix_data.tocoo()
         counts, (row, col) = table_data.data, table_data.coords
@@ -99,13 +87,10 @@ def load_data(
                 sorted_asv_indices = tf.gather(asv_indices, sorted_order)[
                     :max_token_per_sample
                 ]
-                counts = tf.gather(data.values, sorted_order)[:max_token_per_sample]
-                counts = tf.math.log1p(counts)
 
                 encodings = tf.gather(asv_encodings, sorted_asv_indices)
                 tokens = lookup_table.lookup(encodings).to_tensor()
-                # tokens += tf.expand_dims(nucleotide_position, axis=0)
-                return sample, (tf.cast(tokens, dtype=tf.int32), counts), unifrac_data
+                return sample, tf.cast(tokens, dtype=tf.int32), unifrac_data
 
             def filter(samples, table_data, unifrac_data):
                 return table_data, tf.gather(unifrac_data, samples, axis=1)
@@ -136,22 +121,11 @@ def load_data(
         .apply(process_dataset(val=True))
         .prefetch(tf.data.AUTOTUNE)
     )
-    sequence_tokenizer = tf.keras.layers.TextVectorization(
-        max_tokens=8,
-        split="character",
-        output_mode="int",
-        output_sequence_length=150,
-        name="tokenizer",
-        vocabulary=["", "[UNK]", "g", "a", "t", "c"],
-    )
     data_obj = {
         "sample_ids": s_ids,
         "o_ids": o_ids,
-        "sequence_tokenizer": sequence_tokenizer,
         "training_dataset": train_dataset,
         "validation_dataset": val_dataset,
-        "mean": 0,
-        "std": 1,
         "temp_table_file_path": table_path,
     }
     return data_obj

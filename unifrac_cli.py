@@ -6,12 +6,17 @@ import tensorflow as tf
 
 import aam._parameter_descriptions as desc
 from aam.callbacks import SaveModel
+from aam.losses import ImbalancedCategoricalCrossEntropy, ImbalancedMSE
 from aam.unifrac_data_utils import load_data
 from aam.unifrac_model import UnifracModel
 from aam.transfer_nuc_model import TransferLearnNucleotideModel
 
 from aam.utils import LRDecrease
-from attention_regression.callbacks import MAE_Scatter
+from attention_regression.callbacks import (
+    MAE_Scatter,
+    ConfusionMatrix,
+    confusion_matrix,
+)
 
 
 @click.group()
@@ -65,14 +70,12 @@ def unifrac_regressor(
 
     data_obj = load_data(
         i_table_path,
-        i_max_bp,
-        p_batch_size,
         tree_path=i_tree_path,
     )
 
-    load_model = False
+    load_model = True
     if load_model:
-        model = tf.keras.models.load_model("foundation-model-standalone/model.keras")
+        model = tf.keras.models.load_model(f"{p_output_dir}/model.keras")
     else:
         model = UnifracModel(
             p_ff_d_model,
@@ -85,18 +88,14 @@ def unifrac_regressor(
             1024,
             p_dropout,
         )
-        optimizer = tf.keras.optimizers.Adam(
-            0.00015
-            # LRDecrease(lr=0.00035),
-        )
+
+        optimizer = tf.keras.optimizers.Adam(0.0001)
         optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
         model.build()
         model.compile(
             optimizer=optimizer,
             run_eagerly=False,
-            # sequence_tokenizer=data_obj["sequence_tokenizer"],
-            # o_ids=data_obj["o_ids"],
         )
     model.summary()
     core_callbacks = [
@@ -150,6 +149,7 @@ def unifrac_regressor(
 @click.option("--p-base-model-path", required=True, type=click.Path(exists=True))
 @click.option("--p-output-dir", required=True)
 @click.option("--p-tensorboard", default=False, show_default=True, type=bool)
+@click.option("--p-is-categorical", default=False, show_default=True, type=bool)
 def transfer_learn_fit_regressor(
     i_table_path: str,
     i_metadata_path: str,
@@ -174,6 +174,7 @@ def transfer_learn_fit_regressor(
     p_base_model_path: str,
     p_output_dir: str,
     p_tensorboard: bool,
+    p_is_categorical: bool,
 ):
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     if not os.path.exists(p_output_dir):
@@ -185,71 +186,76 @@ def transfer_learn_fit_regressor(
 
     from aam.transfer_data_utils import load_data
 
+    load_model = False
     data_obj = load_data(
         i_table_path,
+        p_is_categorical,
+        i_metadata_path,
+        i_metadata_col,
         shuffle_samples=True,
-        metadata_path=i_metadata_path,
-        metadata_col=i_metadata_col,
         missing_samples_flag=p_missing_samples,
     )
+    if load_model:
+        model = tf.keras.models.load_model("age-transfer/model.keras")
+    else:
+        base_model = tf.keras.models.load_model(p_base_model_path, compile=False)
+        if p_is_categorical:
+            model = TransferLearnNucleotideModel(
+                base_model, num_classes=data_obj["num_classes"]
+            )
+            loss = ImbalancedCategoricalCrossEntropy(list(data_obj["cat_counts"]))
 
-    base_model = tf.keras.models.load_model(p_base_model_path, compile=False)
-    model = TransferLearnNucleotideModel(base_model)
+        else:
+            model = TransferLearnNucleotideModel(
+                base_model, mean=data_obj["mean"], std=data_obj["std"]
+            )
+            loss = ImbalancedMSE(data_obj["max_density"])
 
-    optimizer = tf.keras.optimizers.Adam(
-        0.0001,
-    )
-    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-    model.compile(
-        optimizer=optimizer,
-        run_eagerly=False,
-    )
-    model.build()
+        optimizer = tf.keras.optimizers.Adam(
+            0.0001,
+        )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+        model.compile(
+            optimizer=optimizer,
+            loss=loss,
+            run_eagerly=False,
+        )
+        model.build()
     model.summary()
 
-    # for data in data_obj["training_dataset"].take(1):
-    #     inputs, y = data
-    #     tf.print(model(inputs))
-
-    reg_out_callbacks = [
-        MAE_Scatter(
-            "training",
-            data_obj["validation_dataset"],
-            data_obj["metadata"][
-                data_obj["metadata"].index.isin(data_obj["sample_ids"])
-            ],
-            i_metadata_col,
-            None,
-            None,
-            data_obj["mean"],
-            data_obj["std"],
-            figure_path,
-            report_back_after=p_report_back_after,
-        )
-    ]
+    if p_is_categorical:
+        transfer_callbacks = [
+            ConfusionMatrix(
+                "Antibiotic Confusion Matrix",
+                data_obj["validation_dataset"],
+                data_obj["cat_labels"],
+                figure_path,
+                report_back_after=p_report_back_after,
+            )
+        ]
+    else:
+        transfer_callbacks = [
+            MAE_Scatter(
+                "training",
+                data_obj["validation_dataset"],
+                figure_path,
+                report_back_after=p_report_back_after,
+            )
+        ]
     #
     core_callbacks = [
         # tensorboard_callback,
-        tf.keras.callbacks.ReduceLROnPlateau(
-            "val_loss", factor=0.8, patients=0, min_lr=0.0001
-        ),
+        # tf.keras.callbacks.ReduceLROnPlateau(
+        #     "val_loss", factor=0.8, patients=0, min_lr=0.0001
+        # ),
         # tf.keras.callbacks.EarlyStopping("val_loss", patience=5),
         SaveModel(p_output_dir, p_report_back_after),
     ]
-    # if p_tensorboard:
-    #     log_dir = p_output_dir + "/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-    #     if not os.path.exists(log_dir):
-    #         os.makedirs(log_dir)
-    #     tensorboard_callback = tf.keras.callbacks.TensorBoard(
-    #         log_dir=log_dir,
-    #         write_graph=False,
-    #     )
-    #     core_callbacks.append(tensorboard_callback)
 
     model.fit(
         data_obj["training_dataset"],
         validation_data=data_obj["validation_dataset"],
-        callbacks=[*reg_out_callbacks, *core_callbacks],
+        callbacks=[*transfer_callbacks, *core_callbacks],
         epochs=p_epochs,
     )
 
