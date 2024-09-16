@@ -14,9 +14,9 @@ def validate_metadata(table, metadata, missing_samples_flag):
     if len(shared_ids) == 0:
         raise Exception("Table and Metadata have no matching sample ids")
     if min_ids != max_ids and missing_samples_flag == "error":
-        raise Exception("Table and Metadata do share all same sample ids.")
+        raise Exception("Table and Metadata do not share all same sample ids.")
     elif min_ids != max_ids and missing_samples_flag == "ignore":
-        print("Warning: Table and Metadata do share all same sample ids.")
+        print("Warning: Table and Metadata do not share all same sample ids.")
         print("Table and metadata will be filtered")
         table = table.filter(shared_ids, inplace=False)
         metadata = metadata[metadata.index.isin(shared_ids)]
