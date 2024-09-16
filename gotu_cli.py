@@ -231,7 +231,7 @@ def predict_s2s(
         batch_preds = tf.TensorArray(dtype=tf.int64, size=0, dynamic_size=True)
         print("trace")
         tf.print("subsequent executions")
-        for data in dataset.take(1):
+        for data in dataset.take(20):
             x, y = gotu_model._extract_data(data)
             encoder_inputs, _ = x
             tf.print("Num of GOTU's in Batch", tf.shape(y))
@@ -323,7 +323,7 @@ def predict_s2s(
     gotu_model.summary()
 
     with open(
-        "/home/jokirkland/data/asv2gotu/aam_testing/predictions/infer_testing/gotu_ids_agp_rare.json",
+        "/home/jokirkland/data/asv2gotu/paired_asv_gotu_data/subsets/thdmi/ordered/thdmi_gotu_dict.json",
         "r",
     ) as file:
         gotu_dict = json.load(file)

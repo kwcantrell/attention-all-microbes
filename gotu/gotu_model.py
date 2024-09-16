@@ -66,7 +66,7 @@ class GOTUModel(BaseNucleotideModel):
         )
         self.transformer_decoder = tfm.nlp.models.TransformerDecoder(
             num_layers=self.num_layers,
-            # dropout_rate=0.1,
+            dropout_rate=0.1,
             num_attention_heads=self.num_attention_heads,
             intermediate_size=self.dff,
             norm_first=True,
@@ -153,13 +153,13 @@ class GOTUModel(BaseNucleotideModel):
 
         decoder_mask = float_mask(decoder_inputs)
 
-        # if self.trainable and training:
-        #     random_mask = tf.random.uniform(
-        #         tf.shape(decoder_inputs), minval=0, maxval=1, dtype=tf.float32
-        #     )
-        #     random_mask = tf.less_equal(random_mask, 0.9)
-        #     random_mask = tf.cast(random_mask, dtype=tf.int32)
-        #     decoder_inputs = tf.multiply(decoder_inputs, random_mask)
+        if self.trainable and training:
+            random_mask = tf.random.uniform(
+                tf.shape(decoder_inputs), minval=0, maxval=1, dtype=tf.float32
+            )
+            random_mask = tf.less_equal(random_mask, 0.9)
+            random_mask = tf.cast(random_mask, dtype=tf.int32)
+            decoder_inputs = tf.multiply(decoder_inputs, random_mask)
         cross_attention_mask = tf.cast(
             tf.matmul(decoder_mask, encoder_mask, transpose_b=True),
             dtype=self.compute_dtype,

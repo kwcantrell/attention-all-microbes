@@ -55,8 +55,8 @@ class Translator(tf.Module):
         )
         encoder_mask = float_mask(encoder_mask)
 
-        # for i in tf.range(self.transformer.num_gotus):
-        for i in tf.range(1000):
+        for i in tf.range(self.transformer.num_gotus):
+        # for i in tf.range(1000):
             output = tf.transpose(output_array.stack())
             # tf.print("OUTPUT", tf.shape(output), output)
             predictions = self.transformer.infer([encoder_output, encoder_mask, output])

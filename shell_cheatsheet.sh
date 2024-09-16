@@ -8,6 +8,17 @@ python gotu_cli.py sequence2sequence \
     --p-output-dir /home/jokirkland/data/asv2gotu/aam_testing/t1000 \
    --p-gotu-model-path /home/jokirkland/data/asv2gotu/aam_testing/t1000
 
+#Train THDMI
+python gotu_cli.py sequence2sequence \
+    --i-table-path /home/jokirkland/data/asv2gotu/paired_asv_gotu_data/subsets/thdmi/ordered/thdmi_asv_table_ordered.biom \
+    --i-gotu-path /home/jokirkland/data/asv2gotu/paired_asv_gotu_data/subsets/thdmi/ordered/thdmi_gotu_table_ordered.biom \
+    --i-max-bp 150 \
+    --p-epochs 1000 \
+    --p-base-model-path /projects/deep-learning/foundation-model-new/model.keras \
+    --p-output-dir /home/jokirkland/data/asv2gotu/aam_testing/models/thdmi \
+   --p-gotu-model-path /home/jokirkland/data/asv2gotu/aam_testing/models/thdmi/model.keras
+
+
 # Train AGP
 python gotu_cli.py sequence2sequence \
     --i-table-path /home/jokirkland/data/asv2gotu/paired_asv_gotu_data/subsets/agp_asv_rarefied.biom \
@@ -96,3 +107,12 @@ python gotu_cli.py predict-s2s \
     --p-output-fn agp_testing \
     --p-output-dir /home/jokirkland/data/asv2gotu/aam_testing/predictions/infer_testing \
    --p-gotu-model-path /home/jokirkland/data/asv2gotu/aam_testing/models/agp_rarefied/model.keras
+
+python gotu_cli.py predict-s2s \
+    --i-table-path /home/jokirkland/data/asv2gotu/paired_asv_gotu_data/subsets/thdmi/ordered/thdmi_asv_table_ordered.biom \
+    --i-gotu-path /home/jokirkland/data/asv2gotu/paired_asv_gotu_data/subsets/thdmi/ordered/thdmi_gotu_table_ordered.biom \
+    --i-max-bp 150 \
+    --p-base-model-path /projects/deep-learning/foundation-model-new/model.keras \
+    --p-output-fn thdmi_testing \
+    --p-output-dir /home/jokirkland/data/asv2gotu/aam_testing/predictions/thdmi \
+    --p-gotu-model-path /home/jokirkland/data/asv2gotu/aam_testing/models/thdmi/model.keras
