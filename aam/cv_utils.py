@@ -23,7 +23,15 @@ class CVModel:
             output_dir, f"logs/fold-{self.fold_label}-{self.time_stamp}"
         )
 
-    def fit_fold(self, loss, epochs, model_save_path, metric="mae"):
+    def fit_fold(
+        self,
+        loss,
+        epochs,
+        model_save_path,
+        metric="mae",
+        patience=10,
+        early_stop_warmup=50,
+    ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         optimizer = tf.keras.optimizers.Adam(0.0001)
@@ -35,7 +43,7 @@ class CVModel:
                 histogram_freq=0,
             ),
             tf.keras.callbacks.EarlyStopping(
-                f"val_{metric}", patience=10, start_from_epoch=50
+                f"val_{metric}", patience=patience, start_from_epoch=early_stop_warmup
             ),
             model_saver,
         ]
@@ -45,6 +53,7 @@ class CVModel:
             validation_data=self.val_dataset,
             callbacks=[*core_callbacks],
             epochs=epochs,
+            # verbose=0,
         )
         self.model.set_weights(model_saver.best_weights)
         self.metric_value = self.model.evaluate_metric(self.val_dataset, metric)
