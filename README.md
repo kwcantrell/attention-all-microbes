@@ -5,9 +5,15 @@ Attention-based network for microbial sequencing data.
 # Installing the Repo and Environment 
 
 1. Clone repo using `git clone git@github.com:kwcantrell/attention-all-microbes.git`
-2. Run `conda env create -f environment.yml` (name defaults to attention-all-microbes)
-3. `conda activate attention-all-microbes`
-4. Install Tensorflow - See below:
+2. `conda config --add channels defaults`
+
+   `conda config --add channels conda-forge`
+   
+   `conda config --add channels bioconda`
+   
+3. Run `conda env create -f environment.yml` (name defaults to attention-all-microbes)
+4. `conda activate attention-all-microbes`
+5. Install Tensorflow - See below:
    
 ## Tensorflow Install Requirements
 IMPORTANT: If installing onto a cluster based system, make sure you install tensorflow while on an instance that has an NVIDIA gpu.
