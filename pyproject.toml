@@ -1,5 +1,54 @@
-# pyproject.toml file
+[build-system]
+requires = ["setuptools>=42", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amplicon_gpt"
+description = "Deep Learning Method for Microbial Sequencing Data"
+readme = "README.md"
+license = { text = "BSD-3-Clause" }
+authors = [
+    { name = "Kalen Cantrell", email = "kcantrel@ucsd.edu" },
+    { name = "Jonathan Kirkland", email = "jokirkland@ucsd.edu" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+requires-python = "==3.9"
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "cython",
+    "biom-format",
+    "scikit-bio",
+    "scikit-learn",
+    "scipy",
+    "unifrac",
+    "click"
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/kwcantrell/attention-all-microbes/issues"
+"Source Code" = "https://github.com/kwcantrell/attention-all-microbes"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+docs = ["sphinx", "myst-parser"]
+
 [tool.ruff]
 line-length = 128
 ignore = ["F841", "F401"]
 
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-timestamp"
