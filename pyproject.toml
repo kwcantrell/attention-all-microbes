@@ -1,9 +1,11 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "setuptools_scm"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "amplicon_gpt"
+name = "aam"
+requires-python = ">= 3.9"
+dynamic = ["version"]
 description = "Deep Learning Method for Microbial Sequencing Data"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }
@@ -17,8 +19,6 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
-requires-python = "==3.9"
-
 dependencies = [
     "numpy",
     "pandas",
@@ -31,15 +31,18 @@ dependencies = [
     "click"
 ]
 
+[project.scripts]
+aam-cli = "aam:attention_cli"
+
 [project.urls]
 "Bug Tracker" = "https://github.com/kwcantrell/attention-all-microbes/issues"
 "Source Code" = "https://github.com/kwcantrell/attention-all-microbes"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["aam"]
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "aam"}
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
