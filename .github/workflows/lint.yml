@@ -17,11 +17,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install flake8
           pip install ruff
-
-      - name: Run Flake8
-        run: flake8 --max-line-length=128
 
       - name: Run Ruff
         run: ruff . --line-length 128
