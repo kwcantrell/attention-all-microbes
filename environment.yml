@@ -14,15 +14,9 @@ dependencies:
   - click
   - seaborn
   - pip
+  - pytest
+  - ruff
   - pip:
     - setuptools>=42
     - wheel
     - setuptools_scm
-optional-dependencies:
-  dev:
-    - pytest
-    - ruff
-  docs:
-    - sphinx
-    - myst-parser
-
