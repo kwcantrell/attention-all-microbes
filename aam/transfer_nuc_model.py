@@ -11,8 +11,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self,
         base_model,
         num_classes=None,
-        mean=None,
-        std=None,
+        mean=1,
+        std=0,
         **kwargs,
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
@@ -31,7 +31,11 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         # count embeddings
         self.count_encoder = CountEncoder()
-        self.count_out = tf.keras.layers.Dense(1)
+        self.count_intermediate = tf.keras.layers.Dense(
+            128,
+            activation="relu",
+        )
+        self.count_out = tf.keras.layers.Dense(1, use_bias=True)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_tracker = tf.keras.metrics.Mean()
 
@@ -43,20 +47,18 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             trainable=True,
         )
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=1,
+            num_layers=2,
             num_attention_heads=4,
-            intermediate_size=128,
+            intermediate_size=1024,
             dropout_rate=0.1,
-        )
-        self.count_intermediate = tf.keras.layers.Dense(
-            128, activation="relu", kernel_regularizer=tf.keras.regularizers.L2()
         )
 
         self.transfer_intermediate = tf.keras.layers.Dense(
-            128, activation="relu", kernel_regularizer=tf.keras.regularizers.L2()
+            128,
+            activation="relu",
         )
         if self.num_classes is None:
-            self.transfer_ff = tf.keras.layers.Dense(1)
+            self.transfer_ff = tf.keras.layers.Dense(1, use_bias=True)
             self.transfer_tracker = tf.keras.metrics.MeanAbsoluteError()
             self.transfer_string = "mae"
             self.transfer_activation = tf.keras.layers.Activation(
@@ -132,10 +134,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self._compute_metric(y, outputs)
         return {
             "loss": self.loss_tracker.result(),
-            "target_loss": self.target_tracker.result(),
-            "reg_loss": self.reg_tracker.result(),
-            "count_mse": self.count_tracker.result(),
             self.transfer_string: self.transfer_tracker.result(),
+            "count_mse": self.count_tracker.result(),
+            "target_loss": self.target_tracker.result(),
         }
 
     def test_step(self, data):
@@ -151,10 +152,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self._compute_metric(y, outputs)
         return {
             "loss": self.loss_tracker.result(),
-            "target_loss": self.target_tracker.result(),
-            "reg_loss": self.reg_tracker.result(),
-            "count_mse": self.count_tracker.result(),
             self.transfer_string: self.transfer_tracker.result(),
+            "count_mse": self.count_tracker.result(),
+            "target_loss": self.target_tracker.result(),
         }
 
     def call(self, inputs, training=False):
@@ -225,6 +225,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         config.update(
             {
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
+                "mean": self.mean,
+                "std": self.std,
             }
         )
         return config

@@ -12,6 +12,7 @@ from attention_regression.callbacks import (
     ConfusionMatrix,
     MAE_Scatter,
 )
+import datetime
 
 
 @click.group()
@@ -149,6 +150,7 @@ def fit_sample_regressor(
     load_model = False
     data_obj = load_data(
         i_table_path,
+        False,
         i_metadata_path,
         i_metadata_col,
         shuffle_samples=True,
@@ -183,13 +185,22 @@ def fit_sample_regressor(
             report_back_after=p_report_back_after,
         )
     ]
-    #
+    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(p_output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     core_callbacks = [
         # tensorboard_callback,
-        tf.keras.callbacks.ReduceLROnPlateau(
-            "val_loss", factor=0.8, patients=0, min_lr=0.0001
+        # tf.keras.callbacks.ReduceLROnPlateau(
+        #     "val_loss", factor=0.8, patients=0, min_lr=0.0001
+        # ),
+        tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=0,
         ),
-        tf.keras.callbacks.EarlyStopping("val_loss", patience=5),
+        tf.keras.callbacks.EarlyStopping(
+            "val_loss", patience=25, restore_best_weights=True, start_from_epoch=100
+        ),
         SaveModel(p_output_dir, p_report_back_after),
     ]
 
@@ -199,6 +210,7 @@ def fit_sample_regressor(
         callbacks=[*transfer_callbacks, *core_callbacks],
         epochs=p_epochs,
     )
+    model.save(os.path.join(p_output_dir, "model.keras"), save_format="keras")
 
 
 @cli.command()
@@ -248,6 +260,7 @@ def fit_sample_classifier(
     load_model = False
     data_obj = load_data(
         i_table_path,
+        True,
         i_metadata_path,
         i_metadata_col,
         shuffle_samples=True,
@@ -283,12 +296,22 @@ def fit_sample_classifier(
             report_back_after=p_report_back_after,
         )
     ]
+    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(p_output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     core_callbacks = [
         # tensorboard_callback,
-        tf.keras.callbacks.ReduceLROnPlateau(
-            "val_loss", factor=0.8, patients=0, min_lr=0.0001
+        # tf.keras.callbacks.ReduceLROnPlateau(
+        #     "val_loss", factor=0.8, patients=0, min_lr=0.0001
+        # ),
+        tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=0,
         ),
-        tf.keras.callbacks.EarlyStopping("val_loss", patience=5),
+        tf.keras.callbacks.EarlyStopping(
+            "val_loss", patience=25, restore_best_weights=True, start_from_epoch=100
+        ),
         SaveModel(p_output_dir, p_report_back_after),
     ]
 

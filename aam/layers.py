@@ -361,11 +361,8 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
 
         config.update(
             {
-                "hidden_dim": self.hidden_dim,
                 "num_heads": self.num_heads,
-                "num_layers": self.num_layers,
                 "dropout": self.dropout,
-                "epsilon": self.epsilon,
             }
         )
 
@@ -379,22 +376,23 @@ class CountEncoder(tf.keras.layers.Layer):
             activity_regularizer=activity_regularizer, **kwargs
         )
         self.token_dim = 128
-        self.count_projection = tf.keras.layers.Dense(
-            self.token_dim, kernel_regularizer=tf.keras.regularizers.L2()
-        )
         self.count_ranks = tfm.nlp.layers.PositionEmbedding(512)
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=1,
             num_attention_heads=4,
-            intermediate_size=128,
+            intermediate_size=1024,
             dropout_rate=0.1,
         )
         self.count_dropout = tf.keras.layers.Dropout(0.1)
 
     def call(self, inputs, count_mask=None, training=False):
         # up project counts and mask
-        count_embeddings = self.count_projection(inputs)
-        count_embeddings = count_embeddings + self.count_ranks(count_embeddings)
+        shape = tf.shape(inputs)
+        batch_size = shape[0]
+        n_dims = shape[1]
+        count_embeddings = (
+            self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) * inputs
+        )
         count_embeddings = self.count_dropout(count_embeddings, training=training)
         count_embeddings = count_embeddings * count_mask
 
