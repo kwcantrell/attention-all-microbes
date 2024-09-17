@@ -23,6 +23,7 @@ dependencies = [
     "numpy",
     "pandas",
     "cython",
+    "seaborn",
     "biom-format",
     "scikit-bio",
     "scikit-learn",
