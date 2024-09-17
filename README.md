@@ -10,6 +10,8 @@ Attention-based network for microbial sequencing data.
 4. Install Tensorflow - See below:
    
 ## Tensorflow Install Requirements
+IMPORTANT: If installing onto a cluster based system, make sure you install tensorflow while on an instance that has an NVIDIA gpu.
+
 AAM Requires tensorflow==2.14 and tf-models-official==2.14.2
 
 `pip install tensorflow==2.14 tf-models-official==2.14.2` 
