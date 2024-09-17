@@ -1,0 +1,28 @@
+name: amplicon_gpt
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - numpy
+  - pandas
+  - cython
+  - biom-format
+  - scikit-bio
+  - scikit-learn
+  - scipy
+  - unifrac
+  - click
+  - seaborn
+  - pip
+  - pip:
+    - setuptools>=42
+    - wheel
+    - setuptools_scm
+optional-dependencies:
+  dev:
+    - pytest
+    - ruff
+  docs:
+    - sphinx
+    - myst-parser
+
