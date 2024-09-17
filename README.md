@@ -1,28 +1,42 @@
 # Attention All Microbes (AAM)
-<b>Alpha release</b> : Bugs may be present
 
 Attention-based network for microbial sequencing data. 
 
 # Installation
 
+## Install Requirements
+Requires tensorflow==2.14 and tf-models-official==2.14.2
+
+`pip install tensorflow==2.14 tf-models-official==2.14.2` 
+
+or
+
+ `pip install tensorflow[and-cuda]==2.14 tf-models-official==2.14.2` 
+
+for GPU support.
+
+Tensorboard is an optional dependency to visualize training losses/metrics.
+
+`pip install tensorboard`
+
+## Install AAM
+
+For the latest version
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git`
+
+or
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@@v0.1.0`
+
+for a specific tagged version.
+
 
 # Training
 
-Currently only supports  `python cli.py fit-regressor`
+Classifiers and Regressors are trained use cross-validation 
 
-
-# Results
-
-Currently only supports  `python cli.py scatter-plot`
-
-<h2>Significant improvement over random forest</h2>
-
-Compare results from [age regression](https://journals.asm.org/doi/10.1128/msystems.00630-19)
-
-| AAM | Random Forest |
-|-----|---------------|
-|![Scatter](docs/scatter-plot.png)|![Random](docs/random_forest.png)|
-|![Residual](docs/residual-plot.png)| |
+`python attention_cli.py --help`
 
 
 

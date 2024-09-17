@@ -1,8 +1,6 @@
 import tensorflow as tf
-from math import comb
 
 
-@tf.function(jit_compile=True)
 def _pairwise_distances(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
     Args:
@@ -27,8 +25,11 @@ def _pairwise_distances(embeddings, squared=False):
     # Compute the pairwise distance matrix as we have:
     # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
     # shape (batch_size, batch_size)
-    distances = (tf.expand_dims(square_norm, 1) - 2.0 * dot_product +
-                 tf.expand_dims(square_norm, 0))
+    distances = (
+        tf.expand_dims(square_norm, 0)
+        - 2.0 * dot_product
+        + tf.expand_dims(square_norm, 1)
+    )
 
     # Because of computation errors, some distances might be negative so we
     # put everything >= 0.0
@@ -39,7 +40,7 @@ def _pairwise_distances(embeddings, squared=False):
         # (ex: on the diagonal)
         # we need to add a small epsilon where distances == 0.0
         mask = tf.cast(tf.equal(distances, 0.0), tf.float32)
-        distances = distances + mask * 1e-16
+        distances = distances + mask * 1e-07
 
         distances = tf.sqrt(distances)
 
@@ -50,87 +51,53 @@ def _pairwise_distances(embeddings, squared=False):
     return distances
 
 
-def pairwise_loss(batch_size):
-    @tf.function(jit_compile=True)
-    def inner(y_true, y_pred):
-        y_true = tf.math.square(y_true)
-        y_pred_dist = _pairwise_distances(y_pred, squared=True)
-        difference = tf.math.square(y_true - y_pred_dist)
-        difference = tf.linalg.band_part(difference, 0, -1)
-        return tf.reduce_sum(difference) / comb(batch_size, 2)
-    return inner
-
-
-def pairwise_residual_mse(batch_size, mean=None, std=None):
-    @tf.function(jit_compile=True)
-    def sqrt_res(ys):
-        r = tf.reshape(ys, shape=(-1, 1)) - tf.reshape(ys, shape=(1, -1))
-        r = tf.square(r)
-        r_mask = tf.cast(tf.equal(r, 0.0), tf.float32)
-        r = r + r_mask * 1e-16
-        r = tf.sqrt(r)
-        return r * (1.0 - r_mask)
-
-    @tf.function(jit_compile=True)
-    def inner(y_true, y_pred):
-        if mean is not None:
-            y_true = denormalize(y_true, mean, std)
-            y_pred = denormalize(y_pred, mean, std)
-        y_true = tf.squeeze(y_true)
-        y_pred = tf.squeeze(y_pred)
-        mse = tf.reduce_sum(tf.square(y_true - y_pred)) / batch_size
-        r_yt = sqrt_res(y_true)
-        r_yp = sqrt_res(y_pred)
-        rse = tf.linalg.band_part(tf.square(r_yt - r_yp), 0, -1)
-        mrse = tf.reduce_sum(rse) / comb(batch_size, 2)
-        return mse + mrse
-    return inner
-
-
-def denormalize(tensor, mean, std):
-    return tensor*std + mean
-
-
-def mae_loss(mean=None, std=None):
-    def mae(y_true, y_pred):
-        if mean is not None:
-            y_true = denormalize(y_true, mean, std)
-            y_pred = denormalize(y_pred, mean, std)
-        return tf.abs(y_true - y_pred)
-    return mae
-
-
-def mse_loss(mean=None, std=None):
-    def mse(y_true, y_pred):
-        y_true = denormalize(y_true, mean, std)
-        y_pred = denormalize(y_pred, mean, std)
-        return tf.square(y_true - y_pred)
-    return mse
-
-
-def real_feature_mask(total_features, size):
-    total_features = tf.expand_dims(total_features, axis=-1)
-    mask = tf.cast(tf.range(size), dtype=tf.int64)
-    mask = tf.less(mask, total_features)
-    return mask
-
-
-class MeanSquaredError(tf.keras.losses.Loss):
-    def __init__(self,
-                 mean=None,
-                 std=None,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.fn = mse_loss(mean, std)
+class PairwiseLoss(tf.keras.losses.Loss):
+    def __init__(self, reduction="none", **kwargs):
+        super().__init__(reduction=reduction, **kwargs)
 
     def call(self, y_true, y_pred):
-        return tf.reduce_mean(self.fn(y_true, y_pred), axis=-1)
+        y_pred_dist = _pairwise_distances(y_pred, squared=False)
+        differences = tf.math.square(y_pred_dist - y_true)
+        return differences
 
 
-class PairwiseMSE(tf.keras.losses.Loss):
-    def __init__(self, mean, std, **kwargs):
-        super().__init__(**kwargs)
-        self.fn = mse_loss(mean, std)
+@tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
+class ImbalancedMSE(tf.keras.losses.Loss):
+    def __init__(self, max_density, reduction="none", **kwargs):
+        super().__init__(reduction=reduction, **kwargs)
+        self.max_density = max_density
 
     def call(self, y_true, y_pred):
-        return tf.reduce_mean(self.fn(y_pred, y_true), axis=-1)
+        y, density = y_true
+        loss = tf.keras.losses.mse(y, y_pred)
+        return tf.reduce_mean(loss)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"max_density": self.max_density})
+        return config
+
+
+@tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
+class ImbalancedCategoricalCrossEntropy(tf.keras.losses.Loss):
+    def __init__(self, adjustment_weights=[0.1, 0.2, 0.3], reduction="none", **kwargs):
+        super().__init__(reduction=reduction, **kwargs)
+        adjustment_weights = tf.constant(adjustment_weights)
+        adjustment_weights = tf.reduce_sum(adjustment_weights) / adjustment_weights
+        adjustment_weights = tf.expand_dims(adjustment_weights, axis=-1)
+        self.adjustment_weights = adjustment_weights
+        self.num_classes = len(adjustment_weights)
+
+    def call(self, y_true, y_pred):
+        y_true = tf.cast(y_true, dtype=tf.int32)
+        weights = tf.nn.embedding_lookup(self.adjustment_weights, y_true)
+        weights = tf.reshape(weights, shape=[-1])
+
+        y_true = tf.one_hot(y_true, self.num_classes)
+        loss = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
+        return loss * weights
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"adjustment_weights": self.adjustment_weights})
+        return config
