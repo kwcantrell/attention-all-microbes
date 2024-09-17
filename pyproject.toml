@@ -1,4 +1,5 @@
 # pyproject.toml file
 [tool.ruff]
 line-length = 128
+ignore = ["F841", "F401"]
 
