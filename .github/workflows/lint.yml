@@ -20,4 +20,4 @@ jobs:
           pip install ruff
 
       - name: Run Ruff
-        run: ruff . --line-length 128
+        run: ruff
