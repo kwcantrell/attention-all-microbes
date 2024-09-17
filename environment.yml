@@ -1,5 +1,6 @@
-name: amplicon_gpt
+name: attention-all-microbes
 channels:
+  - bioconda
   - conda-forge
 dependencies:
   - python=3.9
