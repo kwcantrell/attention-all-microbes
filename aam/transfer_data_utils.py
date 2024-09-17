@@ -1,6 +1,6 @@
 import numpy as np
-import scipy.stats
 import pandas as pd
+import scipy.stats
 import tensorflow as tf
 from biom import load_table
 
@@ -133,7 +133,8 @@ def load_data(
                     :max_token_per_sample
                 ]
                 counts = tf.gather(data.values, sorted_order)[:max_token_per_sample]
-                counts = tf.math.log1p(counts)
+                # counts = tf.math.log1p(counts)
+                counts = counts / tf.reduce_sum(counts)
 
                 encodings = tf.gather(asv_encodings, sorted_asv_indices)
                 tokens = lookup_table.lookup(encodings).to_tensor()

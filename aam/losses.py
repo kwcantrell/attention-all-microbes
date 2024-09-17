@@ -1,5 +1,3 @@
-from math import comb
-
 import tensorflow as tf
 
 
@@ -72,7 +70,7 @@ class ImbalancedMSE(tf.keras.losses.Loss):
     def call(self, y_true, y_pred):
         y, density = y_true
         loss = tf.keras.losses.mse(y, y_pred)
-        return tf.reduce_mean(loss * (1 / density))
+        return tf.reduce_mean(loss)
 
     def get_config(self):
         config = super().get_config()

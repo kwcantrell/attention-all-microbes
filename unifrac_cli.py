@@ -1,21 +1,16 @@
 import os
-from datetime import datetime
-
-import click
-import tensorflow as tf
 
 import aam._parameter_descriptions as desc
+import click
+import tensorflow as tf
 from aam.callbacks import SaveModel
 from aam.losses import ImbalancedCategoricalCrossEntropy, ImbalancedMSE
+from aam.transfer_nuc_model import TransferLearnNucleotideModel
 from aam.unifrac_data_utils import load_data
 from aam.unifrac_model import UnifracModel
-from aam.transfer_nuc_model import TransferLearnNucleotideModel
-
-from aam.utils import LRDecrease
 from attention_regression.callbacks import (
-    MAE_Scatter,
     ConfusionMatrix,
-    confusion_matrix,
+    MAE_Scatter,
 )
 
 
@@ -248,7 +243,7 @@ def transfer_learn_fit_regressor(
         # tf.keras.callbacks.ReduceLROnPlateau(
         #     "val_loss", factor=0.8, patients=0, min_lr=0.0001
         # ),
-        # tf.keras.callbacks.EarlyStopping("val_loss", patience=5),
+        tf.keras.callbacks.EarlyStopping("val_loss", patience=5, start_from_epoch=20),
         SaveModel(p_output_dir, p_report_back_after),
     ]
 
