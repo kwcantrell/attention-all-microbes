@@ -1,11 +1,11 @@
 import tensorflow as tf
-from aam.utils import float_mask
 
 from aam.layers import (
     ASVEncoder,
     SampleEncoder,
 )
 from aam.losses import PairwiseLoss
+from aam.utils import float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracModel")

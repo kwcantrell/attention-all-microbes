@@ -1,12 +1,10 @@
 import numpy as np
-import pandas as pd
 import tensorflow as tf
-from biom import load_table
-from unifrac import unweighted
-from scipy.stats import rankdata
-from scipy.sparse import csr_matrix
-from biom import Table
+from biom import Table, load_table
 from biom.util import biom_open
+from scipy.sparse import csr_matrix
+from scipy.stats import rankdata
+from unifrac import unweighted
 
 
 def load_data(

@@ -1,8 +1,8 @@
 import tensorflow as tf
-from tensorflow._api.v2.math import reduce_sum
 import tensorflow_models as tfm
-from aam.utils import float_mask
+
 from aam.losses import PairwiseLoss
+from aam.utils import float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracModel")

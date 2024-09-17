@@ -1,8 +1,6 @@
 import numpy as np
 import scipy.stats
-import pandas as pd
 import tensorflow as tf
-from biom import load_table
 
 
 def validate_metadata(table, metadata, missing_samples_flag):
@@ -20,13 +18,15 @@ def validate_metadata(table, metadata, missing_samples_flag):
         print("Table and metadata will be filtered")
         table = table.filter(shared_ids, inplace=False)
         metadata = metadata[metadata.index.isin(shared_ids)]
-    return table, metadata
+    return table.ids(), table, metadata
 
 
-def filter_and_reorder(metadata, ids):
-    metadata = metadata[metadata.index.isin(ids)]
+def shuffle(table, metadata):
+    ids = table.ids()
+    np.random.shuffle(ids)
+    table = table.sort_order(ids, axis="sample")
     metadata = metadata.reindex(ids)
-    return metadata
+    return table, metadata
 
 
 def extract_col(metadata, col, is_categorical):
@@ -40,10 +40,10 @@ def extract_col(metadata, col, is_categorical):
 
 
 def load_data(
-    table_path,
+    table,
     is_categorical,
-    metadata_path,
-    metadata_col,
+    df,
+    metadata_col=None,
     class_labels=None,
     shuffle_samples=True,
     missing_samples_flag=None,
@@ -57,23 +57,14 @@ def load_data(
         col = col
         return data, row, col
 
-    table = load_table(table_path)
-    shuffle_ids = table.ids()
-    np.random.shuffle(shuffle_ids)
-    table = table.sort_order(shuffle_ids, axis="sample")
-
-    df = pd.read_csv(metadata_path, sep="\t", index_col=0)[[metadata_col]]
-    cat_labels = None
-    table, df = validate_metadata(table, df, missing_samples_flag)
-    filter_ids = table.ids()
-    df = filter_and_reorder(df, filter_ids)
     target_data = extract_col(df, metadata_col, is_categorical=is_categorical)
+    cat_labels = None
     cat_labels = None
     cat_counts = None
     num_classes = None
     max_density = None
-    mean = None
-    std = None
+    shift = None
+    scale = None
     if is_categorical:
         cat_labels = target_data.cat.categories
         cat_counts = target_data.value_counts()
@@ -83,9 +74,9 @@ def load_data(
         target_data = tf.expand_dims(target_data, axis=-1)
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
     else:
-        mean = np.mean(target_data)
-        std = np.std(target_data)
-        target_data = (target_data - mean) / std
+        shift = 0
+        scale = np.max(target_data)
+        target_data = (target_data - shift) / scale
         density = scipy.stats.gaussian_kde(target_data)
         y = density(target_data).astype(np.float32)
         max_density = np.max(y)
@@ -123,7 +114,7 @@ def load_data(
     lookup_table = tf.lookup.StaticVocabularyTable(key_val_init, num_oov_buckets=1)
     asv_encodings = tf.cast(tf.strings.unicode_decode(o_ids, "UTF-8"), dtype=tf.int64)
 
-    def process_dataset(val=False, shuffle_buf=100):
+    def process_dataset(shuffle_buf=100):
         def _inner(ds):
             def process_table(data, target_data):
                 sorted_order = tf.argsort(data.values, axis=-1, direction="DESCENDING")
@@ -133,7 +124,7 @@ def load_data(
                     :max_token_per_sample
                 ]
                 counts = tf.gather(data.values, sorted_order)[:max_token_per_sample]
-                counts = tf.math.log1p(counts)
+                counts = counts / tf.reduce_sum(counts)
 
                 encodings = tf.gather(asv_encodings, sorted_asv_indices)
                 tokens = lookup_table.lookup(encodings).to_tensor()
@@ -147,7 +138,7 @@ def load_data(
             def filter(table_data, target_data):
                 return table_data, target_data
 
-            if shuffle_samples and not val:
+            if shuffle_samples:
                 ds = ds.shuffle(shuffle_buf)
             ds = ds.map(process_table, num_parallel_calls=tf.data.AUTOTUNE)
             ds = ds.padded_batch(8)
@@ -158,32 +149,18 @@ def load_data(
         return _inner
 
     dataset_size = len(s_ids)
-    training_size = int(dataset_size * 0.9)
 
     dataset = tf.data.Dataset.zip(table, target_dataset)
-    train_dataset = (
-        dataset.take(training_size)
-        .cache()
-        .apply(process_dataset(val=False, shuffle_buf=training_size))
-        .prefetch(tf.data.AUTOTUNE)
-    )
-    val_dataset = (
-        dataset.skip(training_size)
-        .cache()
-        .apply(process_dataset(val=True))
-        .prefetch(tf.data.AUTOTUNE)
-    )
+    dataset = dataset.apply(  # .cache()
+        process_dataset(shuffle_buf=dataset_size)
+    ).prefetch(tf.data.AUTOTUNE)
     data_obj = {
-        "sample_ids": s_ids,
-        "o_ids": o_ids,
-        "training_dataset": train_dataset,
-        "validation_dataset": val_dataset,
-        "metadata": df,
+        "dataset": dataset,
         "num_classes": num_classes,
         "cat_labels": cat_labels,
         "cat_counts": cat_counts,
         "max_density": max_density,
-        "mean": mean,
-        "std": std,
+        "shift": shift,
+        "scale": scale,
     }
     return data_obj
