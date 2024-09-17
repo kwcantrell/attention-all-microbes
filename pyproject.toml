@@ -1,0 +1,4 @@
+# pyproject.toml file
+[tool.ruff]
+line-length = 128
+
