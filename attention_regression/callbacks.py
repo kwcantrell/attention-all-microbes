@@ -16,14 +16,9 @@ def mean_confidence_interval(data, confidence=0.95):
     return m, h
 
 
-@tf.keras.saving.register_keras_serializable(package="mean_absolute_error")
-def mean_absolute_error(dataset, model, fname):
-    pred_val, true_val = model.predict(dataset)
-    pred_val = tf.reshape(pred_val, shape=[-1]).numpy()
-    true_val = tf.reshape(true_val, shape=[-1]).numpy()
-
-    pred_val = pred_val.astype(np.float32)
-    true_val = true_val.astype(np.float32)
+def _mean_absolute_error(pred_val, true_val, fname, labels=None):
+    pred_val = np.squeeze(pred_val)
+    true_val = np.squeeze(true_val)
     mae = np.mean(np.abs(true_val - pred_val))
 
     min_x = np.min(true_val)
@@ -50,10 +45,8 @@ def mean_absolute_error(dataset, model, fname):
     plt.close()
 
 
-@tf.keras.saving.register_keras_serializable(package="mean_absolute_error")
-def confusion_matrix(dataset, model, fname, cat_labels=None):
-    y_pred, y_true = model.predict(dataset)
-    cf_matrix = tf.math.confusion_matrix(y_true, y_pred).numpy()
+def _confusion_matrix(pred_val, true_val, fname, labels):
+    cf_matrix = tf.math.confusion_matrix(true_val, pred_val).numpy()
     group_counts = ["{0:0.0f}".format(value) for value in cf_matrix.flatten()]
     group_percentages = [
         "{0:.2%}".format(value) for value in cf_matrix.flatten() / np.sum(cf_matrix)
@@ -64,17 +57,11 @@ def confusion_matrix(dataset, model, fname, cat_labels=None):
     ax = sns.heatmap(
         cf_matrix,
         annot=labels,
-        xticklabels=cat_labels,
-        yticklabels=cat_labels,
+        xticklabels=labels,
+        yticklabels=labels,
         fmt="",
     )
-    # ax.xaxis.tick_top()
-    # ax.xaxis.set_label_position("top")
     import textwrap
-
-    # ax.set_xticklabels(labels, rotation=0)
-    # plt.xticks(rotation=45)
-    # plt.yticks(rotation=0)
 
     def wrap_labels(ax, width, break_long_words=False):
         labels = []
@@ -191,10 +178,11 @@ class MAE_Scatter(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % self.report_back_after_epochs == 0:
-            mean_absolute_error(
-                self.dataset,
-                self.model,
-                fname=os.path.join(self.out_dir, f"MAE-{self.title}.png"),
+            pred_val, true_val = self.model.predict(self.dataset)
+            _mean_absolute_error(
+                pred_val,
+                true_val,
+                fname=os.path.join(self.out_dir, f"{self.title}-MAE.png"),
             )
         return super().on_epoch_end(epoch, logs)
 
@@ -231,8 +219,9 @@ class ConfusionMatrix(tf.keras.callbacks.Callback):
             os.makedirs(out_dir)
 
     def on_epoch_end(self, epoch, logs=None):
+        # y_pred, y_true = model.predict(dataset)
         if epoch % self.report_back_after_epochs == 0:
-            confusion_matrix(
+            _confusion_matrix(
                 self.dataset,
                 self.model,
                 fname=os.path.join(self.out_dir, f"{self.title}.png"),

@@ -378,12 +378,11 @@ class CountEncoder(tf.keras.layers.Layer):
         self.token_dim = 128
         self.count_ranks = tfm.nlp.layers.PositionEmbedding(512)
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=1,
+            num_layers=2,
             num_attention_heads=4,
             intermediate_size=1024,
             dropout_rate=0.1,
         )
-        self.count_dropout = tf.keras.layers.Dropout(0.1)
 
     def call(self, inputs, count_mask=None, training=False):
         # up project counts and mask
@@ -393,7 +392,6 @@ class CountEncoder(tf.keras.layers.Layer):
         count_embeddings = (
             self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) * inputs
         )
-        count_embeddings = self.count_dropout(count_embeddings, training=training)
         count_embeddings = count_embeddings * count_mask
 
         # count attention
@@ -401,5 +399,4 @@ class CountEncoder(tf.keras.layers.Layer):
         count_embeddings = self.count_encoder(
             count_embeddings, attention_mask=count_attention_mask, training=training
         )
-        count_embeddings = count_embeddings * tf.cast(count_mask, dtype=tf.float32)
         return count_embeddings

@@ -2,7 +2,6 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy
 import skbio.stats.ordination
 import sklearn
 import tensorflow as tf
@@ -13,83 +12,27 @@ from aam.data_utils import get_unifrac_dataset
 from aam.losses import _pairwise_distances
 
 
-def mean_confidence_interval(data, confidence=0.95):
-    a = 1.0 * np.array(data)
-    n = len(a)
-    m, se = np.mean(a), scipy.stats.sem(a)
-    h = se * scipy.stats.t.ppf((1 + confidence) / 2.0, n - 1)
-    return m, h
-
-
-def mean_absolute_error(mean, std, dataset, model, fname, epoch):
-    pred_val = tf.squeeze(model.predict(dataset)).numpy() * std + mean
-    true_val = np.concatenate([tf.squeeze(ys).numpy() for (_, ys) in dataset])
-    true_val = true_val * std + mean
-    mae, h = mean_confidence_interval(np.abs(true_val - pred_val))
-
-    min_x = np.min(true_val)
-    max_x = np.max(true_val)
-    coeff = np.polyfit(true_val, pred_val, deg=1)
-    p = np.poly1d(coeff)
-    xx = np.linspace(min_x, max_x, 1000)
-    yy = p(xx)
-
-    diag = np.polyfit(true_val, true_val, deg=1)
-    p = np.poly1d(diag)
-    diag_xx = np.linspace(min_x, max_x, 1000)
-    diag_yy = p(diag_xx)
-
-    plt.figure(figsize=(4, 4))
-    plt.subplot(1, 1, 1)
-    plt.scatter(true_val, pred_val, 7, marker=".", c="grey", alpha=0.5)
-    plt.plot(xx, yy)
-    plt.plot(diag_xx, diag_yy)
-    mae, h = "%.4g" % mae, "%.4g" % h
-    plt.xlabel("True Value")
-    plt.ylabel("Predicted Value")
-    plt.title(f"MAE: {mae}  {h} (epoch: {epoch})")
-    plt.savefig(fname)
-    plt.close()
-
-
-class MAE_Scatter(tf.keras.callbacks.Callback):
-    def __init__(self, mean, std, title, dataset, out_dir, report_back_after_epochs=5):
-        super().__init__()
-        self.mean = mean
-        self.std = std
-        self.title = title
-        self.dataset = dataset
-        self.out_dir = out_dir
-        self.report_back_after_epochs = report_back_after_epochs
-
-    def on_epoch_end(self, epoch, logs=None):
-        if epoch % self.report_back_after_epochs == 0:
-            mean_absolute_error(
-                self.mean,
-                self.std,
-                self.dataset,
-                self.model,
-                fname=os.path.join(self.out_dir, f"MAE-{self.title}-epoch-{epoch}.png"),
-                epoch=epoch,
-            )
-        return super().on_epoch_end(epoch, logs)
-
-
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir, report_back, **kwargs):
+    def __init__(self, output_dir, report_back, monitor, **kwargs):
         super().__init__(**kwargs)
         self.output_dir = output_dir
         self.report_back = report_back
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+        self.best_weights = None
+        self.best_metric = None
+        self.monitor = monitor
 
     def on_epoch_end(self, epoch, logs=None):
+        metric = logs[self.monitor]
+        if self.best_weights is None or self.best_metric > metric:
+            self.best_metric = metric
+            self.best_weights = self.model.get_weights()
+
         if epoch % self.report_back == 0:
             self.model.save(
-                os.path.join(self.output_dir, "model.keras"), save_format="keras"
+                self.output_dir,
+                save_format="keras",
             )
 
-        # def on_test_batch_end(self, batch, logs=None):
         logs["lr"] = self.model.optimizer.lr
 
     def get_config(self):
