@@ -27,7 +27,7 @@ For the latest version
 
 or
 
-`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@@v0.1.0`
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@v0.1.0`
 
 for a specific tagged version.
 
