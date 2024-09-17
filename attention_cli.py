@@ -7,7 +7,12 @@ import tensorflow as tf
 from biom import load_table
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from aam.callbacks import SaveModel, _confusion_matrix, _mean_absolute_error
+from aam.callbacks import (
+    ConfusionMatrx,
+    SaveModel,
+    _confusion_matrix,
+    _mean_absolute_error,
+)
 from aam.cv_utils import CVModel, EnsembleModel
 from aam.losses import ImbalancedCategoricalCrossEntropy, ImbalancedMSE
 from aam.transfer_nuc_model import TransferLearnNucleotideModel
@@ -289,6 +294,7 @@ def fit_sample_regressor(
 )
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--p-report-back", default=1, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_classifier(
     i_table: str,
@@ -304,6 +310,7 @@ def fit_sample_classifier(
     p_stratify: bool,
     p_patience: int,
     p_early_stop_warmup: int,
+    p_report_back: int,
     output_dir: str,
 ):
     from aam.transfer_data_utils import (
@@ -326,10 +333,12 @@ def fit_sample_classifier(
 
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
+    print(df)
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     table, df = shuffle(table, df)
     num_ids = len(ids)
-
+    categories = df[m_metadata_column].astype("category").cat.categories
+    print("int", categories)
     fold_indices = [i for i in range(num_ids)]
     if p_test_size > 0:
         test_size = int(num_ids * p_test_size)
@@ -371,7 +380,7 @@ def fit_sample_classifier(
             penalty=p_penalty,
             num_classes=train_data["num_classes"],
         )
-        loss = ImbalancedCategoricalCrossEntropy(list(train_data["cat_counts"]))
+        loss = ImbalancedCategoricalCrossEntropy(train_data["cat_counts"])
         fold_label = i + 1
         model_cv = CVModel(
             model,
@@ -387,6 +396,16 @@ def fit_sample_classifier(
             metric="target_loss",
             patience=p_patience,
             early_stop_warmup=p_early_stop_warmup,
+            callbacks=[
+                ConfusionMatrx(
+                    dataset=val_data["dataset"],
+                    output_dir=os.path.join(
+                        figure_path, f"model-f{fold_label}-val.png"
+                    ),
+                    report_back=p_report_back,
+                    labels=categories,
+                )
+            ],
         )
         models.append(model_cv)
 
