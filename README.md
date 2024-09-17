@@ -2,10 +2,15 @@
 
 Attention-based network for microbial sequencing data. 
 
-# Installation
+# Installing the Repo and Environment 
 
-## Install Requirements
-Requires tensorflow==2.14 and tf-models-official==2.14.2
+1. Clone repo using `git clone git@github.com:kwcantrell/attention-all-microbes.git`
+2. Run `conda env create -f environment.yml` (name defaults to attention-all-microbes)
+3. `conda activate attention-all-microbes`
+4. Install Tensorflow - See below:
+   
+## Tensorflow Install Requirements
+AAM Requires tensorflow==2.14 and tf-models-official==2.14.2
 
 `pip install tensorflow==2.14 tf-models-official==2.14.2` 
 
@@ -19,17 +24,6 @@ Tensorboard is an optional dependency to visualize training losses/metrics.
 
 `pip install tensorboard`
 
-## Install AAM
-
-For the latest version
-
-`pip install git+https://github.com/kwcantrell/attention-all-microbes.git`
-
-or
-
-`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@v0.1.0`
-
-for a specific tagged version.
 
 
 # Training
