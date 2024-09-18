@@ -39,14 +39,18 @@ dependencies = [
 ]
 
 [project.scripts]
-attention-all-microbes = "aam.attention_cli:main"
+attention = "aam.attention_cli:main"
 
 [project.urls]
 "Bug Tracker" = "https://github.com/kwcantrell/attention-all-microbes/issues"
 "Source Code" = "https://github.com/kwcantrell/attention-all-microbes"
 
+
 [tool.setuptools]
 packages = ["aam"]
+
+[tool.setuptools.packages.find]
+where = ["aam"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
