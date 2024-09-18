@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aam"
-requires-python = ">= 3.9"
+requires-python = ">=3.9"
 dynamic = ["version"]
 description = "Deep Learning Method for Microbial Sequencing Data"
 readme = "README.md"
@@ -26,14 +26,14 @@ dependencies = [
     "cython",
     "seaborn",
     "biom-format",
-    "scikit-bio",
+    "scikit-bio >= 0.6.0",
     "scikit-learn",
-    "scipy",
+    "scipy >= 1.13.0",
     "unifrac",
     "click",
     "iow",
-    "tensorflow[and-cuda]==2.14.0",
-    "tf-models-official==2.14.2",
+    "tensorflow == 2.14.0",
+    "tf-models-official == 2.14.2",
     "tensorboard"
 
 ]
