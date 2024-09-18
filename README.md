@@ -2,8 +2,8 @@
 
 Attention-based network for microbial sequencing data. 
 
-# Instal notes
-
+# Installation Instructions
+IMPORTANT: If installing on a server cluster, spawn an instance with a GPU before proceeding with environment setup.
 First create a new conda environment with unifrac
 
 `conda create --name aam -c conda-forge -c bioconda unifrac`
