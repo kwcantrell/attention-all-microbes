@@ -156,7 +156,9 @@ class UnifracModel(tf.keras.Model):
         return asv_embeddings, sample_embeddings, nucleotides, inputs
 
     def build(self, input_shape=None):
-        super(UnifracModel, self).build(tf.TensorShape([None, None, 150]))
+        input = tf.keras.Input([None, self.max_bp])
+        self.call(input)
+        super(UnifracModel, self).build(tf.TensorShape([None, None, self.max_bp]))
 
     def train_step(self, data):
         inputs, y = data
@@ -179,7 +181,7 @@ class UnifracModel(tf.keras.Model):
         self.accuracy.update_state(self._compute_accuracy(tokens, logits))
         return {
             "loss": self.loss_tracker.result(),
-            "mae": self.metric_traker.result(),
+            "mse": self.metric_traker.result(),
             "entropy": self.entropy.result(),
             "accuracy": self.accuracy.result(),
         }
@@ -199,7 +201,7 @@ class UnifracModel(tf.keras.Model):
         self.accuracy.update_state(self._compute_accuracy(tokens, logits))
         return {
             "loss": self.loss_tracker.result(),
-            "mae": self.metric_traker.result(),
+            "mse": self.metric_traker.result(),
             "entropy": self.entropy.result(),
             "accuracy": self.accuracy.result(),
         }

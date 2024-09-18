@@ -37,43 +37,42 @@ MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fai
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-tree", required=True, type=click.Path(exists=True))
 @click.option("--p-max-bp", required=True, type=int)
+@click.option("--p-batch-size", default=8, type=int, show_default=True)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-dropout", default=0.01, show_default=True, type=float)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-ff-d-model", default=128, show_default=True, type=int)
 @click.option("--p-pca-heads", default=8, show_default=True, type=int)
 @click.option("--p-enc-layers", default=2, show_default=True, type=int)
 @click.option("--p-enc-heads", default=8, show_default=True, type=int)
-@click.option("--p-output-dir", required=True)
+@click.option("--output-dir", required=True)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
     p_max_bp: int,
+    p_batch_size: int,
     p_epochs: int,
     p_dropout: float,
     p_ff_d_model: int,
     p_pca_heads: int,
     p_enc_layers: int,
     p_enc_heads: int,
-    p_output_dir: str,
+    output_dir: str,
 ):
     from aam.unifrac_data_utils import load_data
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
-    if not os.path.exists(p_output_dir):
-        os.makedirs(p_output_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    figure_path = os.path.join(p_output_dir, "figures")
+    figure_path = os.path.join(output_dir, "figures")
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    data_obj = load_data(
-        i_table,
-        tree_path=i_tree,
-    )
+    data_obj = load_data(i_table, tree_path=i_tree, batch_size=p_batch_size)
 
     load_model = True
     if load_model:
-        model = tf.keras.models.load_model(f"{p_output_dir}/model.keras")
+        model = tf.keras.models.load_model(f"{output_dir}/model.keras")
     else:
         model = UnifracModel(
             p_ff_d_model,
@@ -96,16 +95,19 @@ def fit_unifrac_regressor(
             run_eagerly=False,
         )
     model.summary()
-    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = os.path.join(p_output_dir, log_dir)
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1)
     core_callbacks = [
         tf.keras.callbacks.TensorBoard(
             log_dir=log_dir,
             histogram_freq=0,
         ),
-        SaveModel(p_output_dir, 1),
+        tf.keras.callbacks.EarlyStopping("val_loss", patience=5, start_from_epoch=5),
+        model_saver,
     ]
     model.fit(
         data_obj["training_dataset"],
@@ -113,6 +115,8 @@ def fit_unifrac_regressor(
         callbacks=[*core_callbacks],
         epochs=p_epochs,
     )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
 
 
 @cli.command()

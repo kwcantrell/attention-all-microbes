@@ -33,6 +33,11 @@ or install a specific version
 
 `pip install git+https://github.com/kwcantrell/attention-all-microbes.git@v0.1.0`
 
+## Developers
+
+`git clone git@github.com:kwcantrell/attention-all-microbes.git`
+`cd attention-all-microbes`
+`pip install -e .`
 
 # Training
 

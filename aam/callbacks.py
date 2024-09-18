@@ -81,7 +81,7 @@ class ConfusionMatrx(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir, report_back, monitor, **kwargs):
+    def __init__(self, output_dir, report_back, monitor="val_loss", **kwargs):
         super().__init__(**kwargs)
         self.output_dir = output_dir
         self.report_back = report_back

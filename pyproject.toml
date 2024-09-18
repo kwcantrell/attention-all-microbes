@@ -35,6 +35,7 @@ dependencies = [
     "tensorboard"
 
 ]
+keywords = ["aam"]
 
 [project.scripts]
 attention = "aam.attention_cli:main"
@@ -44,8 +45,8 @@ attention = "aam.attention_cli:main"
 "Source Code" = "https://github.com/kwcantrell/attention-all-microbes"
 
 
-[tool.setuptools]
-packages = ["aam"]
+[tool.setuptools.packages.find]
+where = ["."]
 
 
 [project.optional-dependencies]

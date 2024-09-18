@@ -12,6 +12,7 @@ def load_data(
     shuffle_samples=True,
     tree_path=None,
     max_token_per_sample=300,
+    batch_size=8,
     temp_table_path="temp_table.biom",
 ):
     def _get_unifrac_data(table_path, tree_path):
@@ -29,6 +30,7 @@ def load_data(
 
     def _preprocess_table(table_path):
         table = load_table(table_path)
+        table = table.remove_empty()
         table_data = table.matrix_data.tocoo()
         counts, (row, col) = table_data.data, table_data.coords
 
@@ -97,7 +99,7 @@ def load_data(
             ds = ds.cache()
             if shuffle_samples and not val:
                 ds = ds.shuffle(shuffle_buf)
-            ds = ds.padded_batch(8)
+            ds = ds.padded_batch(batch_size)
             ds = ds.map(filter, num_parallel_calls=tf.data.AUTOTUNE)
 
             return ds
