@@ -10,6 +10,10 @@ First create a new conda environment with unifrac
 
 ## GPU Support 
 
+Install CUDA 11.8
+
+`conda install nvidia/label/cuda-11.8.0::cuda-toolkit`
+
 Verify the NVIDIA GPU drives are on your path
 
 `nvidia-smi`
