@@ -18,6 +18,7 @@ Verify the NVIDIA GPU drives are on your path
 
 `nvidia-smi`
 
+`pip install tensorflow==2.14 tf-models-official==2.14.2`
 Please see [Tensorflow](https://www.tensorflow.org/install) for more information
 
 ## Install AAM
