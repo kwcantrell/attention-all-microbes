@@ -2,43 +2,37 @@
 
 Attention-based network for microbial sequencing data. 
 
-# Installing the Repo and Environment 
+# Instal notes
 
-1. Clone repo using `git clone git@github.com:kwcantrell/attention-all-microbes.git`
-2. `conda config --add channels defaults`
+First create a new conda environment with unifrac
 
-   `conda config --add channels conda-forge`
-   
-   `conda config --add channels bioconda`
-   
-3. Run `conda env create -f environment.yml` (name defaults to attention-all-microbes)
-4. `conda activate attention-all-microbes`
-5. Install Tensorflow - See below:
-   
-## Tensorflow Install Requirements
-IMPORTANT: If installing onto a cluster based system, make sure you install tensorflow while on an instance that has an NVIDIA gpu.
+`conda create --name aam -c conda-forge -c bioconda unifrac`
 
-AAM Requires tensorflow==2.14 and tf-models-official==2.14.2
+## GPU Support 
 
-`pip install tensorflow==2.14 tf-models-official==2.14.2` 
+Verify the NVIDIA GPU drives are on your path
 
-or
+`nvidia-smi`
 
- `pip install tensorflow[and-cuda]==2.14 tf-models-official==2.14.2` 
+Please see [Tensorflow](https://www.tensorflow.org/install) for more information
 
-for GPU support.
+## Install AAM
 
-Tensorboard is an optional dependency to visualize training losses/metrics.
 
-`pip install tensorboard`
+For the latest version
 
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git`
+
+or install a specific version
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@v0.1.0`
 
 
 # Training
 
 Classifiers and Regressors are trained use cross-validation 
 
-`python attention_cli.py --help`
+`attention-all-microbes --help`
 
 
 

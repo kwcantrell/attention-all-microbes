@@ -1,6 +1,7 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
+
 
 [project]
 name = "aam"
@@ -29,21 +30,23 @@ dependencies = [
     "scikit-learn",
     "scipy",
     "unifrac",
-    "click"
+    "click",
+    "iow",
+    "tensorflow[and-cuda]==2.14.0",
+    "tf-models-official==2.14.2",
+    "tensorboard"
+
 ]
 
 [project.scripts]
-aam-cli = "aam:attention_cli"
+attention-all-microbes = "aam.attention_cli:main"
 
 [project.urls]
 "Bug Tracker" = "https://github.com/kwcantrell/attention-all-microbes/issues"
 "Source Code" = "https://github.com/kwcantrell/attention-all-microbes"
 
-[tool.setuptools.packages.find]
-where = ["aam"]
-
 [tool.setuptools]
-package-dir = {"" = "aam"}
+packages = ["aam"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
