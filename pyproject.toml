@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
+
 
 [project]
 name = "aam"
-requires-python = ">= 3.9"
+requires-python = ">= 3.9, < 3.10"
 dynamic = ["version"]
 description = "Deep Learning Method for Microbial Sequencing Data"
 readme = "README.md"
@@ -22,36 +23,41 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
-    "cython",
     "seaborn",
     "biom-format",
-    "scikit-bio",
-    "scikit-learn",
-    "scipy",
+    "scikit-bio >= 0.6",
+    "scikit-learn >= 1.3",
+    "scipy >= 1.13.0",
     "unifrac",
-    "click"
+    "click",
+    "tensorflow[and-cuda] >= 2.14.0, < 2.15",
+    "tf-models-official >= 2.14.2",
+    "tensorboard"
+
 ]
+keywords = ["aam"]
 
 [project.scripts]
-aam-cli = "aam:attention_cli"
+attention = "aam.attention_cli:main"
 
 [project.urls]
 "Bug Tracker" = "https://github.com/kwcantrell/attention-all-microbes/issues"
 "Source Code" = "https://github.com/kwcantrell/attention-all-microbes"
 
-[tool.setuptools.packages.find]
-where = ["aam"]
 
-[tool.setuptools]
-package-dir = {"" = "aam"}
+[tool.setuptools.packages.find]
+where = ["."]
+
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
 docs = ["sphinx", "myst-parser"]
 
+
 [tool.ruff]
 line-length = 128
 ignore = ["F841", "F401"]
+
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"

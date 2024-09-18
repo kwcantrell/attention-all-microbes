@@ -55,7 +55,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
         self.base_tokens = 6
-        self.num_tokens = self.base_tokens * 150 + 2
+        self.num_tokens = self.base_tokens * self.max_bp + 2
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
             self.token_dim,
@@ -63,14 +63,19 @@ class ASVEncoder(tf.keras.layers.Layer):
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
         self.avs_attention = NucleotideAttention(
-            128, num_heads=2, num_layers=3, dropout=0.0
+            128, max_bp=self.max_bp, num_heads=2, num_layers=3, dropout=0.0
         )
         self.asv_token = self.num_tokens - 1
 
-        self.nucleotide_position = tf.range(0, 4 * 150, 4, dtype=tf.int32)
+        self.nucleotide_position = tf.range(
+            0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
+        )
 
     def call(self, inputs, nuc_mask=None, training=False):
         seq = inputs
+        seq_mask = float_mask(seq, dtype=tf.int32)
+        seq = seq + self.nucleotide_position
+        seq = seq * seq_mask
 
         if nuc_mask is not None:
             seq = seq * nuc_mask
@@ -147,7 +152,7 @@ class SampleEncoder(tf.keras.layers.Layer):
             intermediate_size=self.attention_ff,
             norm_first=True,
             activation="relu",
-            dropout_rate=0.1,
+            dropout_rate=self.dropout_rate,
         )
         self.sample_token = self.add_weight(
             "sample_token",
@@ -199,9 +204,10 @@ class SampleEncoder(tf.keras.layers.Layer):
 
 @tf.keras.saving.register_keras_serializable(package="NucleotideAttention")
 class NucleotideAttention(tf.keras.layers.Layer):
-    def __init__(self, hidden_dim, num_heads, num_layers, dropout, **kwargs):
+    def __init__(self, hidden_dim, max_bp, num_heads, num_layers, dropout, **kwargs):
         super(NucleotideAttention, self).__init__(**kwargs)
         self.hidden_dim = hidden_dim
+        self.max_bp = max_bp
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
@@ -210,7 +216,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         self.compress_df = tf.keras.layers.Dense(64)
         self.decompress_df = tf.keras.layers.Dense(128)
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            max_length=151, seq_axis=2, name="nuc_pos"
+            max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
         )
         self.attention_layers = []
         for i in range(self.num_layers):
@@ -243,6 +249,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         config.update(
             {
                 "hidden_dim": self.hidden_dim,
+                "max_bp": self.max_bp,
                 "num_heads": self.num_heads,
                 "num_layers": self.num_layers,
                 "dropout": self.dropout,

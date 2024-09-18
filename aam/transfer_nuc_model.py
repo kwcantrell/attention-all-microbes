@@ -20,11 +20,11 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
 
         self.token_dim = 128
-        self.mask_percent = 25
+        self.mask_percent = mask_percent
         self.num_classes = num_classes
         self.shift = shift
         self.scale = scale
-        self.penalty = 5000
+        self.penalty = tf.constant(penalty, dtype=tf.float32)
         self.loss_tracker = tf.keras.metrics.Mean()
         self.target_tracker = tf.keras.metrics.Mean()
         self.reg_tracker = tf.keras.metrics.Mean()
@@ -93,15 +93,14 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         # count mask
         count_mask = float_mask(counts)
         num_counts = tf.reduce_sum(count_mask, axis=-1, keepdims=True)
-
         # count mse
-        count_loss = tf.math.square(counts - count_pred)
-        count_loss = tf.reduce_sum(count_loss * count_mask, axis=-1, keepdims=True)
-        count_loss = self.penalty * tf.reduce_mean(count_loss / num_counts)
+        count_loss = tf.math.square(counts - count_pred) * count_mask
+        count_loss = tf.reduce_sum(count_loss, axis=-1, keepdims=True) / num_counts
+        count_loss = self.penalty * tf.reduce_mean(count_loss)
 
         target_loss = self.loss(y_true, y_pred)
-        reg_loss = tf.reduce_sum(self.losses)
-        return target_loss + count_loss + reg_loss, target_loss, count_loss, reg_loss
+        reg_loss = tf.reduce_mean(self.losses)
+        return target_loss + count_loss, target_loss, count_loss, reg_loss
 
     def _compute_metric(self, y_true, outputs):
         _, _, y_pred, _ = outputs
@@ -186,13 +185,17 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_mask = float_mask(extended_counts, dtype=self.compute_dtype)
         if self.trainable and training:
             random_mask = tf.random.uniform(
-                tf.shape(extended_counts), minval=0, maxval=1, dtype=self.compute_dtype
+                tf.shape(extended_counts),
+                minval=0,
+                maxval=100,
+                dtype=self.compute_dtype,
             )
             random_mask = tf.cast(
-                tf.less_equal(random_mask, 0.75), dtype=self.compute_dtype
+                tf.greater_equal(random_mask, self.mask_percent),
+                dtype=self.compute_dtype,
             )
             extended_counts = extended_counts * random_mask
-            # asv_embeddings = asv_embeddings * random_mask
+            asv_embeddings = asv_embeddings * random_mask
 
         # up project counts
         count_embeddings = self.count_encoder(

@@ -31,6 +31,7 @@ class CVModel:
         metric="mae",
         patience=10,
         early_stop_warmup=50,
+        callbacks=[],
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
@@ -51,7 +52,7 @@ class CVModel:
         self.model.fit(
             self.train_dataset,
             validation_data=self.val_dataset,
-            callbacks=[*core_callbacks],
+            callbacks=[*callbacks, *core_callbacks],
             epochs=epochs,
             # verbose=0,
         )

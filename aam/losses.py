@@ -82,11 +82,11 @@ class ImbalancedMSE(tf.keras.losses.Loss):
 class ImbalancedCategoricalCrossEntropy(tf.keras.losses.Loss):
     def __init__(self, adjustment_weights=[0.1, 0.2, 0.3], reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
+        self.num_classes = len(adjustment_weights)
         adjustment_weights = tf.constant(adjustment_weights)
         adjustment_weights = tf.reduce_sum(adjustment_weights) / adjustment_weights
         adjustment_weights = tf.expand_dims(adjustment_weights, axis=-1)
         self.adjustment_weights = adjustment_weights
-        self.num_classes = len(adjustment_weights)
 
     def call(self, y_true, y_pred):
         y_true = tf.cast(y_true, dtype=tf.int32)
@@ -95,7 +95,7 @@ class ImbalancedCategoricalCrossEntropy(tf.keras.losses.Loss):
 
         y_true = tf.one_hot(y_true, self.num_classes)
         loss = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-        return loss * weights
+        return (weights) * loss
 
     def get_config(self):
         config = super().get_config()

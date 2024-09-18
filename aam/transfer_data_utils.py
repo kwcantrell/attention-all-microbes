@@ -70,7 +70,7 @@ def load_data(
         cat_counts = target_data.value_counts()
         cat_counts = cat_counts.reindex(cat_labels).to_numpy().astype(np.float32)
         target_data = target_data.cat.codes
-        num_classes = np.max(target_data) + 1
+        num_classes = len(cat_labels)
         target_data = tf.expand_dims(target_data, axis=-1)
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
     else:
