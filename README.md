@@ -36,7 +36,9 @@ or install a specific version
 ## Developers
 
 `git clone git@github.com:kwcantrell/attention-all-microbes.git`
+
 `cd attention-all-microbes`
+
 `pip install -e .`
 
 # Training
