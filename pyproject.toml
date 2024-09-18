@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aam"
-requires-python = ">=3.9"
+requires-python = ">= 3.9, < 3.10"
 dynamic = ["version"]
 description = "Deep Learning Method for Microbial Sequencing Data"
 readme = "README.md"
@@ -23,17 +23,15 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
-    "cython",
     "seaborn",
     "biom-format",
-    "scikit-bio >= 0.6.0",
-    "scikit-learn",
+    "scikit-bio >= 0.6",
+    "scikit-learn >= 1.3",
     "scipy >= 1.13.0",
     "unifrac",
     "click",
-    "iow",
-    "tensorflow == 2.14.0",
-    "tf-models-official == 2.14.2",
+    "tensorflow[and-cuda] >= 2.14.0, < 2.15",
+    "tf-models-official >= 2.14.2",
     "tensorboard"
 
 ]
@@ -49,16 +47,16 @@ attention = "aam.attention_cli:main"
 [tool.setuptools]
 packages = ["aam"]
 
-[tool.setuptools.packages.find]
-where = ["aam"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
 docs = ["sphinx", "myst-parser"]
 
+
 [tool.ruff]
 line-length = 128
 ignore = ["F841", "F401"]
+
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
