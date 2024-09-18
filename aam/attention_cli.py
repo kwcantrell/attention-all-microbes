@@ -70,7 +70,7 @@ def fit_unifrac_regressor(
 
     data_obj = load_data(i_table, tree_path=i_tree, batch_size=p_batch_size)
 
-    load_model = True
+    load_model = False
     if load_model:
         model = tf.keras.models.load_model(f"{output_dir}/model.keras")
     else:
