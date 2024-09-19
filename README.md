@@ -1,28 +1,51 @@
 # Attention All Microbes (AAM)
-<b>Alpha release</b> : Bugs may be present
 
 Attention-based network for microbial sequencing data. 
 
-# Installation
+# Installation Instructions
+IMPORTANT: If installing on a server cluster, spawn an instance with a GPU before proceeding with environment setup.
+First create a new conda environment with unifrac
 
+`conda create --name aam -c conda-forge -c bioconda unifrac python=3.9 cython`
+
+`conda activate aam`
+
+## GPU Support 
+
+Install CUDA 11.8
+
+`conda install nvidia/label/cuda-11.8.0::cuda-toolkit`
+
+Verify the NVIDIA GPU drives are on your path
+
+`nvidia-smi`
+
+Please see [Tensorflow](https://www.tensorflow.org/install) for more information
+
+## Install AAM
+
+
+For the latest version
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git`
+
+or install a specific version
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@v0.1.0`
+
+## Developers
+
+`git clone git@github.com:kwcantrell/attention-all-microbes.git`
+
+`cd attention-all-microbes`
+
+`pip install -e .`
 
 # Training
 
-Currently only supports  `python cli.py fit-regressor`
+Classifiers and Regressors are trained use cross-validation 
 
-
-# Results
-
-Currently only supports  `python cli.py scatter-plot`
-
-<h2>Significant improvement over random forest</h2>
-
-Compare results from [age regression](https://journals.asm.org/doi/10.1128/msystems.00630-19)
-
-| AAM | Random Forest |
-|-----|---------------|
-|![Scatter](docs/scatter-plot.png)|![Random](docs/random_forest.png)|
-|![Residual](docs/residual-plot.png)| |
+`attention --help`
 
 
 
