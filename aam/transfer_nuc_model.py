@@ -10,11 +10,13 @@ class TransferLearnNucleotideModel(tf.keras.Model):
     def __init__(
         self,
         base_model,
+        freeze_base_weights,
         mask_percent=25,
         num_classes=None,
         shift=0,
         scale=1,
         penalty=5000,
+        dropout=0.0,
         **kwargs,
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
@@ -25,16 +27,19 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.shift = shift
         self.scale = scale
         self.penalty = tf.constant(penalty, dtype=tf.float32)
+        self.dropout = dropout
         self.loss_tracker = tf.keras.metrics.Mean()
         self.target_tracker = tf.keras.metrics.Mean()
         self.reg_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
         self.base_model = base_model
-        self.base_model.trainable = False
+        self.freeze_base_weights = freeze_base_weights
+        self.base_model.trainable = not self.freeze_base_weights
 
         # count embeddings
-        self.count_encoder = CountEncoder()
+
+        self.count_encoder = CountEncoder(dropout_rate=self.dropout)
         self.count_intermediate = tf.keras.layers.Dense(
             128,
             activation="relu",
@@ -50,11 +55,11 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             initializer=tf.keras.initializers.GlorotNormal(),
             trainable=True,
         )
-        self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=2,
+        self.transfer_encoder = tfm.nlp.models.TransformerDecoder(
+            num_layers=4,
             num_attention_heads=4,
             intermediate_size=1024,
-            dropout_rate=0.1,
+            dropout_rate=self.dropout,
         )
 
         self.transfer_intermediate = tf.keras.layers.Dense(
@@ -95,6 +100,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         num_counts = tf.reduce_sum(count_mask, axis=-1, keepdims=True)
         # count mse
         count_loss = tf.math.square(counts - count_pred) * count_mask
+        # count_loss = tf.math.divide_no_nan(count_loss, counts)
         count_loss = tf.reduce_sum(count_loss, axis=-1, keepdims=True) / num_counts
         count_loss = self.penalty * tf.reduce_mean(count_loss)
 
@@ -180,30 +186,19 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         counts = tf.cast(counts, dtype=self.compute_dtype)
         extended_counts = tf.expand_dims(counts, axis=-1)
 
-        asv_embeddings, _, _, _ = self.base_model(tokens, training=False)
-
         count_mask = float_mask(extended_counts, dtype=self.compute_dtype)
-        if self.trainable and training:
-            random_mask = tf.random.uniform(
-                tf.shape(extended_counts),
-                minval=0,
-                maxval=100,
-                dtype=self.compute_dtype,
-            )
-            random_mask = tf.cast(
-                tf.greater_equal(random_mask, self.mask_percent),
-                dtype=self.compute_dtype,
-            )
-            extended_counts = extended_counts * random_mask
-            asv_embeddings = asv_embeddings * random_mask
-
-        # up project counts
+        asv_embeddings = self.base_model(
+            tokens,
+            return_final_embeddings=True,
+            randomly_mask_nucleotides=False,
+            training=False,
+        )
+        asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype)
         count_embeddings = self.count_encoder(
             extended_counts, count_mask=count_mask, training=training
         )
         count_embeddings = tf.cast(count_embeddings, dtype=self.compute_dtype)
-        embeddings = asv_embeddings + count_embeddings
-        embeddings = embeddings * count_mask
+        embeddings = count_embeddings
 
         # add <SAMPLE> token empbedding
         asv_shape = tf.shape(embeddings)
@@ -221,8 +216,14 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         # asv + count attention
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
+        cross_attention_mask = tf.linalg.band_part(count_attention_mask, -1, 0)
+
         embeddings = self.transfer_encoder(
-            embeddings, attention_mask=count_attention_mask, training=training
+            embeddings,
+            asv_embeddings,
+            self_attention_mask=cross_attention_mask,
+            cross_attention_mask=count_attention_mask,
+            training=training,
         )
 
         target_out = self.transfer_intermediate(embeddings[:, -1, :])
@@ -243,10 +244,12 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         config.update(
             {
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
+                "freeze_base_weights": self.freeze_base_weights,
                 "mask_percent": self.mask_percent,
                 "shift": self.shift,
                 "scale": self.scale,
                 "penalty": self.penalty,
+                "dropout": self.dropout,
             }
         )
         return config

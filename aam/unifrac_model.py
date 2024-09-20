@@ -116,7 +116,13 @@ class UnifracModel(tf.keras.Model):
         accuracy = tf.reduce_sum(accuracy, axis=-1) / asv_per_sample
         return tf.reduce_mean(accuracy)
 
-    def call(self, inputs, training=False):
+    def call(
+        self,
+        inputs,
+        return_final_embeddings=False,
+        randomly_mask_nucleotides=True,
+        training=False,
+    ):
         # need to cast inputs to int32 to avoid error
         # because keras converts all inputs
         # to float when calling build()
@@ -124,7 +130,7 @@ class UnifracModel(tf.keras.Model):
 
         # randomly mask 10% in each ASV
         nuc_mask = None
-        if self.trainable and training:
+        if randomly_mask_nucleotides and training:
             nuc_mask = tf.random.uniform(
                 (1, 1, 150), minval=0, maxval=1, dtype=self.compute_dtype
             )
@@ -150,14 +156,14 @@ class UnifracModel(tf.keras.Model):
             asv_embeddings, attention_mask=asv_mask, training=training
         )
 
-        sample_embeddings = sample_embeddings[:, -1, :]
-        sample_embeddings = self.linear_activation(sample_embeddings)
+        if not return_final_embeddings:
+            sample_embeddings = sample_embeddings[:, -1, :]
+            sample_embeddings = self.linear_activation(sample_embeddings)
+            return asv_embeddings, sample_embeddings, nucleotides, inputs
 
-        return asv_embeddings, sample_embeddings, nucleotides, inputs
+        return sample_embeddings
 
     def build(self, input_shape=None):
-        input = tf.keras.Input([None, self.max_bp])
-        self.call(input)
         super(UnifracModel, self).build(tf.TensorShape([None, None, self.max_bp]))
 
     def train_step(self, data):
