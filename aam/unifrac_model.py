@@ -21,6 +21,10 @@ class UnifracModel(tf.keras.Model):
         attention_layers,
         attention_ff,
         dropout_rate,
+        penalty=0.01,
+        nuc_attention_heads=2,
+        nuc_attention_layers=4,
+        intermediate_ff=1024,
         **kwargs,
     ):
         super(UnifracModel, self).__init__(**kwargs)
@@ -33,6 +37,10 @@ class UnifracModel(tf.keras.Model):
         self.attention_layers = attention_layers
         self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
+        self.penalty = penalty
+        self.nuc_attention_heads = nuc_attention_heads
+        self.nuc_attention_layers = nuc_attention_layers
+        self.intermediate_ff = intermediate_ff
         self.regresssion_loss = PairwiseLoss()
         self.attention_loss = tf.keras.losses.CategoricalCrossentropy(
             from_logits=False, reduction="none"
@@ -49,10 +57,11 @@ class UnifracModel(tf.keras.Model):
             pca_hidden_dim,
             pca_heads,
             pca_layers,
-            attention_heads,
-            attention_layers,
+            nuc_attention_heads,
+            nuc_attention_layers,
             attention_ff,
             dropout_rate,
+            intermediate_ff,
             name="asv_encoder",
         )
         self.sample_encoder = SampleEncoder(
@@ -76,11 +85,7 @@ class UnifracModel(tf.keras.Model):
 
         # Compute regression loss
         reg_loss = self.regresssion_loss(target, sample_embeddings)
-        reg_loss = tf.linalg.band_part(reg_loss, 0, -1)
-        reg_loss = tf.reduce_sum(reg_loss)
-        mask = float_mask(reg_loss)
-        counts = tf.reduce_sum(mask)
-        reg_loss = tf.math.divide_no_nan(reg_loss, counts)
+        reg_loss = tf.reduce_sum(reg_loss, axis=-1, keepdims=True) / 2
 
         # nucleotide level
         token_cat = tf.one_hot(tokens, depth=6)  # san -> san6
@@ -88,17 +93,17 @@ class UnifracModel(tf.keras.Model):
 
         # mask pad tokens
         asv_mask = float_mask(tokens)
-        asv_per_sample = tf.reduce_sum(asv_mask[:, :, 1], axis=-1)
-
         asv_loss = asv_loss * asv_mask
         asv_loss = tf.reduce_sum(asv_loss, axis=-1)  # san -> sa
 
+        asv_per_sample = tf.reduce_sum(asv_mask[:, :, 1], axis=-1, keepdims=True)
+
         # asv_level
-        asv_loss = tf.reduce_sum(asv_loss, axis=-1) / asv_per_sample  # sa -> s1
-        asv_loss = tf.reduce_mean(asv_loss)
+        asv_loss = tf.reduce_sum(asv_loss, axis=-1, keepdims=True)
+        asv_loss = tf.math.divide_no_nan(asv_loss, asv_per_sample)  # sa -> s1
 
         # total
-        loss = tf.reduce_mean(reg_loss + 0.01 * asv_loss)
+        loss = tf.reduce_mean(reg_loss + self.penalty * asv_loss)
         return [loss, reg_loss, asv_loss]
 
     def _compute_accuracy(self, y_true, y_pred):
@@ -108,13 +113,9 @@ class UnifracModel(tf.keras.Model):
         accuracy = tf.cast(tf.equal(tokens, pred_classes), dtype=tf.float32)
 
         mask = float_mask(tokens)
-        asv_per_sample = tf.reduce_sum(mask[:, :, 1], axis=-1)
-
         accuracy = accuracy * mask
-        accuracy = tf.reduce_mean(accuracy, axis=-1)
 
-        accuracy = tf.reduce_sum(accuracy, axis=-1) / asv_per_sample
-        return tf.reduce_mean(accuracy)
+        return tf.reduce_sum(accuracy) / tf.reduce_sum(mask)
 
     def call(
         self,
@@ -127,19 +128,27 @@ class UnifracModel(tf.keras.Model):
         # because keras converts all inputs
         # to float when calling build()
         inputs = tf.cast(inputs, dtype=tf.int32)
-
+        seq_mask = float_mask(inputs, dtype=tf.int32)
         # randomly mask 10% in each ASV
+<<<<<<< HEAD
         nuc_mask = None
         if randomly_mask_nucleotides and training:
             nuc_mask = tf.random.uniform(
                 (1, 1, 150), minval=0, maxval=1, dtype=self.compute_dtype
+=======
+        nuc_mask = tf.ones_like(inputs, dtype=tf.int32)
+        if randomly_mask_nucleotides and training:
+            random_mask = tf.random.uniform(
+                tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
+>>>>>>> checkpoint
             )
-            nuc_mask = tf.less_equal(nuc_mask, 0.9)
-            nuc_mask = tf.cast(nuc_mask, dtype=tf.int32)
+            random_mask = tf.greater_equal(random_mask, self.dropout_rate)
+            nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)
+        seq = inputs * nuc_mask
 
         embeddings = self.asv_encoder(
-            inputs,
-            nuc_mask=nuc_mask,
+            seq,
+            seq_mask=seq_mask,
             training=training,
         )
         asv_embeddings = embeddings[:, :, -1, :]
@@ -276,6 +285,10 @@ class UnifracModel(tf.keras.Model):
                 "attention_layers": self.attention_layers,
                 "attention_ff": self.attention_ff,
                 "dropout_rate": self.dropout_rate,
+                "penalty": self.penalty,
+                "nuc_attention_heads": self.nuc_attention_heads,
+                "nuc_attention_layers": self.nuc_attention_layers,
+                "intermediate_ff": self.intermediate_ff,
             }
         )
         return config

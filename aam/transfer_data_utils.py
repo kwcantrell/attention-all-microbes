@@ -47,7 +47,11 @@ def load_data(
     class_labels=None,
     shuffle_samples=True,
     missing_samples_flag=None,
+<<<<<<< HEAD
     max_token_per_sample=225,
+=======
+    max_token_per_sample=512,
+>>>>>>> checkpoint
     batch_size=8,
 ):
     def _get_table_data(table_data):

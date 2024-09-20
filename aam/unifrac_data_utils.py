@@ -11,7 +11,7 @@ def load_data(
     table_path,
     shuffle_samples=True,
     tree_path=None,
-    max_token_per_sample=300,
+    max_token_per_sample=512,
     batch_size=8,
     temp_table_path="temp_table.biom",
 ):
@@ -99,7 +99,7 @@ def load_data(
             ds = ds.cache()
             if shuffle_samples and not val:
                 ds = ds.shuffle(shuffle_buf)
-            ds = ds.padded_batch(batch_size)
+            ds = ds.padded_batch(batch_size, drop_remainder=True)
             ds = ds.map(filter, num_parallel_calls=tf.data.AUTOTUNE)
 
             return ds

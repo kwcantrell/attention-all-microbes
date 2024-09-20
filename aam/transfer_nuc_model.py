@@ -93,20 +93,37 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
     def _compute_loss(self, y_true, outputs):
         _, count_pred, y_pred, counts = outputs
+
+        y_pred = tf.ensure_shape(y_pred, [None, 1])
+        count_pred = tf.ensure_shape(count_pred, [None, None])
+
         counts = tf.cast(counts, dtype=tf.float32)
 
         # count mask
         count_mask = float_mask(counts)
+        count_mask = tf.ensure_shape(count_mask, [None, None])
+
         num_counts = tf.reduce_sum(count_mask, axis=-1, keepdims=True)
+        num_counts = tf.ensure_shape(num_counts, [None, 1])
+
         # count mse
         count_loss = tf.math.square(counts - count_pred) * count_mask
+<<<<<<< HEAD
         # count_loss = tf.math.divide_no_nan(count_loss, counts)
+=======
+        count_loss = tf.ensure_shape(count_loss, [None, None])
+>>>>>>> checkpoint
         count_loss = tf.reduce_sum(count_loss, axis=-1, keepdims=True) / num_counts
-        count_loss = self.penalty * tf.reduce_mean(count_loss)
+        count_loss = tf.ensure_shape(count_loss, [None, 1])
 
         target_loss = self.loss(y_true, y_pred)
         reg_loss = tf.reduce_mean(self.losses)
-        return target_loss + count_loss, target_loss, count_loss, reg_loss
+        return (
+            tf.reduce_mean(target_loss + self.penalty * count_loss),
+            target_loss,
+            count_loss,
+            reg_loss,
+        )
 
     def _compute_metric(self, y_true, outputs):
         _, _, y_pred, _ = outputs
@@ -121,6 +138,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             self.transfer_tracker(y_true, y_pred)
 
     def build(self, input_shape=None):
+        seq_input = tf.keras.Input([None, 150])
+        count_input = tf.keras.Input([None])
+        self.call([seq_input, count_input])
         super(TransferLearnNucleotideModel, self).build(
             [(None, None, 150), (None, None)]
         )

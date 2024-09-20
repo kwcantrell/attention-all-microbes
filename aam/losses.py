@@ -69,8 +69,10 @@ class ImbalancedMSE(tf.keras.losses.Loss):
 
     def call(self, y_true, y_pred):
         y, density = y_true
-        loss = tf.keras.losses.mse(y, y_pred)
-        return tf.reduce_mean(loss)
+        y = tf.ensure_shape(y, [None, 1])
+        y_pred = tf.ensure_shape(y_pred, [None, 1])
+        loss = tf.square(y - y_pred)
+        return loss
 
     def get_config(self):
         config = super().get_config()
