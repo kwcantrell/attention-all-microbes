@@ -44,6 +44,9 @@ MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fai
 @click.option("--p-pca-heads", default=8, show_default=True, type=int)
 @click.option("--p-enc-layers", default=2, show_default=True, type=int)
 @click.option("--p-enc-heads", default=8, show_default=True, type=int)
+@click.option("--p-patience", default=10, show_default=True, type=int)
+@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--i-model", default="", required=False, type=str)
 @click.option("--output-dir", required=True)
 def fit_unifrac_regressor(
     i_table: str,
@@ -56,6 +59,9 @@ def fit_unifrac_regressor(
     p_pca_heads: int,
     p_enc_layers: int,
     p_enc_heads: int,
+    p_patience: int,
+    p_early_stop_warmup: int,
+    i_model: str,
     output_dir: str,
 ):
     from aam.unifrac_data_utils import load_data
@@ -68,11 +74,8 @@ def fit_unifrac_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    data_obj = load_data(i_table, tree_path=i_tree, batch_size=p_batch_size)
-
-    load_model = False
-    if load_model:
-        model = tf.keras.models.load_model(f"{output_dir}/model.keras")
+    if os.path.exists(i_model):
+        model = tf.keras.models.load_model(i_model)
     else:
         model = UnifracModel(
             p_ff_d_model,
@@ -94,6 +97,7 @@ def fit_unifrac_regressor(
             optimizer=optimizer,
             run_eagerly=False,
         )
+    data_obj = load_data(i_table, tree_path=i_tree, batch_size=p_batch_size)
     model.summary()
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -106,7 +110,9 @@ def fit_unifrac_regressor(
             log_dir=log_dir,
             histogram_freq=0,
         ),
-        tf.keras.callbacks.EarlyStopping("val_loss", patience=5, start_from_epoch=5),
+        tf.keras.callbacks.EarlyStopping(
+            "val_loss", patience=p_patience, start_from_epoch=p_early_stop_warmup
+        ),
         model_saver,
     ]
     model.fit(
@@ -127,6 +133,11 @@ def fit_unifrac_regressor(
     type=click.Path(exists=True),
 )
 @click.option("--i-base-model-path", required=True, type=click.Path(exists=True))
+@click.option(
+    "--p-freeze-base-weights / --p-no-freeze-base-weights",
+    default=True,
+    required=False,
+)
 @click.option(
     "--m-metadata-file",
     required=True,
@@ -158,10 +169,13 @@ def fit_unifrac_regressor(
 )
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
     i_base_model_path: str,
+    p_freeze_base_weights: bool,
     m_metadata_file: str,
     m_metadata_column: str,
     p_missing_samples: str,
@@ -172,6 +186,8 @@ def fit_sample_regressor(
     p_test_size: float,
     p_patience: int,
     p_early_stop_warmup: int,
+    p_batch_size: int,
+    p_dropout: float,
     output_dir: str,
 ):
     from aam.transfer_data_utils import (
@@ -212,7 +228,12 @@ def fit_sample_regressor(
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df[df.index.isin(fold_ids)]
         data = load_data(
-            table_fold, False, df_fold, m_metadata_column, shuffle_samples=shuffle
+            table_fold,
+            False,
+            df_fold,
+            m_metadata_column,
+            shuffle_samples=shuffle,
+            batch_size=p_batch_size,
         )
         return data
 
@@ -226,10 +247,12 @@ def fit_sample_regressor(
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         model = TransferLearnNucleotideModel(
             base_model,
+            p_freeze_base_weights,
             mask_percent=p_mask_percent,
             shift=train_data["shift"],
             scale=train_data["scale"],
             penalty=p_penalty,
+            dropout=p_dropout,
         )
         loss = ImbalancedMSE(train_data["max_density"])
         fold_label = i + 1
@@ -270,6 +293,11 @@ def fit_sample_regressor(
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-base-model-path", required=True, type=click.Path(exists=True))
 @click.option(
+    "--p-freeze-base-weights / --p-no-freeze-base-weights",
+    default=True,
+    required=False,
+)
+@click.option(
     "--m-metadata-file",
     required=True,
     help="Metadata description",
@@ -298,11 +326,14 @@ def fit_sample_regressor(
 )
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-report-back", default=1, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_classifier(
     i_table: str,
     i_base_model_path: str,
+    p_freeze_base_weights: bool,
     m_metadata_file: str,
     m_metadata_column: str,
     p_missing_samples: str,
@@ -314,6 +345,8 @@ def fit_sample_classifier(
     p_stratify: bool,
     p_patience: int,
     p_early_stop_warmup: int,
+    p_batch_size: int,
+    p_dropout: float,
     p_report_back: int,
     output_dir: str,
 ):
@@ -356,7 +389,12 @@ def fit_sample_classifier(
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df[df.index.isin(fold_ids)]
         data = load_data(
-            table_fold, True, df_fold, m_metadata_column, shuffle_samples=shuffle
+            table_fold,
+            True,
+            df_fold,
+            m_metadata_column,
+            shuffle_samples=shuffle,
+            batch_size=p_batch_size,
         )
         return data
 
@@ -378,11 +416,13 @@ def fit_sample_classifier(
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         model = TransferLearnNucleotideModel(
             base_model,
+            p_freeze_base_weights,
             mask_percent=p_mask_percent,
             shift=train_data["shift"],
             scale=train_data["scale"],
             penalty=p_penalty,
             num_classes=train_data["num_classes"],
+            dropout=p_dropout,
         )
         loss = ImbalancedCategoricalCrossEntropy(train_data["cat_counts"])
         fold_label = i + 1

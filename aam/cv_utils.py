@@ -44,7 +44,7 @@ class CVModel:
                 histogram_freq=0,
             ),
             tf.keras.callbacks.EarlyStopping(
-                f"val_{metric}", patience=patience, start_from_epoch=early_stop_warmup
+                "val_loss", patience=patience, start_from_epoch=early_stop_warmup
             ),
             model_saver,
         ]

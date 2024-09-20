@@ -48,6 +48,7 @@ def load_data(
     shuffle_samples=True,
     missing_samples_flag=None,
     max_token_per_sample=225,
+    batch_size=8,
 ):
     def _get_table_data(table_data):
         coo = table_data.transpose().matrix_data.tocoo()
@@ -141,7 +142,7 @@ def load_data(
             if shuffle_samples:
                 ds = ds.shuffle(shuffle_buf)
             ds = ds.map(process_table, num_parallel_calls=tf.data.AUTOTUNE)
-            ds = ds.padded_batch(8)
+            ds = ds.padded_batch(batch_size)
             ds = ds.map(filter, num_parallel_calls=tf.data.AUTOTUNE)
 
             return ds

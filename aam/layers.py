@@ -378,18 +378,16 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
 
 @tf.keras.saving.register_keras_serializable(package="CountEncoder")
 class CountEncoder(tf.keras.layers.Layer):
-    def __init__(self, activity_regularizer=None, **kwargs):
+    def __init__(self, dropout_rate=0.0, activity_regularizer=None, **kwargs):
         super(CountEncoder, self).__init__(
             activity_regularizer=activity_regularizer, **kwargs
         )
         self.token_dim = 128
+        self.dropout_rate = dropout_rate
         self.count_ranks = tfm.nlp.layers.PositionEmbedding(512)
-        self.count_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=2,
-            num_attention_heads=4,
-            intermediate_size=1024,
-            dropout_rate=0.1,
-        )
+        self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(512)
+        self.inter_dff = tf.keras.layers.Dense(128, use_bias=True)
+        self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
     def call(self, inputs, count_mask=None, training=False):
         # up project counts and mask
@@ -397,13 +395,15 @@ class CountEncoder(tf.keras.layers.Layer):
         batch_size = shape[0]
         n_dims = shape[1]
         count_embeddings = (
-            self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) * inputs
+            self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + inputs
         )
+        count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
+        count_embeddings = self.inter_dff(count_embeddings)
         count_embeddings = count_embeddings * count_mask
-
-        # count attention
-        count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
-        count_embeddings = self.count_encoder(
-            count_embeddings, attention_mask=count_attention_mask, training=training
-        )
+        count_embeddings = self.dropout(count_embeddings, training=training)
         return count_embeddings
+
+    def get_config(self):
+        config = super(CountEncoder, self).get_config()
+        config.update({"dropout_rate": self.dropout_rate})
+        return config
