@@ -398,7 +398,9 @@ class CountEncoder(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
         self.count_ranks = tfm.nlp.layers.PositionEmbedding(512)
         self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(512)
-        self.inter_dff = tf.keras.layers.Dense(128, use_bias=True)
+        self.norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
+        self.inter_dff = tf.keras.layers.Dense(256, use_bias=True, activation="relu")
+        self.outer_dff = tf.keras.layers.Dense(128, use_bias=True)
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
     def call(self, inputs, count_mask=None, training=False):
@@ -409,9 +411,11 @@ class CountEncoder(tf.keras.layers.Layer):
         count_embeddings = (
             self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + inputs
         )
-        count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
+        # count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
         count_embeddings = self.inter_dff(count_embeddings)
+        count_embeddings = self.outer_dff(count_embeddings)
         count_embeddings = count_embeddings * count_mask
+        count_embeddings = self.norm(count_embeddings)
         count_embeddings = self.dropout(count_embeddings, training=training)
         return count_embeddings
 

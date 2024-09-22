@@ -67,6 +67,19 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
     plt.close()
 
 
+class MeanAbsoluteError(tf.keras.callbacks.Callback):
+    def __init__(self, dataset, output_dir, report_back, **kwargs):
+        super().__init__(**kwargs)
+        self.dataset = dataset
+        self.output_dir = output_dir
+        self.report_back = report_back
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % self.report_back == 0:
+            y_pred, y_true = self.model.predict(self.dataset)
+            _mean_absolute_error(y_pred, y_true, self.output_dir)
+
+
 class ConfusionMatrx(tf.keras.callbacks.Callback):
     def __init__(self, dataset, output_dir, report_back, labels, **kwargs):
         super().__init__(**kwargs)

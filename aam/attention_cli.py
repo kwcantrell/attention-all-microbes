@@ -9,6 +9,7 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 from aam.callbacks import (
     ConfusionMatrx,
+    MeanAbsoluteError,
     SaveModel,
     _confusion_matrix,
     _mean_absolute_error,
@@ -195,6 +196,8 @@ def fit_unifrac_regressor(
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-report-back", default=5, show_default=True, type=int)
+@click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
@@ -212,6 +215,8 @@ def fit_sample_regressor(
     p_early_stop_warmup: int,
     p_batch_size: int,
     p_dropout: float,
+    p_report_back: int,
+    p_asv_limit: int,
     output_dir: str,
 ):
     from aam.transfer_data_utils import (
@@ -258,6 +263,7 @@ def fit_sample_regressor(
             m_metadata_column,
             shuffle_samples=shuffle,
             batch_size=p_batch_size,
+            max_token_per_sample=p_asv_limit,
         )
         return data
 
@@ -294,6 +300,15 @@ def fit_sample_regressor(
             metric="mae",
             patience=p_patience,
             early_stop_warmup=p_early_stop_warmup,
+            callbacks=[
+                MeanAbsoluteError(
+                    dataset=val_data["dataset"],
+                    output_dir=os.path.join(
+                        figure_path, f"model_f{fold_label}-val.png"
+                    ),
+                    report_back=p_report_back,
+                )
+            ],
         )
         models.append(model_cv)
         print(f"Fold {i+1} mae: {model_cv.metric_value}")
@@ -352,7 +367,8 @@ def fit_sample_regressor(
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-report-back", default=1, show_default=True, type=int)
+@click.option("--p-report-back", default=5, show_default=True, type=int)
+@click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_classifier(
     i_table: str,
@@ -372,6 +388,7 @@ def fit_sample_classifier(
     p_batch_size: int,
     p_dropout: float,
     p_report_back: int,
+    p_asv_limit: int,
     output_dir: str,
 ):
     from aam.transfer_data_utils import (
@@ -419,6 +436,7 @@ def fit_sample_classifier(
             m_metadata_column,
             shuffle_samples=shuffle,
             batch_size=p_batch_size,
+            max_token_per_sample=p_asv_limit,
         )
         return data
 
