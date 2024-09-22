@@ -390,33 +390,63 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
 
 @tf.keras.saving.register_keras_serializable(package="CountEncoder")
 class CountEncoder(tf.keras.layers.Layer):
-    def __init__(self, dropout_rate=0.0, activity_regularizer=None, **kwargs):
+    def __init__(
+        self, dropout_rate=0.0, activity_regularizer=None, dtype=tf.float32, **kwargs
+    ):
         super(CountEncoder, self).__init__(
-            activity_regularizer=activity_regularizer, **kwargs
+            activity_regularizer=activity_regularizer, dtype=dtype, **kwargs
         )
         self.token_dim = 128
         self.dropout_rate = dropout_rate
-        self.count_ranks = tfm.nlp.layers.PositionEmbedding(512)
-        self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(512)
-        self.norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
-        self.inter_dff = tf.keras.layers.Dense(256, use_bias=True, activation="relu")
-        self.outer_dff = tf.keras.layers.Dense(128, use_bias=True)
-        self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
+        self.count_ranks = tfm.nlp.layers.PositionEmbedding(512, dtype=dtype)
+        self.transfer_token = self.add_weight(
+            "transfer_token",
+            [1, 1, 128],
+            dtype=tf.float32,
+            initializer=tf.keras.initializers.GlorotNormal(),
+            trainable=True,
+        )
+        self.norm = tf.keras.layers.LayerNormalization(
+            epsilon=0.000001, dtype=tf.float32
+        )
+        self.inter_dff = tf.keras.layers.Dense(
+            128, use_bias=True, activation="relu", dtype=dtype
+        )
+        self.outer_dff = tf.keras.layers.Dense(128, use_bias=True, dtype=dtype)
+        self.dropout_inner = tf.keras.layers.Dropout(self.dropout_rate, dtype=dtype)
+        self.dropout_outer = tf.keras.layers.Dropout(self.dropout_rate, dtype=dtype)
 
     def call(self, inputs, count_mask=None, training=False):
         # up project counts and mask
+        count_mask = tf.cast(count_mask, dtype=tf.float32)
+        counts = tf.cast(tf.reduce_sum(inputs, axis=1, keepdims=True), dtype=tf.float32)
+
         shape = tf.shape(inputs)
+        inputs = tf.cast(inputs, dtype=tf.float32)
+
+        rel_abundance = inputs / counts
+
+        # inputs = tf.cast(inputs, dtype=self.compute_dtype)
         batch_size = shape[0]
         n_dims = shape[1]
         count_embeddings = (
-            self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + inputs
+            self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + rel_abundance
         )
-        # count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
+        # add <SAMPLE> token empbedding
+        asv_shape = tf.shape(count_embeddings)
+        batch_len = asv_shape[0]
+        emb_len = asv_shape[-1]
+        sample_emb_shape = [1 for _ in count_embeddings.get_shape().as_list()]
+        sample_emb_shape[0] = batch_len
+        sample_emb_shape[-1] = emb_len
+        transfer_token = tf.broadcast_to(self.transfer_token, sample_emb_shape)
+        transfer_token = tf.cast(transfer_token, dtype=self.compute_dtype)
+        count_embeddings = tf.concat([count_embeddings, transfer_token], axis=1)
+
         count_embeddings = self.inter_dff(count_embeddings)
         count_embeddings = self.outer_dff(count_embeddings)
-        count_embeddings = count_embeddings * count_mask
         count_embeddings = self.norm(count_embeddings)
-        count_embeddings = self.dropout(count_embeddings, training=training)
+        count_embeddings = self.dropout_outer(count_embeddings)
         return count_embeddings
 
     def get_config(self):

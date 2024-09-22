@@ -130,17 +130,10 @@ class UnifracModel(tf.keras.Model):
         inputs = tf.cast(inputs, dtype=tf.int32)
         seq_mask = float_mask(inputs, dtype=tf.int32)
         # randomly mask 10% in each ASV
-<<<<<<< HEAD
-        nuc_mask = None
-        if randomly_mask_nucleotides and training:
-            nuc_mask = tf.random.uniform(
-                (1, 1, 150), minval=0, maxval=1, dtype=self.compute_dtype
-=======
         nuc_mask = tf.ones_like(inputs, dtype=tf.int32)
         if randomly_mask_nucleotides and training:
             random_mask = tf.random.uniform(
                 tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
->>>>>>> checkpoint
             )
             random_mask = tf.greater_equal(random_mask, self.dropout_rate)
             nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)

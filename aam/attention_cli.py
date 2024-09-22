@@ -45,11 +45,6 @@ MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fai
 @click.option("--p-pca-heads", default=8, show_default=True, type=int)
 @click.option("--p-enc-layers", default=2, show_default=True, type=int)
 @click.option("--p-enc-heads", default=8, show_default=True, type=int)
-<<<<<<< HEAD
-@click.option("--p-patience", default=10, show_default=True, type=int)
-@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-@click.option("--i-model", default="", required=False, type=str)
-=======
 @click.option("--p-penalty", default=0.01, type=float)
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
@@ -57,7 +52,6 @@ MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fai
 @click.option("--p-nuc-attention-heads", default=2, type=int)
 @click.option("--p-nuc-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-ff", default=1024, type=int)
->>>>>>> checkpoint
 @click.option("--output-dir", required=True)
 def fit_unifrac_regressor(
     i_table: str,
@@ -70,11 +64,6 @@ def fit_unifrac_regressor(
     p_pca_heads: int,
     p_enc_layers: int,
     p_enc_heads: int,
-<<<<<<< HEAD
-    p_patience: int,
-    p_early_stop_warmup: int,
-    i_model: str,
-=======
     p_penalty: float,
     p_patience: int,
     p_early_stop_warmup: int,
@@ -82,7 +71,6 @@ def fit_unifrac_regressor(
     p_nuc_attention_heads: int,
     p_nuc_attention_layers: int,
     p_intermediate_ff: int,
->>>>>>> checkpoint
     output_dir: str,
 ):
     from aam.unifrac_data_utils import load_data

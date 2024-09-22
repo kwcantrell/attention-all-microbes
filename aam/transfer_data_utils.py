@@ -47,11 +47,7 @@ def load_data(
     class_labels=None,
     shuffle_samples=True,
     missing_samples_flag=None,
-<<<<<<< HEAD
-    max_token_per_sample=225,
-=======
     max_token_per_sample=512,
->>>>>>> checkpoint
     batch_size=8,
 ):
     def _get_table_data(table_data):
@@ -129,7 +125,7 @@ def load_data(
                     :max_token_per_sample
                 ]
                 counts = tf.gather(data.values, sorted_order)[:max_token_per_sample]
-                counts = counts / tf.reduce_sum(counts)
+                counts = tf.cast(counts, dtype=tf.int32)
 
                 encodings = tf.gather(asv_encodings, sorted_asv_indices)
                 tokens = lookup_table.lookup(encodings).to_tensor()
@@ -146,7 +142,13 @@ def load_data(
             if shuffle_samples:
                 ds = ds.shuffle(shuffle_buf)
             ds = ds.map(process_table, num_parallel_calls=tf.data.AUTOTUNE)
-            ds = ds.padded_batch(batch_size)
+            ds = ds.padded_batch(
+                batch_size,
+                (
+                    ([max_token_per_sample, None], [max_token_per_sample]),
+                    ([1], [1]),
+                ),
+            )
             ds = ds.map(filter, num_parallel_calls=tf.data.AUTOTUNE)
 
             return ds
