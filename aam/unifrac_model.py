@@ -85,7 +85,8 @@ class UnifracModel(tf.keras.Model):
 
         # Compute regression loss
         reg_loss = self.regresssion_loss(target, sample_embeddings)
-        reg_loss = tf.reduce_sum(reg_loss, axis=-1, keepdims=True) / 2
+        reg_loss = tf.reduce_sum(reg_loss, axis=-1, keepdims=True)
+        reg_loss = tf.multiply(reg_loss, 1 / 2)
 
         # nucleotide level
         token_cat = tf.one_hot(tokens, depth=6)  # san -> san6
@@ -100,7 +101,7 @@ class UnifracModel(tf.keras.Model):
 
         # asv_level
         asv_loss = tf.reduce_sum(asv_loss, axis=-1, keepdims=True)
-        asv_loss = tf.math.divide_no_nan(asv_loss, asv_per_sample)  # sa -> s1
+        asv_loss = tf.math.multiply(asv_loss, 1 / asv_per_sample)  # sa -> s1
         asv_loss = self.penalty * asv_loss
 
         # total

@@ -284,6 +284,9 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.ff_norm = tf.keras.layers.LayerNormalization(
             epsilon=self.epsilon, dtype=tf.float32
         )
+        # self._softmax = activation.Softmax(
+        #     axis=norm_axes, dtype=self._dtype_policy
+        # )
 
     def build(self, input_shape):
         self._shape = input_shape
@@ -332,7 +335,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
             dot_tensor, [None, None, self.num_heads, self.nucleotides, self.nucleotides]
         )
 
-        scaled_dot_tensor = tf.divide(dot_tensor, self.scale_dot_factor)
+        scaled_dot_tensor = tf.multiply(dot_tensor, 1 / self.scale_dot_factor)
         softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-2)
 
         # [B, A, H, N, N] => [B, A, H, N, S]
