@@ -50,7 +50,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         self.transfer_encoder = tfm.nlp.models.TransformerDecoder(
             num_layers=4,
-            num_attention_heads=2,
+            num_attention_heads=4,
             intermediate_size=1024,
             dropout_rate=self.dropout,
         )
@@ -103,14 +103,19 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_mask = float_mask(counts)
         count_mask = tf.ensure_shape(count_mask, [None, None])
 
+        pred_total_abundance = tf.reduce_sum(
+            count_pred * counts, axis=-1, keepdims=True
+        )
+        abundance_loss = tf.square(1 - pred_total_abundance)
+
         num_counts = tf.reduce_sum(count_mask, axis=-1, keepdims=True)
         num_counts = tf.ensure_shape(num_counts, [None, 1])
 
         # count mse
         count_loss = tf.math.square(counts - count_pred) * count_mask
         count_loss = tf.reduce_sum(count_loss, axis=-1, keepdims=True) / num_counts
-        count_loss = self.penalty * count_loss
-
+        # count_loss = self.penalty * (count_loss + abundance_loss)
+        count_loss = self.penalty * (abundance_loss)
         target_loss = self.loss(y_true, y_pred)
         reg_loss = tf.reduce_mean(self.losses)
         return (
