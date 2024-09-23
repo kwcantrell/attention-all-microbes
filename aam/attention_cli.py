@@ -52,6 +52,10 @@ MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fai
 @click.option("--p-nuc-attention-heads", default=2, type=int)
 @click.option("--p-nuc-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-ff", default=1024, type=int)
+@click.option("--p-asv-limit", default=512, show_default=True, type=int)
+@click.option(
+    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
+)
 @click.option("--output-dir", required=True)
 def fit_unifrac_regressor(
     i_table: str,
@@ -71,11 +75,16 @@ def fit_unifrac_regressor(
     p_nuc_attention_heads: int,
     p_nuc_attention_layers: int,
     p_intermediate_ff: int,
+    p_asv_limit: int,
+    p_mixed_precision: bool,
     output_dir: str,
 ):
     from aam.unifrac_data_utils import load_data
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    if p_mixed_precision:
+        print("\nUsing mixed precision\n")
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -110,7 +119,12 @@ def fit_unifrac_regressor(
             optimizer=optimizer,
             run_eagerly=False,
         )
-    data_obj = load_data(i_table, tree_path=i_tree, batch_size=p_batch_size)
+    data_obj = load_data(
+        i_table,
+        tree_path=i_tree,
+        batch_size=p_batch_size,
+        max_token_per_sample=p_asv_limit,
+    )
     model.summary()
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -186,6 +200,9 @@ def fit_unifrac_regressor(
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-report-back", default=5, show_default=True, type=int)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
+@click.option(
+    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
+)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
@@ -205,6 +222,7 @@ def fit_sample_regressor(
     p_dropout: float,
     p_report_back: int,
     p_asv_limit: int,
+    p_mixed_precision: bool,
     output_dir: str,
 ):
     from aam.transfer_data_utils import (
@@ -213,7 +231,9 @@ def fit_sample_regressor(
         validate_metadata,
     )
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    if p_mixed_precision:
+        print("\nUsing mixed precision\n")
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -357,6 +377,9 @@ def fit_sample_regressor(
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-report-back", default=5, show_default=True, type=int)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
+@click.option(
+    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
+)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_classifier(
     i_table: str,
@@ -377,6 +400,7 @@ def fit_sample_classifier(
     p_dropout: float,
     p_report_back: int,
     p_asv_limit: int,
+    p_mixed_precision: bool,
     output_dir: str,
 ):
     from aam.transfer_data_utils import (
@@ -385,7 +409,10 @@ def fit_sample_classifier(
         validate_metadata,
     )
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    if p_mixed_precision:
+        print("\nUsing mixed precision\n")
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 

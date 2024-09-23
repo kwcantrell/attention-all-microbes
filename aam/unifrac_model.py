@@ -101,9 +101,10 @@ class UnifracModel(tf.keras.Model):
         # asv_level
         asv_loss = tf.reduce_sum(asv_loss, axis=-1, keepdims=True)
         asv_loss = tf.math.divide_no_nan(asv_loss, asv_per_sample)  # sa -> s1
+        asv_loss = self.penalty * asv_loss
 
         # total
-        loss = tf.reduce_mean(reg_loss + self.penalty * asv_loss)
+        loss = tf.reduce_mean(reg_loss) + tf.reduce_sum(asv_loss)
         return [loss, reg_loss, asv_loss]
 
     def _compute_accuracy(self, y_true, y_pred):
@@ -150,9 +151,7 @@ class UnifracModel(tf.keras.Model):
         nucleotides = self.nuc_logits(nuc_embeddings)
         nucleotides = self.softmax(nucleotides)
 
-        asv_mask = float_mask(
-            tf.reduce_sum(inputs, axis=-1, keepdims=True), self.compute_dtype
-        )
+        asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         asv_embeddings = asv_embeddings * asv_mask
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training

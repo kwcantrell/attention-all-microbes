@@ -179,7 +179,7 @@ class SampleEncoder(tf.keras.layers.Layer):
         attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
 
         sample_embeddings = self.sample_attention(
-            asv_embeddings, attention_mask=attention_mask, training=training
+            asv_embeddings, attention_mask=attention_mask > 0, training=training
         )
         return sample_embeddings
 
@@ -219,7 +219,8 @@ class NucleotideAttention(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
-        self.epsilon = 0.000001
+        # self.epsilon = 0.000001
+        self.epsilon = 1e-3
         self.intermediate_ff = intermediate_ff
 
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
@@ -248,7 +249,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
             )
 
         output = self.output_normalization(attention_input)
-        return tf.cast(output, dtype=self.compute_dtype)
+        return output
 
     def get_config(self):
         config = super(NucleotideAttention, self).get_config()
@@ -276,12 +277,12 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.epsilon = epsilon
         self.intermediate_ff = intermediate_ff
         self.attention_norm = tf.keras.layers.LayerNormalization(
-            epsilon=self.epsilon, dtype=self.compute_dtype
+            epsilon=self.epsilon, dtype=tf.float32
         )
         self.attention_dropout = tf.keras.layers.Dropout(self.dropout)
         self.ff_dropout = tf.keras.layers.Dropout(self.dropout)
         self.ff_norm = tf.keras.layers.LayerNormalization(
-            epsilon=self.epsilon, dtype=self.compute_dtype
+            epsilon=self.epsilon, dtype=tf.float32
         )
 
     def build(self, input_shape):
@@ -358,16 +359,27 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
     def call(self, attention_input, training=False):
         # scaled dot product attention sublayer
         attention_input = self.attention_norm(attention_input)
-        attention_input = tf.cast(attention_input, dtype=self.compute_dtype)
 
-        attention_output = self.scaled_dot_attention(attention_input)
+        # cast for mixed precision
+        _attention_input = tf.cast(attention_input, dtype=self.compute_dtype)
+
+        # cast back to float32
+        _attention_output = self.scaled_dot_attention(_attention_input)
+        attention_output = tf.cast(_attention_output, dtype=tf.float32)
+
+        # residual connection
         attention_output = tf.add(attention_input, attention_output)
         attention_output = tf.ensure_shape(attention_output, self._shape)
-        ff_input = self.attention_dropout(attention_output, training=training)
-        ff_output = tf.cast(self.ff_norm(ff_input), dtype=self.compute_dtype)
-        ff_output = self.inter_ff(ff_output)
-        ff_output = self.outer_ff(ff_output)
+        attention_output = self.attention_dropout(attention_output, training=training)
 
+        # cast for mixed precision
+        ff_input = self.ff_norm(attention_output)
+        _ff_input = tf.cast(ff_input, dtype=self.compute_dtype)
+        _ff_output = self.inter_ff(_ff_input)
+        _ff_output = self.outer_ff(_ff_output)
+
+        # cast back to float32
+        ff_output = tf.cast(_ff_output, dtype=tf.float32)
         ff_output = tf.add(ff_input, ff_output)
 
         ff_output = tf.ensure_shape(ff_output, self._shape)
