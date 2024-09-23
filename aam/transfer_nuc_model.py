@@ -49,8 +49,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.count_tracker = tf.keras.metrics.Mean()
 
         self.transfer_encoder = tfm.nlp.models.TransformerDecoder(
-            num_layers=2,
-            num_attention_heads=4,
+            num_layers=4,
+            num_attention_heads=2,
             intermediate_size=1024,
             dropout_rate=self.dropout,
         )

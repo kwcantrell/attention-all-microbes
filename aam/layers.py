@@ -406,6 +406,9 @@ class CountEncoder(tf.keras.layers.Layer):
             initializer=tf.keras.initializers.GlorotNormal(),
             trainable=True,
         )
+        self.upscale_in_ff = tf.keras.layers.Dense(128, use_bias=True, activation='relu', dtype=dtype)
+        self.upscale_out_ff = tf.keras.layers.Dense(128, use_bias=True, dtype=dtype)
+
         self.norm = tf.keras.layers.LayerNormalization(
             epsilon=0.000001, dtype=tf.float32
         )
@@ -429,9 +432,15 @@ class CountEncoder(tf.keras.layers.Layer):
         # inputs = tf.cast(inputs, dtype=self.compute_dtype)
         batch_size = shape[0]
         n_dims = shape[1]
+        rel_abundance = self.upscale_in_ff(rel_abundance)
+        rel_abundance = self.upscale_out_ff(rel_abundance)
+        rel_abundance = self.norm(rel_abundance)
+        rel_abundance = self.dropout_inner(rel_abundance)
+        
         count_embeddings = (
             self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + rel_abundance
         )
+
         # add <SAMPLE> token empbedding
         asv_shape = tf.shape(count_embeddings)
         batch_len = asv_shape[0]
@@ -443,9 +452,8 @@ class CountEncoder(tf.keras.layers.Layer):
         transfer_token = tf.cast(transfer_token, dtype=self.compute_dtype)
         count_embeddings = tf.concat([count_embeddings, transfer_token], axis=1)
 
-        count_embeddings = self.inter_dff(count_embeddings)
-        count_embeddings = self.outer_dff(count_embeddings)
-        count_embeddings = self.norm(count_embeddings)
+        #count_embeddings = self.inter_dff(count_embeddings)
+        #count_embeddings = self.outer_dff(count_embeddings)
         count_embeddings = self.dropout_outer(count_embeddings)
         return count_embeddings
 
