@@ -284,9 +284,6 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.ff_norm = tf.keras.layers.LayerNormalization(
             epsilon=self.epsilon, dtype=tf.float32
         )
-        # self._softmax = activation.Softmax(
-        #     axis=norm_axes, dtype=self._dtype_policy
-        # )
 
     def build(self, input_shape):
         self._shape = input_shape
@@ -414,13 +411,14 @@ class CountEncoder(tf.keras.layers.Layer):
         self.token_dim = 128
         self.dropout_rate = dropout_rate
         self.count_ranks = tfm.nlp.layers.PositionEmbedding(512, dtype=dtype)
-        self.transfer_token = self.add_weight(
-            "transfer_token",
-            [1, 1, 128],
-            dtype=tf.float32,
-            initializer=tf.keras.initializers.GlorotNormal(),
-            trainable=True,
-        )
+        self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(513, dtype=dtype)
+        # self.transfer_token = self.add_weight(
+        #     "transfer_token",
+        #     [1, 1, 128],
+        #     dtype=tf.float32,
+        #     initializer=tf.keras.initializers.GlorotNormal(),
+        #     trainable=True,
+        # )
         self.upscale_in_ff = tf.keras.layers.Dense(
             128, use_bias=True, activation="relu", dtype=dtype
         )
@@ -449,29 +447,18 @@ class CountEncoder(tf.keras.layers.Layer):
         # inputs = tf.cast(inputs, dtype=self.compute_dtype)
         batch_size = shape[0]
         n_dims = shape[1]
-        rel_abundance = self.upscale_in_ff(rel_abundance)
-        rel_abundance = self.upscale_out_ff(rel_abundance)
-        rel_abundance = self.norm(rel_abundance)
-        rel_abundance = self.dropout_inner(rel_abundance)
+        # rel_abundance = self.upscale_in_ff(rel_abundance)
+        # rel_abundance = self.upscale_out_ff(rel_abundance)
+        # rel_abundance = self.dropout_inner(rel_abundance)
 
         count_embeddings = (
             self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + rel_abundance
         )
+        count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
 
-        # add <SAMPLE> token empbedding
-        asv_shape = tf.shape(count_embeddings)
-        batch_len = asv_shape[0]
-        emb_len = asv_shape[-1]
-        sample_emb_shape = [1 for _ in count_embeddings.get_shape().as_list()]
-        sample_emb_shape[0] = batch_len
-        sample_emb_shape[-1] = emb_len
-        transfer_token = tf.broadcast_to(self.transfer_token, sample_emb_shape)
-        transfer_token = tf.cast(transfer_token, dtype=self.compute_dtype)
-        count_embeddings = tf.concat([count_embeddings, transfer_token], axis=1)
-
-        # count_embeddings = self.inter_dff(count_embeddings)
-        # count_embeddings = self.outer_dff(count_embeddings)
-        count_embeddings = self.dropout_outer(count_embeddings)
+        count_embeddings = self.inter_dff(count_embeddings)
+        # count_embeddings = self.norm(count_embeddings, training=training)
+        # count_embeddings = self.dropout_outer(count_embeddings)
         return count_embeddings
 
     def get_config(self):
