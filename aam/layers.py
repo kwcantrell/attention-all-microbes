@@ -455,6 +455,7 @@ class CountEncoder(tf.keras.layers.Layer):
             self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) + rel_abundance
         )
         count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
+        count_embeddings = self.norm(count_embeddings)
 
         count_embeddings = self.inter_dff(count_embeddings)
         # count_embeddings = self.norm(count_embeddings, training=training)

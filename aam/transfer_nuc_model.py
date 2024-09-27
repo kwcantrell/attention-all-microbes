@@ -62,9 +62,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             dropout_rate=self.dropout,
         )
 
-        self.transfer_intermediate = tf.keras.layers.Dense(
-            128, activation="relu", dtype=tf.float32
-        )
+        self.transfer_intermediate = tf.keras.layers.Dense(128, activation="relu")
+        self.transfer_intermediate2 = tf.keras.layers.Dense(128)
         self.transfer_dropout = tf.keras.layers.Dropout(self.dropout)
         if self.num_classes is None:
             self.transfer_ff = tf.keras.layers.Dense(1, use_bias=True, dtype=tf.float32)
@@ -253,14 +252,15 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         cross_attention_mask = tf.linalg.band_part(count_attention_mask, -1, 0)
 
         embeddings = self.transfer_encoder(
-            embeddings,
             asv_embeddings,
+            embeddings,
             self_attention_mask=count_attention_mask > 0,
             cross_attention_mask=count_attention_mask > 0,
             training=training,
         )
 
         target_out = self.transfer_intermediate(embeddings[:, -1, :])
+        target_out = self.transfer_intermediate2(target_out)
         target_out = self.transfer_dropout(target_out)
         target_out = self.transfer_ff(target_out)
 
