@@ -76,7 +76,7 @@ def load_data(
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
     else:
         shift = 0
-        scale = np.max(target_data)
+        scale = 1  # np.max(target_data)
         target_data = (target_data - shift) / scale
         density = scipy.stats.gaussian_kde(target_data)
         y = density(target_data).astype(np.float32)

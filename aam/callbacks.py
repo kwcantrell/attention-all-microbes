@@ -107,14 +107,18 @@ class SaveModel(tf.keras.callbacks.Callback):
         if self.best_weights is None or self.best_metric > metric:
             self.best_metric = metric
             self.best_weights = self.model.get_weights()
-
-        if epoch % self.report_back == 0:
+            # if epoch % self.report_back == 0:
             self.model.save(
                 self.output_dir,
                 save_format="keras",
             )
+        # # if epoch % self.report_back == 0:
+        # self.model.save(
+        #     self.output_dir,
+        #     save_format="keras",
+        # )
 
-        logs["lr"] = self.model.optimizer.lr
+        logs["best_metric"] = self.best_metric
 
     def get_config(self):
         base_config = super().get_config()
