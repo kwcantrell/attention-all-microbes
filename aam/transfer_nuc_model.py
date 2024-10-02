@@ -295,5 +295,6 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         config["base_model"] = tf.keras.saving.deserialize_keras_object(
             config["base_model"]
         )
+        config["penalty"] = tf.keras.saving.deserialize_keras_object(config["penalty"])
         model = cls(**config)
         return model
