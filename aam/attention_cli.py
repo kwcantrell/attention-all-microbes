@@ -281,6 +281,9 @@ def fit_sample_regressor(
     for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices)):
         train_data = _get_fold(train_ind, shuffle=True)
         val_data = _get_fold(val_ind, shuffle=False)
+        with open(os.path.join(model_path, "val_ids.txt"), "w") as f:
+            for id in ids[val_ind]:
+                f.write(id + "\n")
 
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         model = TransferLearnNucleotideModel(

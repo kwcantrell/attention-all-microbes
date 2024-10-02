@@ -68,16 +68,21 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
 
 
 class MeanAbsoluteError(tf.keras.callbacks.Callback):
-    def __init__(self, dataset, output_dir, report_back, **kwargs):
+    def __init__(self, dataset, output_dir, report_back, monitor="val_loss", **kwargs):
         super().__init__(**kwargs)
         self.dataset = dataset
         self.output_dir = output_dir
         self.report_back = report_back
+        self.best_weights = None
+        self.best_metric = None
+        self.monitor = monitor
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch % self.report_back == 0:
+        metric = logs[self.monitor]
+        if self.best_weights is None or self.best_metric > metric:
             y_pred, y_true = self.model.predict(self.dataset)
             _mean_absolute_error(y_pred, y_true, self.output_dir)
+            self.best_metric = metric
 
 
 class ConfusionMatrx(tf.keras.callbacks.Callback):
@@ -107,16 +112,10 @@ class SaveModel(tf.keras.callbacks.Callback):
         if self.best_weights is None or self.best_metric > metric:
             self.best_metric = metric
             self.best_weights = self.model.get_weights()
-            # if epoch % self.report_back == 0:
             self.model.save(
                 self.output_dir,
                 save_format="keras",
             )
-        # # if epoch % self.report_back == 0:
-        # self.model.save(
-        #     self.output_dir,
-        #     save_format="keras",
-        # )
 
         logs["best_metric"] = self.best_metric
 
