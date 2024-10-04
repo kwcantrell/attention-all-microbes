@@ -1,0 +1,37 @@
+# Use TensorFlow 2.14.0 GPU image (with CUDA support)
+FROM tensorflow/tensorflow:2.14.0-gpu
+
+# Set environment path to conda and configure bash shell
+ENV PATH=/opt/conda/bin:$PATH \
+    SHELL="/bin/bash -c"
+
+# Install Miniconda and keep build tools until all installations are done
+RUN apt-get update && apt-get install -y wget git build-essential && \
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /miniconda.sh && \
+    bash /miniconda.sh -b -p /opt/conda && \
+    rm /miniconda.sh
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Create and activate the conda environment, and install dependencies
+RUN /opt/conda/bin/conda create --name aam -c conda-forge -c bioconda unifrac python=3.9 cython && \
+    /opt/conda/bin/conda clean --all --yes
+
+# Clone the specific branch of the repository
+ARG BRANCH=main
+RUN git clone --depth=1 --branch $BRANCH https://github.com/kwcantrell/attention-all-microbes.git /app
+
+# Install the repository in editable mode
+RUN /opt/conda/envs/aam/bin/pip install -e /app
+
+# Cleanup after installation
+RUN rm -rf /root/.cache/pip && \
+    apt-get remove --purge -y wget build-essential && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /app/.git
+
+# Default command to run the 'attention' CLI
+CMD ["attention"]
+

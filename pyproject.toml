@@ -30,10 +30,6 @@ dependencies = [
     "scipy >= 1.13.0",
     "unifrac",
     "click",
-    "tensorflow[and-cuda] >= 2.14.0, < 2.15",
-    "tf-models-official >= 2.14.2",
-    "tensorboard"
-
 ]
 keywords = ["aam"]
 
