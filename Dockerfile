@@ -20,7 +20,7 @@ RUN /opt/conda/bin/conda create --name aam -c conda-forge -c bioconda unifrac py
     conda clean --all
 
 # Install tf-models-official and tensorboard using pip in the conda environment, and clean pip cache
-RUN /opt/conda/bin/conda run -n aam pip install --no-cache-dir tf-models-official=2.14.2 tensorboard
+RUN /opt/conda/bin/conda run -n aam pip install --no-cache-dir tf-models-official==2.14.2 tensorboard
 
 # Stage 2: Application Layer
 FROM base AS application
