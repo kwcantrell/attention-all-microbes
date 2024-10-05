@@ -1,0 +1,9 @@
+# Ignore virtual environments
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore git metadata
+.git
+
