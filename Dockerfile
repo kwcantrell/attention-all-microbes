@@ -4,15 +4,18 @@ FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS base
 # Set DEBIAN_FRONTEND to noninteractive to avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies, Miniconda, and build tools
+# Install system dependencies, Miniconda, build tools, and rclone
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    wget bzip2 git make gcc build-essential && \
+    wget bzip2 git make gcc build-essential curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
     bash Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda && \
     rm Miniconda3-latest-Linux-x86_64.sh && \
-    /opt/conda/bin/conda clean -a -y
+    /opt/conda/bin/conda clean -a -y && \
+    curl https://rclone.org/install.sh -o /tmp/rclone-install.sh && \
+    bash /tmp/rclone-install.sh && \
+    rm /tmp/rclone-install.sh
 
 # Set PATH to include conda
 ENV PATH="/opt/conda/bin:${PATH}"
@@ -26,8 +29,8 @@ RUN conda create --name aam -c conda-forge -c bioconda \
     cython --yes && \
     conda clean --packages --tarballs --yes
 
-RUN ln -s /opt/conda/envs/aam/lib/libhdf5_cpp.so.200 /opt/conda/envs/aam/lib/libhdf5_cpp.so.103 && \ 
-    ln -s /opt/conda/envs/aam/lib/libhdf5_hl_cpp.so.200 /opt/conda/envs/aam/lib/libhdf5_hl_cpp.so.100 && \ 
+RUN ln -s /opt/conda/envs/aam/lib/libhdf5_cpp.so.200 /opt/conda/envs/aam/lib/libhdf5_cpp.so.103 && \
+    ln -s /opt/conda/envs/aam/lib/libhdf5_hl_cpp.so.200 /opt/conda/envs/aam/lib/libhdf5_hl_cpp.so.100 && \
     ln -s /opt/conda/envs/aam/lib/libhdf5.so.200 /opt/conda/envs/aam/lib/libhdf5.so.100 && \
     ln -s /opt/conda/envs/aam/lib/libhdf5_hl.so.200 /opt/conda/envs/aam/lib/libhdf5_hl.so.100 && \
     ln -s /opt/conda/envs/aam/lib/libhdf5.so.200 /opt/conda/envs/aam/lib/libhdf5.so.103
@@ -44,6 +47,9 @@ FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS runtime
 
 # Copy Miniconda from base
 COPY --from=base /opt/conda /opt/conda
+
+# Copy rclone from base image
+COPY --from=base /usr/bin/rclone /usr/bin/rclone
 
 # Set PATH to include conda and set LD_LIBRARY_PATH
 ENV PATH="/opt/conda/bin:${PATH}"
