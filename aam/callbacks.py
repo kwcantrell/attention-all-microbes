@@ -73,13 +73,12 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
         self.dataset = dataset
         self.output_dir = output_dir
         self.report_back = report_back
-        self.best_weights = None
         self.best_metric = None
         self.monitor = monitor
 
     def on_epoch_end(self, epoch, logs=None):
         metric = logs[self.monitor]
-        if self.best_weights is None or self.best_metric > metric:
+        if self.best_metric is None or self.best_metric > metric:
             y_pred, y_true = self.model.predict(self.dataset)
             _mean_absolute_error(y_pred, y_true, self.output_dir)
             self.best_metric = metric

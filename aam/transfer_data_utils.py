@@ -1,5 +1,4 @@
 import numpy as np
-import scipy.stats
 import tensorflow as tf
 
 
@@ -49,6 +48,8 @@ def load_data(
     missing_samples_flag=None,
     max_token_per_sample=512,
     batch_size=8,
+    shift=None,
+    scale=None,
 ):
     def _get_table_data(table_data):
         coo = table_data.transpose().matrix_data.tocoo()
@@ -75,14 +76,18 @@ def load_data(
         target_data = tf.expand_dims(target_data, axis=-1)
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
     else:
-        shift = 0
-        scale = 1  # np.max(target_data)
+        target_data = target_data.to_numpy().reshape((-1, 1))
+        if shift is None and scale is None:
+            shift = np.mean(target_data)
+            scale = np.std(target_data)
         target_data = (target_data - shift) / scale
-        density = scipy.stats.gaussian_kde(target_data)
-        y = density(target_data).astype(np.float32)
-        max_density = np.max(y)
-        target_data = tf.expand_dims(target_data, axis=-1)
-        y = tf.expand_dims(y, axis=-1)
+        print(target_data)
+        y = target_data
+        # density = scipy.stats.gaussian_kde(target_data)
+        # y = density(target_data).astype(np.float32)
+        # max_density = np.max(y)
+        # target_data = tf.expand_dims(target_data, axis=-1)
+        # y = tf.expand_dims(y, axis=-1)
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
         y_dataset = tf.data.Dataset.from_tensor_slices(y)
         target_dataset = tf.data.Dataset.zip(target_dataset, y_dataset)

@@ -15,7 +15,7 @@ from aam.callbacks import (
     _mean_absolute_error,
 )
 from aam.cv_utils import CVModel, EnsembleModel
-from aam.losses import ImbalancedCategoricalCrossEntropy, ImbalancedMSE
+from aam.losses import ImbalancedCategoricalCrossEntropy
 from aam.transfer_nuc_model import TransferLearnNucleotideModel
 from aam.unifrac_model import UnifracModel
 
@@ -43,8 +43,8 @@ MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fai
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-ff-d-model", default=128, show_default=True, type=int)
 @click.option("--p-pca-heads", default=8, show_default=True, type=int)
-@click.option("--p-enc-layers", default=2, show_default=True, type=int)
-@click.option("--p-enc-heads", default=8, show_default=True, type=int)
+@click.option("--p-enc-layers", default=4, show_default=True, type=int)
+@click.option("--p-enc-heads", default=4, show_default=True, type=int)
 @click.option("--p-penalty", default=0.01, type=float)
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
@@ -260,7 +260,7 @@ def fit_sample_regressor(
 
     print(len(test_indices), len(fold_indices))
 
-    def _get_fold(indices, shuffle):
+    def _get_fold(indices, shuffle, shift=None, scale=None):
         fold_ids = ids[indices]
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df[df.index.isin(fold_ids)]
@@ -272,6 +272,8 @@ def fit_sample_regressor(
             shuffle_samples=shuffle,
             batch_size=p_batch_size,
             max_token_per_sample=p_asv_limit,
+            shift=shift,
+            scale=scale,
         )
         return data
 
@@ -280,7 +282,9 @@ def fit_sample_regressor(
     models = []
     for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices)):
         train_data = _get_fold(train_ind, shuffle=True)
-        val_data = _get_fold(val_ind, shuffle=False)
+        val_data = _get_fold(
+            val_ind, shuffle=False, shift=train_data["shift"], scale=train_data["scale"]
+        )
         with open(os.path.join(model_path, f"f{i}_val_ids.txt"), "w") as f:
             for id in ids[val_ind]:
                 f.write(id + "\n")
@@ -295,7 +299,8 @@ def fit_sample_regressor(
             penalty=p_penalty,
             dropout=p_dropout,
         )
-        loss = ImbalancedMSE(train_data["max_density"])
+        # loss = ImbalancedMSE(train_data["max_density"])
+        loss = tf.keras.losses.Huber()
         fold_label = i + 1
         model_cv = CVModel(
             model,
@@ -308,7 +313,7 @@ def fit_sample_regressor(
             loss,
             p_epochs,
             os.path.join(model_path, f"model_f{fold_label}.keras"),
-            metric="mae",
+            metric="loss",
             patience=p_patience,
             early_stop_warmup=p_early_stop_warmup,
             callbacks=[

@@ -222,7 +222,6 @@ class NucleotideAttention(tf.keras.layers.Layer):
         # self.epsilon = 0.000001
         self.epsilon = 1e-3
         self.intermediate_ff = intermediate_ff
-
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
             max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
         )
@@ -247,7 +246,6 @@ class NucleotideAttention(tf.keras.layers.Layer):
             attention_input = self.attention_layers[layer_idx](
                 attention_input, training=training
             )
-
         output = self.output_normalization(attention_input)
         return output
 
@@ -333,7 +331,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         scaled_dot_tensor = tf.multiply(dot_tensor, 1 / self.scale_dot_factor)
-        softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-2)
+        softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-1)
 
         # [B, A, H, N, N] => [B, A, H, N, S]
         attention_output = tf.matmul(softmax_tensor, wv_tensor)
@@ -420,9 +418,7 @@ class CountEncoder(tf.keras.layers.Layer):
         # #     initializer=tf.keras.initializers.GlorotNormal(),
         # #     trainable=True,
         # # )
-        # self.upscale_in_ff = tf.keras.layers.Dense(
-        #     128, use_bias=True, activation="relu", dtype=dtype
-        # )
+        self.upscale_in_ff = tf.keras.layers.Dense(128, use_bias=False, dtype=dtype)
         # self.upscale_out_ff = tf.keras.layers.Dense(128, use_bias=True, dtype=dtype)
 
         self.norm = tf.keras.layers.LayerNormalization(
@@ -448,6 +444,7 @@ class CountEncoder(tf.keras.layers.Layer):
         count_embeddings = tf.squeeze(inputs, axis=-1)
         count_embeddings = self.embedding(float_mask(count_embeddings, dtype=tf.int32))
         count_embeddings = tf.multiply(count_embeddings, rel_abundance)
+        # count_embeddings = self.upscale_in_ff(count_embeddings)
         count_embeddings = count_embeddings + self.count_ranks(count_embeddings)
         # count_embeddings = self.norm(count_embeddings)
         return count_embeddings
