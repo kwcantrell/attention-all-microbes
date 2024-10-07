@@ -1,0 +1,17 @@
+numpy
+pandas
+seaborn
+biom-format
+scikit-bio>=0.6
+scikit-learn>=1.3
+scipy>=1.13.0
+unifrac
+click
+
+[dev]
+pytest
+ruff
+
+[docs]
+sphinx
+myst-parser

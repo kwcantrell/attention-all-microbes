@@ -1,0 +1,86 @@
+Metadata-Version: 2.1
+Name: aam
+Version: 0.1.2.dev24+g364f23f.d20241005233002
+Summary: Deep Learning Method for Microbial Sequencing Data
+Author-email: Kalen Cantrell <kcantrel@ucsd.edu>, Jonathan Kirkland <jokirkland@ucsd.edu>
+License: BSD-3-Clause
+Project-URL: Bug Tracker, https://github.com/kwcantrell/attention-all-microbes/issues
+Project-URL: Source Code, https://github.com/kwcantrell/attention-all-microbes
+Keywords: aam
+Classifier: Development Status :: 3 - Alpha
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: <3.10,>=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: seaborn
+Requires-Dist: biom-format
+Requires-Dist: scikit-bio>=0.6
+Requires-Dist: scikit-learn>=1.3
+Requires-Dist: scipy>=1.13.0
+Requires-Dist: unifrac
+Requires-Dist: click
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx; extra == "docs"
+Requires-Dist: myst-parser; extra == "docs"
+
+# Attention All Microbes (AAM)
+
+Attention-based network for microbial sequencing data. 
+
+# Installation Instructions
+IMPORTANT: If installing on a server cluster, spawn an instance with a GPU before proceeding with environment setup.
+First create a new conda environment with unifrac
+
+`conda create --name aam -c conda-forge -c bioconda unifrac python=3.9 cython`
+
+`conda activate aam`
+
+## GPU Support 
+
+Install CUDA 11.8
+
+`conda install nvidia/label/cuda-11.8.0::cuda-toolkit`
+
+Verify the NVIDIA GPU drives are on your path
+
+`nvidia-smi`
+
+Please see [Tensorflow](https://www.tensorflow.org/install) for more information
+
+## Install AAM
+
+
+For the latest version
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git`
+
+or install a specific version
+
+`pip install git+https://github.com/kwcantrell/attention-all-microbes.git@v0.1.1`
+
+## Developers
+
+`git clone git@github.com:kwcantrell/attention-all-microbes.git`
+
+`cd attention-all-microbes`
+
+`pip install -e .`
+
+# Training
+
+Classifiers and Regressors are trained use cross-validation 
+
+`attention --help`
+
+
+
+
+
+
+
