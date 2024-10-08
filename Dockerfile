@@ -1,5 +1,5 @@
 # Stage 1: Base Image for building environment
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS base
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS base
 
 # Set DEBIAN_FRONTEND to noninteractive to avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install system dependencies, Miniconda, build tools, and rclone
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    wget bzip2 git make gcc build-essential curl && \
+    wget bzip2 git make gcc build-essential curl unzip && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
     bash Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda && \
@@ -43,7 +43,7 @@ RUN conda run -n aam pip install \
     tensorboard
 
 # Stage 2: Final Image for running the application
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS runtime
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS runtime
 
 # Copy Miniconda from base
 COPY --from=base /opt/conda /opt/conda
