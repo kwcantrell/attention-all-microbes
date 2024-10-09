@@ -223,25 +223,20 @@ class UnifracModel(tf.keras.Model):
         _, sample_embeddings, _, _ = self(inputs, training=False)
         return tf.squeeze(sample_embeddings), tf.squeeze(y)
 
-    @tf.function
-    def sequence_embedding(self, seq, squeeze=True):
+    def sequence_embedding(self, seq):
         """returns sequenuce embeddings
 
         Args:
-            seq (StringTensor): ASV sequences.
-
+            seq (Tensor): ASV sequences. [batch, 150]
         Returns:
             _type_: _description_
         """
-        seq = tf.expand_dims(seq, axis=0)
-        token_mask = float_mask(seq, dtype=tf.int32)
-        features = seq + tf.reshape(self.nucleotide_position, shape=[1, 1, -1])
-        features = tf.multiply(features, token_mask)
-        sequence_embedding = self.asv_encoder.sequence_embedding(seq)
-        if squeeze:
-            return tf.squeeze(sequence_embedding, axis=0)
-        else:
-            return sequence_embedding
+        seq = tf.expand_dims(seq, axis=1)
+        sequence_embedding = self.asv_encoder(seq)
+        sequence_embedding = sequence_embedding[:, :, -1, :]
+        sequence_embedding = tf.squeeze(sequence_embedding)
+        tf.print(sequence_embedding)
+        return sequence_embedding
 
     def edit_distance(self, seq):
         """computes the edit distance between true seq and AM^-1
