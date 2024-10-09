@@ -222,12 +222,12 @@ class NucleotideAttention(tf.keras.layers.Layer):
         # self.epsilon = 0.000001
         self.epsilon = 1e-3
         self.intermediate_ff = intermediate_ff
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
-        )
-        # self.pos_emb = tfm.nlp.layers.RelativePositionEmbedding(
-        #     128, dtype=tf.float32, name="nuc_pos"
+        # self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+        #     max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
         # )
+        self.pos_emb = tfm.nlp.layers.RelativePositionEmbedding(
+            128, dtype=tf.float32, name="nuc_pos"
+        )
         self.attention_layers = []
         for i in range(self.num_layers):
             self.attention_layers.append(
@@ -244,12 +244,12 @@ class NucleotideAttention(tf.keras.layers.Layer):
         )
 
     def call(self, attention_input, attention_mask=None, training=False):
-        # pos_emb = tf.expand_dims(self.pos_emb(None, length=151), axis=0)
-        # pos_emb = tf.expand_dims(pos_emb, axis=0)
-        # pos_emb = tf.broadcast_to(pos_emb, tf.shape(attention_input))
-        # attention_input = tf.cast(attention_input, dtype=tf.float32) + pos_emb
-        # attention_input = tf.cast(attention_input, dtype=self.compute_dtype)
-        attention_input = attention_input + self.pos_emb(attention_input)
+        pos_emb = tf.expand_dims(self.pos_emb(None, length=151), axis=0)
+        pos_emb = tf.expand_dims(pos_emb, axis=0)
+        pos_emb = tf.broadcast_to(pos_emb, tf.shape(attention_input))
+        attention_input = tf.cast(attention_input, dtype=tf.float32) + pos_emb
+        attention_input = tf.cast(attention_input, dtype=self.compute_dtype)
+        # attention_input = attention_input + self.pos_emb(attention_input)
         for layer_idx in range(self.num_layers):
             attention_input = self.attention_layers[layer_idx](
                 attention_input, training=training
@@ -307,12 +307,12 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
             tf.cast(self.head_size, dtype=self.compute_dtype)
         )
 
-        self.inter_ff = tf.keras.layers.Dense(
-            self.intermediate_ff, activation="relu", use_bias=True
-        )
         # self.inter_ff = tf.keras.layers.Dense(
-        #     self.intermediate_ff, activation="silu", use_bias=True
+        #     self.intermediate_ff, activation="relu", use_bias=True
         # )
+        self.inter_ff = tf.keras.layers.Dense(
+            self.intermediate_ff, activation="silu", use_bias=True
+        )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
         super(NucleotideAttentionBlock, self).build(input_shape)

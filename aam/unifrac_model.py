@@ -85,10 +85,10 @@ class UnifracModel(tf.keras.Model):
 
         # Compute regression loss
         reg_loss = self.regresssion_loss(target, sample_embeddings)
-        # reg_loss = tf.reduce_sum(reg_loss, axis=-1, keepdims=True)
-        pairwise_elements = 1 / tf.reduce_sum(float_mask(reg_loss))
+        # pairwise_elements = 1 / tf.reduce_sum(float_mask(reg_loss))
         reg_loss = tf.multiply(reg_loss, 1 / 2)
-        reg_loss = tf.multiply(tf.reduce_sum(reg_loss), pairwise_elements)
+        # reg_loss = tf.multiply(tf.reduce_sum(reg_loss), pairwise_elements)
+        reg_loss = tf.reduce_sum(reg_loss)
 
         # nucleotide level
         token_cat = tf.one_hot(tokens, depth=6)  # san -> san6
@@ -235,7 +235,6 @@ class UnifracModel(tf.keras.Model):
         sequence_embedding = self.asv_encoder(seq)
         sequence_embedding = sequence_embedding[:, :, -1, :]
         sequence_embedding = tf.squeeze(sequence_embedding)
-        tf.print(sequence_embedding)
         return sequence_embedding
 
     def edit_distance(self, seq):
