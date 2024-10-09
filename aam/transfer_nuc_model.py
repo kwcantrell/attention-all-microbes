@@ -61,6 +61,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             num_attention_heads=4,
             intermediate_size=1024,
             dropout_rate=self.dropout,
+            activation="silu",
         )
 
         self.transfer_intermediate = tf.keras.layers.Dense(128, activation="relu")
