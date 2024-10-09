@@ -51,7 +51,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         )
         self.count_dropout = tf.keras.layers.Dropout(self.dropout)
         self.count_out = tf.keras.layers.Dense(1, use_bias=True, dtype=tf.float32)
-        self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(513)
+        self.pos_embeddings = tfm.nlp.layers.RelativePositionEmbedding(128)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_tracker = tf.keras.metrics.Mean()
 
@@ -263,6 +263,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
         cross_attention_mask = tf.linalg.band_part(count_attention_mask, -1, 0)
 
+        embeddings = embeddings + self.pos_embeddings(embeddings)
         embeddings = self.transfer_encoder(
             # asv_embeddings,
             embeddings,

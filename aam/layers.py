@@ -150,7 +150,7 @@ class SampleEncoder(tf.keras.layers.Layer):
             num_attention_heads=4,
             intermediate_size=self.attention_ff,
             norm_first=True,
-            activation="relu",
+            activation="silu",
             dropout_rate=self.dropout_rate,
         )
         self.sample_token = self.add_weight(
@@ -222,9 +222,10 @@ class NucleotideAttention(tf.keras.layers.Layer):
         # self.epsilon = 0.000001
         self.epsilon = 1e-3
         self.intermediate_ff = intermediate_ff
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
-        )
+        # self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+        #     max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
+        # )
+        self.pos_emb = tfm.nlp.layers.RelativePositionEmbedding(128, name="nuc_pos")
         self.attention_layers = []
         for i in range(self.num_layers):
             self.attention_layers.append(
@@ -300,7 +301,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         self.inter_ff = tf.keras.layers.Dense(
-            self.intermediate_ff, activation="relu", use_bias=True
+            self.intermediate_ff, activation="silu", use_bias=True
         )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
