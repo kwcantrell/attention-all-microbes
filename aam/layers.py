@@ -82,8 +82,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         seq = inputs
         seq = seq + self.nucleotide_position
 
-        if seq_mask is not None:
-            seq = seq * seq_mask
+        #if seq_mask is not None:
+        #    seq = seq * seq_mask
 
         # add <ASV> token
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=self.asv_token)
