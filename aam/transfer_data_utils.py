@@ -82,25 +82,12 @@ def load_data(
             scale = np.std(target_data)
         target_data = (target_data - shift) / scale
         y = target_data
-        # density = scipy.stats.gaussian_kde(target_data)
-        # y = density(target_data).astype(np.float32)
-        # max_density = np.max(y)
-        # target_data = tf.expand_dims(target_data, axis=-1)
-        # y = tf.expand_dims(y, axis=-1)
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
         y_dataset = tf.data.Dataset.from_tensor_slices(y)
         target_dataset = tf.data.Dataset.zip(target_dataset, y_dataset)
 
     s_ids = table.ids()
     o_ids = table.ids(axis="observation")
-    # df = pd.read_csv(
-    #     "agp-no-duplicate-host-bloom-filtered-5000-stool-only-small-rpca.txt",
-    #     sep="\t",
-    #     index_col=0,
-    # )
-    # df = df[df.index.isin(s_ids)]
-    # df = df.reindex(s_ids)
-    # x_rpca = tf.data.Dataset.from_tensor_slices(df.to_numpy())
 
     data, row, col = _get_table_data(table)
 
@@ -142,18 +129,6 @@ def load_data(
 
                 encodings = tf.gather(asv_encodings, sorted_asv_indices)
                 tokens = lookup_table.lookup(encodings).to_tensor()
-                # if is_categorical:
-                #     return (
-                #         tf.cast(tokens, dtype=tf.int32),
-                #         counts,
-                #         x_rpca,
-                #     ), tf.squeeze(target_data, axis=-1)
-                # else:
-                #     return (
-                #         tf.cast(tokens, dtype=tf.int32),
-                #         counts,
-                #         x_rpca,
-                #     ), target_data
                 if is_categorical:
                     return (tf.cast(tokens, dtype=tf.int32), counts), tf.squeeze(
                         target_data, axis=-1
@@ -170,7 +145,6 @@ def load_data(
             ds = ds.padded_batch(
                 batch_size,
                 (
-                    # ([max_token_per_sample, None], [max_token_per_sample], [None]),
                     ([max_token_per_sample, None], [max_token_per_sample]),
                     ([1], [1]),
                 ),
@@ -183,7 +157,6 @@ def load_data(
 
     dataset_size = len(s_ids)
 
-    # dataset = tf.data.Dataset.zip(table, x_rpca, target_dataset)
     dataset = tf.data.Dataset.zip(table, target_dataset)
     dataset = dataset.apply(  # .cache()
         process_dataset(shuffle_buf=dataset_size)

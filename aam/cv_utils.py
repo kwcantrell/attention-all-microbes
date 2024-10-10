@@ -35,7 +35,15 @@ class CVModel:
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        optimizer = tf.keras.optimizers.Adam(0.0001)
+        lr = tf.keras.optimizers.schedules.PolynomialDecay(
+            3.2e-4,
+            100000,
+            end_learning_rate=1.28e-5,
+            power=1.0,
+            cycle=False,
+        )
+
+        optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
         optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [

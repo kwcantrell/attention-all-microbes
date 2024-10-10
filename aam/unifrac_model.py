@@ -85,8 +85,10 @@ class UnifracModel(tf.keras.Model):
 
         # Compute regression loss
         reg_loss = self.regresssion_loss(target, sample_embeddings)
-        num_samples = tf.shape(reg_loss)[0]
-        reg_loss = tf.reduce_sum(reg_loss) / (num_samples**2 - num_samples)
+        num_samples = tf.cast(tf.shape(reg_loss)[0], dtype=tf.float32)
+        reg_loss = tf.math.divide_no_nan(
+            tf.reduce_sum(reg_loss), num_samples**2 - num_samples
+        )
 
         # nucleotide level
         token_cat = tf.one_hot(tokens, depth=6)
@@ -125,6 +127,7 @@ class UnifracModel(tf.keras.Model):
         # to float when calling build()
         inputs = tf.cast(inputs, dtype=tf.int32)
         seq_mask = float_mask(inputs, dtype=tf.int32)
+
         # randomly mask 10% in each ASV
         nuc_mask = tf.ones_like(inputs, dtype=tf.int32)
         if randomly_mask_nucleotides and training:
@@ -147,7 +150,6 @@ class UnifracModel(tf.keras.Model):
         nucleotides = self.softmax(nucleotides)
 
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
-        # asv_embeddings = asv_embeddings * asv_mask
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training
         )
