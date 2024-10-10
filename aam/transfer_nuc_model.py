@@ -238,6 +238,19 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         embeddings = asv_embeddings + pos_embeddings
 
         rel_abundance = self._relative_abundance(extended_counts, add_pad=True)
+
+        # randomly mask 10%
+        rel_mask = tf.ones_like(rel_abundance, dtype=tf.float32)
+        if training:
+            random_mask = tf.random.uniform(
+                tf.shape(rel_abundance), minval=0, maxval=1, dtype=self.compute_dtype
+            )
+            random_mask = tf.greater_equal(random_mask, 0.1)
+            rel_mask = rel_mask * tf.cast(random_mask, dtype=tf.float32)
+
+        # need to set all zeros to 1 to avoid setting asv_embeddings to zero
+        rel_abundance = rel_abundance * rel_mask
+        rel_abundance = rel_abundance + (1 - float_mask(rel_abundance))
         count_embeddings = asv_embeddings * rel_abundance
 
         # add <SAMPLE> token empbedding

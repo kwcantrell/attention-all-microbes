@@ -85,10 +85,8 @@ class UnifracModel(tf.keras.Model):
 
         # Compute regression loss
         reg_loss = self.regresssion_loss(target, sample_embeddings)
-        num_samples = tf.cast(tf.shape(reg_loss)[0], dtype=tf.float32)
-        reg_loss = tf.math.divide_no_nan(
-            tf.reduce_sum(reg_loss), num_samples**2 - num_samples
-        )
+        num_samples = tf.reduce_sum(float_mask(reg_loss))
+        reg_loss = tf.math.divide_no_nan(tf.reduce_sum(reg_loss), num_samples)
 
         # nucleotide level
         token_cat = tf.one_hot(tokens, depth=6)

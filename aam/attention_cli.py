@@ -110,16 +110,16 @@ def fit_unifrac_regressor(
             nuc_attention_layers=p_nuc_attention_layers,
             intermediate_ff=p_intermediate_ff,
         )
-        lr = tf.keras.optimizers.schedules.PolynomialDecay(
-            3.2e-4,
-            100000,
-            end_learning_rate=1.28e-5,
-            power=1.0,
-            cycle=False,
-        )
+    lr = tf.keras.optimizers.schedules.PolynomialDecay(
+        3.2e-4,
+        1000000,
+        end_learning_rate=1.28e-5,
+        power=1.0,
+        cycle=False,
+    )
 
-        optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
-        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
     model.build()
     model.compile(
@@ -306,7 +306,6 @@ def fit_sample_regressor(
             penalty=p_penalty,
             dropout=p_dropout,
         )
-        # loss = ImbalancedMSE(train_data["max_density"])
         loss = tf.keras.losses.Huber()
         fold_label = i + 1
         model_cv = CVModel(
