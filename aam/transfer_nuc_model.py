@@ -57,6 +57,10 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_tracker = tf.keras.metrics.Mean()
 
+        self.rpca_compress = tf.keras.layers.Dense(
+            128, use_bias=False, dtype=tf.float32
+        )
+
         # self.transfer_encoder = tfm.nlp.models.TransformerDecoder(
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
@@ -152,8 +156,15 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             self.transfer_tracker(y_true, y_pred)
 
     def build(self, input_shape=None):
-        seq_input = tf.keras.Input([None, 150])
-        count_input = tf.keras.Input([None])
+        # seq_input = tf.keras.Input([None, 150], dtype=tf.int32)
+        # count_input = tf.keras.Input([None], dtype=tf.int32)
+        # rpca_input = tf.keras.Input([512], dtype=tf.float32)
+        # self.call([seq_input, count_input, rpca_input])
+        # super(TransferLearnNucleotideModel, self).build(
+        #     [(None, None, 150), (None, None), (None, 512)]
+        # )
+        seq_input = tf.keras.Input([None, 150], dtype=tf.int32)
+        count_input = tf.keras.Input([None], dtype=tf.int32)
         self.call([seq_input, count_input])
         super(TransferLearnNucleotideModel, self).build(
             [(None, None, 150), (None, None)]
@@ -233,12 +244,14 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         return rel_abundance
 
     def call(self, inputs, training=False):
+        # tokens, counts, rpca = inputs
         tokens, counts = inputs
-
         # keras cast all input to float so we need to manually cast
         # to expected type
         tokens = tf.cast(tokens, dtype=tf.int32)
         counts = tf.cast(counts, dtype=tf.int32)
+        # rpca = tf.cast(rpca, dtype=tf.float32)
+        # rpca = tf.expand_dims(rpca, axis=1)
         extended_counts = tf.expand_dims(counts, axis=-1)
 
         count_mask = float_mask(extended_counts, dtype=tf.int32)
@@ -263,6 +276,10 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         # )
         # count_embeddings = tf.cast(count_embeddings, dtype=self.compute_dtype)
 
+        # add rpca
+        # rpca = self.rpca_compress(rpca)
+        # count_embeddings = tf.concat([count_embeddings, rpca], axis=1)
+
         # add <SAMPLE> token empbedding
         asv_shape = tf.shape(count_embeddings)
         batch_len = asv_shape[0]
@@ -275,8 +292,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_embeddings = tf.concat([count_embeddings, transfer_token], axis=1)
 
         embeddings = count_embeddings  # + self.pos_embeddings(count_embeddings)
-
         # mask pad values out
+        # count_mask = tf.pad(count_mask, [[0, 0], [0, 3], [0, 0]], constant_values=1)
         count_mask = tf.pad(count_mask, [[0, 0], [0, 2], [0, 0]], constant_values=1)
 
         # asv + count attention
@@ -296,6 +313,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         target_out = self.transfer_dropout(target_out)
         target_out = self.transfer_ff(target_out)
 
+        # count_embeddings = embeddings[:, :-3, :]
         count_embeddings = embeddings[:, :-2, :]
         count_pred = self.count_intermediate(count_embeddings)
         count_pred = self.count_dropout(count_pred)
