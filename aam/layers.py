@@ -82,9 +82,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         seq = inputs
         seq = seq + self.nucleotide_position
 
-        #if seq_mask is not None:
-        #    seq = seq * seq_mask
-
         # add <ASV> token
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=self.asv_token)
 
@@ -219,8 +216,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
-        # self.epsilon = 0.000001
-        self.epsilon = 1e-3
+        self.epsilon = 0.000001
         self.intermediate_ff = intermediate_ff
         # self.pos_emb = tfm.nlp.layers.PositionEmbedding(
         #     max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"

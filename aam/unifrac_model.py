@@ -85,31 +85,21 @@ class UnifracModel(tf.keras.Model):
 
         # Compute regression loss
         reg_loss = self.regresssion_loss(target, sample_embeddings)
-        #num_pair = tf.reduce_sum(float_mask(reg_loss))
-        # pairwise_elements = 1 / tf.reduce_sum(float_mask(reg_loss))
-        #reg_loss = tf.multiply(reg_loss, 1 / 2)
-        # reg_loss = tf.multiply(tf.reduce_sum(reg_loss), pairwise_elements)
-        reg_loss = tf.reduce_mean(reg_loss) / 4
+        num_samples = tf.shape(reg_loss)[0]
+        reg_loss = tf.reduce_sum(reg_loss) / (num_samples**2 - num_samples)
 
         # nucleotide level
-        token_cat = tf.one_hot(tokens, depth=6)  # san -> san6
-        asv_loss = self.attention_loss(token_cat, logits)  # san6 -> san
+        token_cat = tf.one_hot(tokens, depth=6)
+        asv_loss = self.attention_loss(token_cat, logits)
 
-        ## mask pad tokens
-        #asv_mask = float_mask(tokens)
-        #asv_loss = asv_loss * asv_mask
-        asv_loss = tf.reduce_sum(asv_loss, axis=-1)  # san -> sa
-
-        #asv_per_sample = tf.reduce_sum(asv_mask[:, :, 1], axis=-1, keepdims=True)
-
-        # asv_level
-        #asv_loss = tf.reduce_sum(asv_loss, axis=-1)
-        #asv_loss = tf.math.multiply(asv_loss, 1 / asv_per_sample)  # sa -> s1
-        # asv_loss = self.penalty * asv_loss
-        asv_loss = self.penalty* tf.reduce_mean(asv_loss)
+        # mask pad tokens
+        asv_mask = float_mask(tokens)
+        asv_loss = asv_loss * asv_mask
+        asv_loss = tf.reduce_sum(asv_loss) / tf.reduce_sum(asv_mask)
+        asv_loss = self.penalty * asv_loss
 
         # total
-        loss = tf.reduce_mean(reg_loss) + tf.reduce_mean(asv_loss)
+        loss = reg_loss + asv_loss
         return [loss, reg_loss, asv_loss]
 
     def _compute_accuracy(self, y_true, y_pred):
@@ -157,7 +147,7 @@ class UnifracModel(tf.keras.Model):
         nucleotides = self.softmax(nucleotides)
 
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
-        #asv_embeddings = asv_embeddings * asv_mask
+        # asv_embeddings = asv_embeddings * asv_mask
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training
         )
