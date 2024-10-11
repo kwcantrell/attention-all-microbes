@@ -76,11 +76,9 @@ class UnifracModel(tf.keras.Model):
             dropout_rate,
             name="sample_encoder",
         )
-        self.nuc_logits = tf.keras.layers.Dense(6, name="nuc_logits", dtype=tf.float32)
-        self.sample_ff_inner = tf.keras.layers.Dense(
-            128, activation="relu", dtype=tf.float32
+        self.nuc_logits = tf.keras.layers.Dense(
+            6, use_bias=False, name="nuc_logits", dtype=tf.float32
         )
-        self.sample_ff_outer = tf.keras.layers.Dense(128, dtype=tf.float32)
 
         self.softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         self.linear_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
@@ -156,8 +154,6 @@ class UnifracModel(tf.keras.Model):
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training
         )
-        sample_embeddings = self.sample_ff_inner(sample_embeddings)
-        sample_embeddings = self.sample_ff_outer(sample_embeddings)
 
         if not return_final_embeddings:
             sample_embeddings = sample_embeddings[:, -1, :]

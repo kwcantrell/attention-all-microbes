@@ -44,31 +44,31 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             initializer=tf.keras.initializers.GlorotNormal(),
             trainable=True,
         )
-        self.count_intermediate = tf.keras.layers.Dense(
-            128, use_bias=False, dtype=tf.float32
+
+        self.count_ff_inner = tf.keras.layers.Dense(
+            128, activation="relu", dtype=tf.float32
         )
+        self.count_ff_outer = tf.keras.layers.Dense(128, dtype=tf.float32)
         self.count_out = tf.keras.layers.Dense(1, use_bias=True, dtype=tf.float32)
+
         self.pos_embeddings = tfm.nlp.layers.RelativePositionEmbedding(
             128, dtype=tf.float32
         )
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_tracker = tf.keras.metrics.Mean()
 
-        self.rpca_compress = tf.keras.layers.Dense(
-            128, use_bias=False, dtype=tf.float32
-        )
-
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
             intermediate_size=1024,
             dropout_rate=self.dropout,
-            activation="silu",
+            activation="relu",
         )
 
-        self.transfer_intermediate = tf.keras.layers.Dense(
-            128, use_bias=False, dtype=tf.float32
+        self.transfer_inner = tf.keras.layers.Dense(
+            128, activation="relu", dtype=tf.float32
         )
+        self.transfer_outer = tf.keras.layers.Dense(128, dtype=tf.float32)
         if self.num_classes is None:
             self.transfer_ff = tf.keras.layers.Dense(1, use_bias=True, dtype=tf.float32)
             self.transfer_tracker = tf.keras.metrics.MeanAbsoluteError()
@@ -276,11 +276,12 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             training=training,
         )
 
-        target_out = self.transfer_intermediate(embeddings[:, -1, :])
+        target_out = self.transfer_inner(embeddings[:, -1, :])
+        target_out = self.transfer_outer(target_out)
         target_out = self.transfer_ff(target_out)
 
-        count_embeddings = embeddings[:, :-2, :]
-        count_pred = self.count_intermediate(count_embeddings)
+        count_embeddings = self.count_ff_inner(embeddings[:, :-2, :])
+        count_pred = self.count_ff_outer(count_embeddings)
         count_pred = tf.squeeze(self.count_out(count_pred), axis=-1)
         return (
             count_embeddings,
