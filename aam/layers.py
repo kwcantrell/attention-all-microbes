@@ -148,7 +148,7 @@ class SampleEncoder(tf.keras.layers.Layer):
             intermediate_size=self.attention_ff,
             norm_first=True,
             activation="relu",
-            intermediate_dropout=self.dropout_rate,
+            dropout_rate=self.dropout_rate,
         )
         self.sample_token = self.add_weight(
             "sample_token",
@@ -362,7 +362,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         # residual connection
         attention_output = tf.add(attention_input, attention_output)
         attention_output = tf.ensure_shape(attention_output, self._shape)
-        # attention_output = self.attention_dropout(attention_output, training=training)
+        attention_output = self.attention_dropout(attention_output, training=training)
 
         # cast for mixed precision
         ff_input = self.ff_norm(attention_output)
@@ -375,7 +375,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         ff_output = tf.add(ff_input, ff_output)
 
         ff_output = tf.ensure_shape(ff_output, self._shape)
-        # ff_output = self.ff_dropout(ff_output, training=training)
+        ff_output = self.ff_dropout(ff_output, training=training)
         return ff_output
 
     def get_config(self):

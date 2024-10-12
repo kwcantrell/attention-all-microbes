@@ -37,7 +37,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.freeze_base_weights = freeze_base_weights
         # self.base_model.trainable = not self.freeze_base_weights
         self.base_model = UnifracModel(
-            self.token_dim, 150, 0, 0, 0, 2, 2, 64, 0.1, 1, 2, 2, 64
+            self.token_dim, 150, 0, 0, 0, 2, 2, 64, 0.1, 1, 2, 3, 64
         )
         self.count_norm = tf.keras.layers.LayerNormalization(
             epsilon=0.000001, dtype=tf.float32
@@ -49,14 +49,14 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             num_layers=4,
             num_attention_heads=4,
             intermediate_size=1024,
-            intermediate_dropout=self.dropout,
+            dropout_rate=self.dropout,
             activation="relu",
             dtype=tf.float32,
         )
         self.count_out = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
         self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-        self.count_loss = tf.keras.losses.Huber(reduction="none")
+        self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
         self.count_tracker = tf.keras.metrics.Mean()
 
         self.transfer_token = self.add_weight(
@@ -73,7 +73,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             num_layers=4,
             num_attention_heads=4,
             intermediate_size=1024,
-            intermediate_dropout=self.dropout,
+            dropout_rate=self.dropout,
             activation="relu",
         )
 
@@ -127,6 +127,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         relative_counts = tf.reshape(relative_counts, shape=[-1, 1])
 
         count_loss = tf.reduce_sum(self.count_loss(relative_counts, count_pred))
+        count_loss = count_loss  / count_total
         # count_loss = tf.reshape(count_loss, count_shape)
         # count_loss = tf.reduce_sum(count_loss, axis=-1)
         # count_loss = count_loss / tf.reduce_sum(count_mask, axis=-1)
@@ -134,17 +135,17 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         target_mask = float_mask(y)
         target_total = tf.reduce_sum(target_mask)
-        target_loss = tf.reduce_sum(self.loss(y, y_pred))
+        target_loss = tf.reduce_sum(self.loss(y, y_pred)) / target_total
         # target_loss = tf.ensure_shape(target_loss, [None])
 
-        loss = (target_loss + count_loss) / (target_total + count_total)
+        loss = target_loss + count_loss
 
-        # regularization loss
+        # regul`arization loss
         reg_loss = tf.reduce_mean(self.losses)
         return (
             loss,
-            target_loss / target_total,
-            count_loss / count_total,
+            target_loss,
+            count_loss,
             reg_loss,
         )
 

@@ -36,9 +36,9 @@ class CVModel:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         lr = tf.keras.optimizers.schedules.PolynomialDecay(
-            3.2e-4,
+            3.2e-3,
             100000,
-            end_learning_rate=1.28e-5,
+            end_learning_rate=1.28e-4,
             power=1.0,
             cycle=False,
         )

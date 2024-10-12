@@ -307,7 +307,7 @@ def fit_sample_regressor(
             penalty=p_penalty,
             dropout=p_dropout,
         )
-        loss = tf.keras.losses.Huber(reduction="none")
+        loss = tf.keras.losses.MeanSquaredError(reduction="none")
         fold_label = i + 1
         model_cv = CVModel(
             model,

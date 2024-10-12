@@ -64,6 +64,7 @@ class UnifracModel(tf.keras.Model):
             intermediate_ff,
             name="asv_encoder",
         )
+        self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
         self.sample_encoder = SampleEncoder(
             token_dim,
             max_bp,
@@ -145,7 +146,7 @@ class UnifracModel(tf.keras.Model):
             training=training,
         )
         asv_embeddings = embeddings[:, :, -1, :]
-
+        asv_embeddings = self.asv_norm(asv_embeddings)
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training

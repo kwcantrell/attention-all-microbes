@@ -142,7 +142,7 @@ def load_data(
                 return table_data, target_data
 
             if shuffle_samples:
-                ds = ds.shuffle(shuffle_buf)
+                ds = ds.shuffle(32)
             ds = ds.map(process_table, num_parallel_calls=tf.data.AUTOTUNE)
             ds = ds.padded_batch(
                 batch_size,
