@@ -44,7 +44,6 @@ class CVModel:
         )
 
         optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
-        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(

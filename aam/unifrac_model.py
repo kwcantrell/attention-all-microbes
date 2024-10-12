@@ -131,12 +131,12 @@ class UnifracModel(tf.keras.Model):
 
         # randomly mask 10% in each ASV
         nuc_mask = tf.ones_like(inputs, dtype=tf.int32)
-        if randomly_mask_nucleotides and training:
-            random_mask = tf.random.uniform(
-                tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
-            )
-            random_mask = tf.greater_equal(random_mask, self.dropout_rate)
-            nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)
+        # if randomly_mask_nucleotides and training:
+        #     random_mask = tf.random.uniform(
+        #         tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
+        #     )
+        #     random_mask = tf.greater_equal(random_mask, self.dropout_rate)
+        #     nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)
         seq = inputs * nuc_mask
 
         embeddings = self.asv_encoder(
@@ -145,20 +145,19 @@ class UnifracModel(tf.keras.Model):
             training=training,
         )
         asv_embeddings = embeddings[:, :, -1, :]
-        nuc_embeddings = embeddings[:, :, :-1, :]
-
-        nucleotides = self.nuc_logits(nuc_embeddings)
-        nucleotides = self.softmax(nucleotides)
 
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training
         )
 
-        if not return_final_embeddings:
-            sample_embeddings = sample_embeddings[:, -1, :]
-            sample_embeddings = self.linear_activation(sample_embeddings)
-            return asv_embeddings, sample_embeddings, nucleotides, inputs
+        # if not return_final_embeddings:
+        #     nuc_embeddings = embeddings[:, :, :-1, :]
+        #     nucleotides = self.nuc_logits(nuc_embeddings)
+        #     nucleotides = self.softmax(nucleotides)
+        #     sample_embeddings = sample_embeddings[:, -1, :]
+        #     sample_embeddings = self.linear_activation(sample_embeddings)
+        #     return asv_embeddings, sample_embeddings, nucleotides, inputs
 
         return sample_embeddings
 

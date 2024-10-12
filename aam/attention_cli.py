@@ -238,9 +238,10 @@ def fit_sample_regressor(
         validate_metadata,
     )
 
-    if p_mixed_precision:
-        print("\nUsing mixed precision\n")
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    # if p_mixed_precision:
+    #     print("\nUsing mixed precision\n")
+    #     tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -267,7 +268,7 @@ def fit_sample_regressor(
 
     print(len(test_indices), len(fold_indices))
 
-    def _get_fold(indices, shuffle, shift=None, scale=None):
+    def _get_fold(indices, shuffle, shift=None, scale="minmax"):
         fold_ids = ids[indices]
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df[df.index.isin(fold_ids)]
@@ -288,7 +289,7 @@ def fit_sample_regressor(
 
     models = []
     for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices)):
-        train_data = _get_fold(train_ind, shuffle=True)
+        train_data = _get_fold(train_ind, shuffle=True, shift=0, scale=100)
         val_data = _get_fold(
             val_ind, shuffle=False, shift=train_data["shift"], scale=train_data["scale"]
         )
@@ -296,9 +297,9 @@ def fit_sample_regressor(
             for id in ids[val_ind]:
                 f.write(id + "\n")
 
-        base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
+        # base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         model = TransferLearnNucleotideModel(
-            base_model,
+            None,
             p_freeze_base_weights,
             mask_percent=p_mask_percent,
             shift=train_data["shift"],
@@ -306,7 +307,7 @@ def fit_sample_regressor(
             penalty=p_penalty,
             dropout=p_dropout,
         )
-        loss = tf.keras.losses.Huber()
+        loss = tf.keras.losses.Huber(reduction="none")
         fold_label = i + 1
         model_cv = CVModel(
             model,

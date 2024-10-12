@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
+from aam.unifrac_model import UnifracModel
 from aam.utils import float_mask
 
 
@@ -32,11 +33,32 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.reg_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
-        self.base_model = base_model
+        # self.base_model = base_model
         self.freeze_base_weights = freeze_base_weights
-        self.base_model.trainable = not self.freeze_base_weights
+        # self.base_model.trainable = not self.freeze_base_weights
+        self.base_model = UnifracModel(
+            self.token_dim, 150, 0, 0, 0, 2, 2, 64, 0.1, 1, 2, 2, 64
+        )
+        self.count_norm = tf.keras.layers.LayerNormalization(
+            epsilon=0.000001, dtype=tf.float32
+        )
+        self.count_norm_out = tf.keras.layers.LayerNormalization(
+            epsilon=0.000001, dtype=tf.float32
+        )
+        self.count_encoder = tfm.nlp.models.TransformerEncoder(
+            num_layers=4,
+            num_attention_heads=4,
+            intermediate_size=1024,
+            intermediate_dropout=self.dropout,
+            activation="relu",
+            dtype=tf.float32,
+        )
+        self.count_out = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
+        self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
+        self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
+        self.count_loss = tf.keras.losses.Huber(reduction="none")
+        self.count_tracker = tf.keras.metrics.Mean()
 
-        # count embeddings
         self.transfer_token = self.add_weight(
             "transfer_token",
             [1, 1, 128],
@@ -44,33 +66,21 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             initializer=tf.keras.initializers.GlorotNormal(),
             trainable=True,
         )
-
-        self.count_ff_inner = tf.keras.layers.Dense(
-            128, activation="relu", dtype=tf.float32
+        self.target_norm = tf.keras.layers.LayerNormalization(
+            epsilon=0.000001, dtype=tf.float32
         )
-        self.count_ff_outer = tf.keras.layers.Dense(128, dtype=tf.float32)
-        self.count_out = tf.keras.layers.Dense(1, use_bias=True, dtype=tf.float32)
-
-        self.pos_embeddings = tfm.nlp.layers.RelativePositionEmbedding(
-            128, dtype=tf.float32
-        )
-        self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-        self.count_tracker = tf.keras.metrics.Mean()
-
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
             intermediate_size=1024,
-            dropout_rate=self.dropout,
+            intermediate_dropout=self.dropout,
             activation="relu",
         )
 
-        self.transfer_inner = tf.keras.layers.Dense(
-            128, activation="relu", dtype=tf.float32
-        )
-        self.transfer_outer = tf.keras.layers.Dense(128, dtype=tf.float32)
         if self.num_classes is None:
-            self.transfer_ff = tf.keras.layers.Dense(1, use_bias=True, dtype=tf.float32)
+            self.transfer_ff = tf.keras.layers.Dense(
+                1, use_bias=False, dtype=tf.float32
+            )
             self.transfer_tracker = tf.keras.metrics.MeanAbsoluteError()
             self.transfer2_tracker = tf.keras.metrics.MeanSquaredError()
             self.transfer_string = "mae"
@@ -102,25 +112,39 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         _, count_pred, y_pred, counts = outputs
 
         # count mask
+        y_pred = tf.ensure_shape(y_pred, [None, 1])
         count_mask = float_mask(counts)
+        count_total = tf.reduce_sum(count_mask)
         count_mask = tf.ensure_shape(count_mask, [None, None])
         count_pred = tf.ensure_shape(count_pred, [None, None])
+        count_pred = count_pred * count_mask
 
         # count mse
         relative_counts = self._relative_abundance(counts)
-        count_loss = tf.math.square(relative_counts - count_pred) * count_mask
-        count_loss = tf.reduce_sum(count_loss) / tf.reduce_sum(count_mask)
 
-        # target loss
-        y_pred = tf.ensure_shape(y_pred, [None, 1])
-        target_loss = tf.reduce_mean(self.loss(y, y_pred))
+        # count_shape = tf.shape(count_pred)
+        count_pred = tf.reshape(count_pred, shape=[-1, 1])
+        relative_counts = tf.reshape(relative_counts, shape=[-1, 1])
+
+        count_loss = tf.reduce_sum(self.count_loss(relative_counts, count_pred))
+        # count_loss = tf.reshape(count_loss, count_shape)
+        # count_loss = tf.reduce_sum(count_loss, axis=-1)
+        # count_loss = count_loss / tf.reduce_sum(count_mask, axis=-1)
+        # count_loss = tf.ensure_shape(count_loss, [None])
+
+        target_mask = float_mask(y)
+        target_total = tf.reduce_sum(target_mask)
+        target_loss = tf.reduce_sum(self.loss(y, y_pred))
+        # target_loss = tf.ensure_shape(target_loss, [None])
+
+        loss = (target_loss + count_loss) / (target_total + count_total)
 
         # regularization loss
         reg_loss = tf.reduce_mean(self.losses)
         return (
-            target_loss + count_loss,
-            target_loss,
-            count_loss,
+            loss,
+            target_loss / target_total,
+            count_loss / count_total,
             reg_loss,
         )
 
@@ -138,11 +162,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             self.transfer_tracker(y_true, y_pred)
 
     def build(self, input_shape=None):
-        seq_input = tf.keras.Input([None, 150], dtype=tf.int32)
-        count_input = tf.keras.Input([None], dtype=tf.int32)
-        self.call([seq_input, count_input])
         super(TransferLearnNucleotideModel, self).build(
-            [(None, None, 150), (None, None)]
+            [tf.TensorShape([None, None, 150]), tf.TensorShape([None, None])]
         )
 
     def predict_step(self, data):
@@ -161,10 +182,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
             loss, target_loss, count_mse, reg_loss = self._compute_loss(y, outputs)
-            scaled_loss = self.optimizer.get_scaled_loss(loss)
 
-        scaled_gradients = tape.gradient(scaled_loss, self.trainable_variables)
-        gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+        gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.loss_tracker.update_state(loss)
@@ -199,24 +218,10 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             "mse": self.transfer2_tracker.result(),
         }
 
-    def _pos_embeddings(self, asv_embeddings):
-        num_asvs = tf.shape(asv_embeddings)[1] - 1
-        pos_embeddings = tf.expand_dims(
-            self.pos_embeddings(None, length=num_asvs), axis=0
-        )
-        pos_embeddings = tf.pad(
-            pos_embeddings, [[0, 0], [0, 1], [0, 0]], constant_values=0
-        )
-        return pos_embeddings
-
-    def _relative_abundance(self, counts, add_pad=False):
+    def _relative_abundance(self, counts):
         counts = tf.cast(counts, dtype=tf.float32)
         count_sums = tf.reduce_sum(counts, axis=1, keepdims=True)
         rel_abundance = counts / count_sums
-        if add_pad:
-            rel_abundance = tf.pad(
-                rel_abundance, [[0, 0], [0, 1], [0, 0]], constant_values=1
-            )
         return rel_abundance
 
     def call(self, inputs, training=False):
@@ -227,33 +232,36 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         extended_counts = tf.expand_dims(counts, axis=-1)
         count_mask = float_mask(extended_counts, dtype=tf.int32)
-        asv_embeddings = self.base_model(
+        rel_abundance = self._relative_abundance(extended_counts)
+
+        # # randomly mask 10%
+        # rel_mask = tf.ones_like(rel_abundance, dtype=tf.float32)
+        # if training:
+        #     random_mask = tf.random.uniform(
+        #         tf.shape(rel_abundance), minval=0, maxval=1, dtype=self.compute_dtype
+        #     )
+        #     random_mask = tf.greater_equal(random_mask, 0.1)
+        #     rel_mask = rel_mask * tf.cast(random_mask, dtype=tf.float32)
+
+        # rel_abundance = tf.multiply(rel_abundance, rel_mask)
+
+        # account for <SAMPLE> token
+        rel_abundance = tf.pad(
+            rel_abundance, [[0, 0], [0, 1], [0, 0]], constant_values=1
+        )
+
+        count_embeddings = self.base_model(
             tokens,
             return_final_embeddings=True,
             randomly_mask_nucleotides=False,
-            training=False,
+            training=training,
         )
+        count_embeddings = (
+            count_embeddings + self.pos_embeddings(count_embeddings) * rel_abundance
+        )
+        count_embeddings = self.count_norm(count_embeddings)
 
-        pos_embeddings = self._pos_embeddings(asv_embeddings)
-        embeddings = asv_embeddings + pos_embeddings
-
-        rel_abundance = self._relative_abundance(extended_counts, add_pad=True)
-
-        # randomly mask 10%
-        rel_mask = tf.ones_like(rel_abundance, dtype=tf.float32)
-        if training:
-            random_mask = tf.random.uniform(
-                tf.shape(rel_abundance), minval=0, maxval=1, dtype=self.compute_dtype
-            )
-            random_mask = tf.greater_equal(random_mask, 0.1)
-            rel_mask = rel_mask * tf.cast(random_mask, dtype=tf.float32)
-
-        # need to set all zeros to 1 to avoid setting asv_embeddings to zero
-        rel_abundance = rel_abundance * rel_mask
-        rel_abundance = rel_abundance + (1 - float_mask(rel_abundance))
-        count_embeddings = asv_embeddings * rel_abundance
-
-        # add <SAMPLE> token empbedding
+        # add <TARGET> token empbedding
         asv_shape = tf.shape(count_embeddings)
         batch_len = asv_shape[0]
         emb_len = asv_shape[-1]
@@ -262,27 +270,28 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         sample_emb_shape[-1] = emb_len
         transfer_token = tf.broadcast_to(self.transfer_token, sample_emb_shape)
         transfer_token = tf.cast(transfer_token, dtype=tf.float32)
-        embeddings = tf.concat([count_embeddings, transfer_token], axis=1)
+        count_embeddings = tf.concat([count_embeddings, transfer_token], axis=1)
 
-        # mask pad values out
         count_mask = tf.pad(count_mask, [[0, 0], [0, 2], [0, 0]], constant_values=1)
-
-        # asv + count attention
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
-
-        embeddings = self.transfer_encoder(
-            embeddings,
+        count_embeddings = self.count_encoder(
+            count_embeddings,
             attention_mask=count_attention_mask > 0,
             training=training,
         )
 
-        target_out = self.transfer_inner(embeddings[:, -1, :])
-        target_out = self.transfer_outer(target_out)
+        embeddings = self.transfer_encoder(
+            count_embeddings,
+            attention_mask=count_attention_mask > 0,
+            training=training,
+        )
+
+        count_pred = self.count_norm_out(embeddings[:, :-2, :])
+        count_pred = tf.squeeze(self.count_out(count_pred), axis=-1)
+
+        target_out = self.target_norm(embeddings[:, -1, :])
         target_out = self.transfer_ff(target_out)
 
-        count_embeddings = self.count_ff_inner(embeddings[:, :-2, :])
-        count_pred = self.count_ff_outer(count_embeddings)
-        count_pred = tf.squeeze(self.count_out(count_pred), axis=-1)
         return (
             count_embeddings,
             self.count_activation(count_pred),

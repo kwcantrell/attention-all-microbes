@@ -49,7 +49,7 @@ def load_data(
     max_token_per_sample=512,
     batch_size=8,
     shift=None,
-    scale=None,
+    scale="minmax",
 ):
     def _get_table_data(table_data):
         coo = table_data.transpose().matrix_data.tocoo()
@@ -65,8 +65,6 @@ def load_data(
     cat_counts = None
     num_classes = None
     max_density = None
-    shift = None
-    scale = None
     if is_categorical:
         cat_labels = target_data.cat.categories
         cat_counts = target_data.value_counts()
@@ -77,10 +75,14 @@ def load_data(
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
     else:
         target_data = target_data.to_numpy().reshape((-1, 1))
-        if shift is None and scale is None:
+        if scale == "minmax":
+            shift = np.min(target_data)
+            scale = np.max(target_data) - shift
+        elif scale == "standscale":
             shift = np.mean(target_data)
             scale = np.std(target_data)
         target_data = (target_data - shift) / scale
+        print(target_data)
         y = target_data
         target_dataset = tf.data.Dataset.from_tensor_slices(target_data)
         y_dataset = tf.data.Dataset.from_tensor_slices(y)
