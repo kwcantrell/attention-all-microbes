@@ -234,7 +234,7 @@ def fit_sample_regressor(
 ):
     from aam.transfer_data_utils import (
         load_data,
-        shuffle,
+        # shuffle,
         validate_metadata,
     )
 
@@ -256,7 +256,7 @@ def fit_sample_regressor(
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
-    table, df = shuffle(table, df)
+    # table, df = shuffle(table, df)
     num_ids = len(ids)
 
     fold_indices = [i for i in range(num_ids)]
@@ -271,7 +271,7 @@ def fit_sample_regressor(
     def _get_fold(indices, shuffle, shift=None, scale="minmax"):
         fold_ids = ids[indices]
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
-        df_fold = df[df.index.isin(fold_ids)]
+        df_fold = df.loc[fold_ids]
         data = load_data(
             table_fold,
             False,
@@ -289,7 +289,7 @@ def fit_sample_regressor(
 
     models = []
     for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices)):
-        train_data = _get_fold(train_ind, shuffle=True, shift=0, scale=100)
+        train_data = _get_fold(train_ind, shuffle=True, shift=0.0, scale=100.0)
         val_data = _get_fold(
             val_ind, shuffle=False, shift=train_data["shift"], scale=train_data["scale"]
         )
@@ -306,6 +306,7 @@ def fit_sample_regressor(
             scale=train_data["scale"],
             penalty=p_penalty,
             dropout=p_dropout,
+            num_tax_levels=train_data["num_tax_levels"],
         )
         loss = tf.keras.losses.MeanSquaredError(reduction="none")
         fold_label = i + 1

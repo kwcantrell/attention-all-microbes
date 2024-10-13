@@ -42,8 +42,8 @@ class UnifracModel(tf.keras.Model):
         self.nuc_attention_layers = nuc_attention_layers
         self.intermediate_ff = intermediate_ff
         self.regresssion_loss = PairwiseLoss()
-        self.attention_loss = tf.keras.losses.CategoricalCrossentropy(
-            from_logits=False, reduction="none"
+        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(
+            ignore_class=0, from_logits=False, reduction="none"
         )
         self.loss_tracker = tf.keras.metrics.Mean()
         self.metric_traker = tf.keras.metrics.Mean()
@@ -78,11 +78,17 @@ class UnifracModel(tf.keras.Model):
             name="sample_encoder",
         )
         self.nuc_logits = tf.keras.layers.Dense(
-            6, use_bias=False, name="nuc_logits", dtype=tf.float32
+            6, use_bias=False, name="nuc_logits", dtype=tf.float32, activation="softmax"
         )
 
-        self.softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         self.linear_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
+
+    def _compute_nuc_loss(self, tokens, pred_tokens):
+        token_mask = float_mask(tokens)
+        total_tokens = tf.reduce_sum(token_mask)
+
+        asv_loss = tf.reduce_sum(self.attention_loss(tokens, pred_tokens))
+        return asv_loss / total_tokens
 
     def _compute_loss(self, target, outputs):
         sample_embeddings, logits, tokens = outputs
@@ -92,15 +98,7 @@ class UnifracModel(tf.keras.Model):
         num_samples = tf.reduce_sum(float_mask(reg_loss))
         reg_loss = tf.math.divide_no_nan(tf.reduce_sum(reg_loss), num_samples)
 
-        # nucleotide level
-        token_cat = tf.one_hot(tokens, depth=6)
-        asv_loss = self.attention_loss(token_cat, logits)
-
-        # mask pad tokens
-        asv_mask = float_mask(tokens)
-        asv_loss = asv_loss * asv_mask
-        asv_loss = tf.reduce_sum(asv_loss) / tf.reduce_sum(asv_mask)
-        asv_loss = self.penalty * asv_loss
+        asv_loss = self._compute_nuc_loss(tokens, logits)
 
         # total
         loss = reg_loss + asv_loss
@@ -120,7 +118,7 @@ class UnifracModel(tf.keras.Model):
     def call(
         self,
         inputs,
-        return_final_embeddings=False,
+        return_nuc_embeddings=False,
         randomly_mask_nucleotides=True,
         training=False,
     ):
@@ -132,12 +130,12 @@ class UnifracModel(tf.keras.Model):
 
         # randomly mask 10% in each ASV
         nuc_mask = tf.ones_like(inputs, dtype=tf.int32)
-        # if randomly_mask_nucleotides and training:
-        #     random_mask = tf.random.uniform(
-        #         tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
-        #     )
-        #     random_mask = tf.greater_equal(random_mask, self.dropout_rate)
-        #     nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)
+        if randomly_mask_nucleotides and training:
+            random_mask = tf.random.uniform(
+                tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
+            )
+            random_mask = tf.greater_equal(random_mask, self.dropout_rate)
+            nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)
         seq = inputs * nuc_mask
 
         embeddings = self.asv_encoder(
@@ -152,13 +150,10 @@ class UnifracModel(tf.keras.Model):
             asv_embeddings, attention_mask=asv_mask, training=training
         )
 
-        # if not return_final_embeddings:
-        #     nuc_embeddings = embeddings[:, :, :-1, :]
-        #     nucleotides = self.nuc_logits(nuc_embeddings)
-        #     nucleotides = self.softmax(nucleotides)
-        #     sample_embeddings = sample_embeddings[:, -1, :]
-        #     sample_embeddings = self.linear_activation(sample_embeddings)
-        #     return asv_embeddings, sample_embeddings, nucleotides, inputs
+        if return_nuc_embeddings:
+            nuc_embeddings = embeddings[:, :, :-1, :]
+            nucleotides = self.nuc_logits(nuc_embeddings)
+            return sample_embeddings, nucleotides
 
         return sample_embeddings
 
