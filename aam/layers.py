@@ -34,12 +34,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         self,
         token_dim,
         max_bp,
-        pca_hidden_dim,
-        pca_heads,
-        pca_layers,
         attention_heads,
         attention_layers,
-        attention_ff,
         dropout_rate,
         intermediate_ff,
         **kwargs,
@@ -47,12 +43,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         super(ASVEncoder, self).__init__(**kwargs)
         self.token_dim = token_dim
         self.max_bp = max_bp
-        self.pca_hidden_dim = pca_hidden_dim
-        self.pca_heads = pca_heads
-        self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
-        self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
         self.intermediate_ff = intermediate_ff
 
@@ -78,7 +70,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
         )
 
-    def call(self, inputs, seq_mask=None, training=False):
+    def call(self, inputs, training=False):
         seq = inputs
         seq = seq + self.nucleotide_position
 
@@ -102,12 +94,8 @@ class ASVEncoder(tf.keras.layers.Layer):
             {
                 "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
-                "pca_hidden_dim": self.pca_hidden_dim,
-                "pca_heads": self.pca_heads,
-                "pca_layers": self.pca_layers,
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
-                "attention_ff": self.attention_ff,
                 "dropout_rate": self.dropout_rate,
                 "intermediate_ff": self.intermediate_ff,
             }
@@ -121,9 +109,6 @@ class SampleEncoder(tf.keras.layers.Layer):
         self,
         token_dim,
         max_bp,
-        pca_hidden_dim,
-        pca_heads,
-        pca_layers,
         attention_heads,
         attention_layers,
         attention_ff,
@@ -134,9 +119,6 @@ class SampleEncoder(tf.keras.layers.Layer):
         dropout_rate = dropout_rate
         self.token_dim = token_dim
         self.max_bp = max_bp
-        self.pca_hidden_dim = pca_hidden_dim
-        self.pca_heads = pca_heads
-        self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
         self.attention_ff = attention_ff
@@ -186,9 +168,6 @@ class SampleEncoder(tf.keras.layers.Layer):
             {
                 "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
-                "pca_hidden_dim": self.pca_hidden_dim,
-                "pca_heads": self.pca_heads,
-                "pca_layers": self.pca_layers,
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
                 "attention_ff": self.attention_ff,

@@ -1,16 +1,18 @@
+from __future__ import annotations
+
+from typing import Union
+
 import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.unifrac_model import UnifracModel
-from aam.utils import float_mask
+from aam.utils import apply_random_mask, float_mask, masked_loss
 
 
 @tf.keras.saving.register_keras_serializable(package="TransferLearnNucleotideModel")
 class TransferLearnNucleotideModel(tf.keras.Model):
     def __init__(
         self,
-        base_model,
-        freeze_base_weights,
         mask_percent=25,
         num_classes=None,
         shift=0,
@@ -34,17 +36,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.target_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
-        # self.base_model = base_model
-        self.freeze_base_weights = freeze_base_weights
-        # self.base_model.trainable = not self.freeze_base_weights
         self.base_model = UnifracModel(
             self.token_dim, 150, 0, 0, 0, 2, 2, 64, 0.1, 1, 2, 3, 64
-        )
-        self.count_norm = tf.keras.layers.LayerNormalization(
-            epsilon=0.000001, dtype=tf.float32
-        )
-        self.count_norm_out = tf.keras.layers.LayerNormalization(
-            epsilon=0.000001, dtype=tf.float32
         )
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
@@ -67,6 +60,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             dropout_rate=self.dropout,
             activation="relu",
         )
+
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
@@ -76,17 +70,13 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         )
 
         if self.num_tax_levels is not None:
-            self.tax_norm = tf.keras.layers.LayerNormalization(
-                epsilon=0.000001, dtype=tf.float32
-            )
             self.tax_level_logits = tf.keras.layers.Dense(
                 self.num_tax_levels,
                 use_bias=False,
-                activation="softmax",
                 dtype=tf.float32,
             )
             self.tax_loss = tf.keras.losses.SparseCategoricalCrossentropy(
-                ignore_class=0, from_logits=False, reduction="none"
+                ignore_class=0, from_logits=True, reduction="none"
             )
         self.tax_tracker = tf.keras.metrics.Mean()
 
@@ -120,48 +110,46 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         )
         return evaluated_metrics[metric_index]
 
-    def _compute_target_loss(self, y_true, y_pred):
-        target_mask = float_mask(y_true)
-        target_total = tf.reduce_sum(target_mask)
-        return tf.reduce_sum(self.loss(y_true, y_pred)) / target_total
+    def _compute_target_loss(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        return tf.reduce_mean(self.loss(y_true, y_pred))
 
-    def _compute_count_loss(self, counts, count_pred):
-        count_mask = float_mask(counts)
-        count_total = tf.reduce_sum(count_mask)
-
-        # count mse
+    @masked_loss(sparse_cat=False)
+    def _compute_count_loss(
+        self, counts: tf.Tensor, count_pred: tf.Tensor
+    ) -> tf.Tensor:
         relative_counts = self._relative_abundance(counts)
+        return self.count_loss(relative_counts, count_pred)
 
-        count_pred = count_pred * count_mask
-        relative_counts = relative_counts * count_mask
+    @masked_loss(sparse_cat=True)
+    def _compute_tax_loss(
+        self, tax_tokens: tf.Tensor, tax_pred: tf.Tensor
+    ) -> tf.Tensor:
+        return self.tax_loss(tax_tokens, tax_pred)
 
-        count_loss = self.count_loss(relative_counts, count_pred)
-        count_loss = tf.reduce_sum(count_loss)
-        return count_loss / count_total
-
-    def _compute_tax_loss(self, tax_tokens, tax_pred):
-        tax_mask = float_mask(tax_tokens)
-        tax_total = tf.reduce_sum(tax_mask)
-
-        tax_loss = tf.reduce_sum(self.tax_loss(tax_tokens, tax_pred))
-        return tax_loss / tax_total
-
-    def _compute_loss(self, inputs, y_true, outputs):
-        nuc_tokens, counts = inputs
+    def _compute_loss(
+        self,
+        model_inputs: tuple[tf.Tensor, tf.Tensor],
+        y_true: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
+        outputs: Union[
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor],
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
+        ],
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+        nuc_tokens, counts = model_inputs
         if self.num_tax_levels is None:
+            y_target = y_true
             count_pred, y_pred, nuc_pred = outputs
-            target_loss = self._compute_target_loss(y_true, y_pred)
             tax_loss = 0.0
         else:
-            count_pred, y_pred, tax_pred, nuc_pred = outputs
             y_target, tax_tokens = y_true
-            target_loss = self._compute_target_loss(y_target, y_pred)
+            count_pred, y_pred, tax_pred, nuc_pred = outputs
             tax_loss = self._compute_tax_loss(tax_tokens, tax_pred)
 
+        target_loss = self._compute_target_loss(y_target, y_pred)
         count_loss = self._compute_count_loss(counts, count_pred)
         nuc_loss = self.base_model._compute_nuc_loss(nuc_tokens, nuc_pred)
 
-        loss = target_loss + count_loss + tax_loss + nuc_loss
+        loss = target_loss + tax_loss + nuc_loss + count_loss
 
         return (
             loss,
@@ -171,12 +159,19 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             nuc_loss,
         )
 
-    def _compute_metric(self, y_true, outputs):
+    def _compute_metric(
+        self,
+        y_true: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
+        outputs: Union[
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor],
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
+        ],
+    ):
         if self.num_tax_levels is None:
             _, y_pred, _ = outputs
         else:
-            _, y_pred, _, _ = outputs
             y_true, _ = y_true
+            _, y_pred, _, _ = outputs
 
         if self.num_classes is None:
             y_true = y_true * self.scale + self.shift
@@ -260,7 +255,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             "mse": self.transfer2_tracker.result(),
         }
 
-    def _relative_abundance(self, counts):
+    def _relative_abundance(self, counts: tf.Tensor) -> tf.Tensor:
         counts = tf.cast(counts, dtype=tf.float32)
         count_sums = tf.reduce_sum(counts, axis=1, keepdims=True)
         rel_abundance = counts / count_sums
@@ -276,16 +271,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_mask = float_mask(counts, dtype=tf.int32)
         rel_abundance = self._relative_abundance(counts)
 
-        # randomly mask 10%
-        rel_mask = tf.ones_like(rel_abundance, dtype=tf.float32)
         if training:
-            random_mask = tf.random.uniform(
-                tf.shape(rel_abundance), minval=0, maxval=1, dtype=self.compute_dtype
-            )
-            random_mask = tf.greater_equal(random_mask, 0.1)
-            rel_mask = rel_mask * tf.cast(random_mask, dtype=tf.float32)
-
-        rel_abundance = tf.multiply(rel_abundance, rel_mask)
+            rel_abundance = apply_random_mask(rel_abundance, 0.1)
 
         # account for <SAMPLE> token
         rel_abundance = tf.pad(
@@ -301,7 +288,6 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_embeddings = (
             count_embeddings + self.pos_embeddings(count_embeddings) * rel_abundance
         )
-        # count_embeddings = self.count_norm(count_embeddings)
 
         count_mask = tf.pad(count_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
@@ -348,7 +334,6 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         config.update(
             {
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
-                "freeze_base_weights": self.freeze_base_weights,
                 "mask_percent": self.mask_percent,
                 "shift": self.shift,
                 "scale": self.scale,
@@ -360,7 +345,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         return config
 
     @classmethod
-    def from_config(cls, config, custom_objects=None):
+    def from_config(cls, config):
         config["base_model"] = tf.keras.saving.deserialize_keras_object(
             config["base_model"]
         )

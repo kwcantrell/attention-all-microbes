@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import os
 
@@ -8,10 +10,12 @@ from aam.callbacks import SaveModel
 
 
 class CVModel:
-    def __init__(self, model, train_dataset, val_dataset, output_dir, fold_label):
-        self.model = model
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+    def __init__(
+        self, model: tf.keras.Model, train_data, val_data, output_dir, fold_label
+    ):
+        self.model: tf.keras.Model = model
+        self.train_data = train_data
+        self.val_data = val_data
         self.output_dir = output_dir
         self.fold_label = fold_label
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -28,6 +32,7 @@ class CVModel:
         loss,
         epochs,
         model_save_path,
+        step_per_epoch=None,
         metric="mae",
         patience=10,
         early_stop_warmup=50,
@@ -36,9 +41,9 @@ class CVModel:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         lr = tf.keras.optimizers.schedules.PolynomialDecay(
-            3.2e-3,
-            100000,
-            end_learning_rate=1.28e-4,
+            3.2e-4,
+            10000,
+            end_learning_rate=1.28e-5,
             power=1.0,
             cycle=False,
         )
@@ -57,14 +62,15 @@ class CVModel:
         ]
         self.model.compile(optimizer=optimizer, loss=loss, run_eagerly=False)
         self.model.fit(
-            self.train_dataset,
-            validation_data=self.val_dataset,
+            self.train_data["dataset"],
+            validation_data=self.val_data["dataset"],
             callbacks=[*callbacks, *core_callbacks],
             epochs=epochs,
-            # verbose=0,
+            steps_per_epoch=self.train_data["size"],
+            validation_steps=self.val_data["size"],
         )
         self.model.set_weights(model_saver.best_weights)
-        self.metric_value = self.model.evaluate_metric(self.val_dataset, metric)
+        self.metric_value = self.model.evaluate_metric(self.val_data["dataset"], metric)
 
     def save(self, path, save_format="keras"):
         self.model.save(path, save_format=save_format)

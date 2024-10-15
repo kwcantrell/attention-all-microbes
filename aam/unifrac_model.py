@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import tensorflow as tf
 
 from aam.layers import (
@@ -5,7 +7,7 @@ from aam.layers import (
     SampleEncoder,
 )
 from aam.losses import PairwiseLoss
-from aam.utils import float_mask
+from aam.utils import apply_random_mask, float_mask, masked_loss
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracModel")
@@ -14,9 +16,6 @@ class UnifracModel(tf.keras.Model):
         self,
         token_dim,
         max_bp,
-        pca_hidden_dim,
-        pca_heads,
-        pca_layers,
         attention_heads,
         attention_layers,
         attention_ff,
@@ -30,9 +29,6 @@ class UnifracModel(tf.keras.Model):
         super(UnifracModel, self).__init__(**kwargs)
         self.token_dim = token_dim
         self.max_bp = max_bp
-        self.pca_hidden_dim = pca_hidden_dim
-        self.pca_heads = pca_heads
-        self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
         self.attention_ff = attention_ff
@@ -54,23 +50,15 @@ class UnifracModel(tf.keras.Model):
         self.asv_encoder = ASVEncoder(
             token_dim,
             max_bp,
-            pca_hidden_dim,
-            pca_heads,
-            pca_layers,
             nuc_attention_heads,
             nuc_attention_layers,
-            attention_ff,
             dropout_rate,
             intermediate_ff,
             name="asv_encoder",
         )
-        self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
         self.sample_encoder = SampleEncoder(
             token_dim,
             max_bp,
-            pca_hidden_dim,
-            pca_heads,
-            pca_layers,
             attention_heads,
             attention_layers,
             attention_ff,
@@ -83,12 +71,9 @@ class UnifracModel(tf.keras.Model):
 
         self.linear_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
 
+    @masked_loss(sparse_cat=True)
     def _compute_nuc_loss(self, tokens, pred_tokens):
-        token_mask = float_mask(tokens)
-        total_tokens = tf.reduce_sum(token_mask)
-
-        asv_loss = tf.reduce_sum(self.attention_loss(tokens, pred_tokens))
-        return asv_loss / total_tokens
+        return self.attention_loss(tokens, pred_tokens)
 
     def _compute_loss(self, target, outputs):
         sample_embeddings, logits, tokens = outputs
@@ -126,25 +111,19 @@ class UnifracModel(tf.keras.Model):
         # because keras converts all inputs
         # to float when calling build()
         inputs = tf.cast(inputs, dtype=tf.int32)
-        seq_mask = float_mask(inputs, dtype=tf.int32)
 
-        # randomly mask 10% in each ASV
-        nuc_mask = tf.ones_like(inputs, dtype=tf.int32)
-        if randomly_mask_nucleotides and training:
-            random_mask = tf.random.uniform(
-                tf.shape(inputs), minval=0, maxval=1, dtype=self.compute_dtype
-            )
-            random_mask = tf.greater_equal(random_mask, self.dropout_rate)
-            nuc_mask = nuc_mask * tf.cast(random_mask, dtype=tf.int32)
-        seq = inputs * nuc_mask
+        if training:
+            inputs = apply_random_mask(inputs, 0.1)
 
         embeddings = self.asv_encoder(
-            seq,
-            seq_mask=seq_mask,
+            inputs,
             training=training,
         )
         asv_embeddings = embeddings[:, :, -1, :]
-        asv_embeddings = self.asv_norm(asv_embeddings)
+
+        if randomly_mask_nucleotides and training:
+            asv_embeddings = apply_random_mask(asv_embeddings, 0.1)
+
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         sample_embeddings = self.sample_encoder(
             asv_embeddings, attention_mask=asv_mask, training=training
@@ -257,9 +236,6 @@ class UnifracModel(tf.keras.Model):
             {
                 "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
-                "pca_hidden_dim": self.pca_hidden_dim,
-                "pca_heads": self.pca_heads,
-                "pca_layers": self.pca_layers,
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
                 "attention_ff": self.attention_ff,

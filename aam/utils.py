@@ -1,7 +1,9 @@
+import functools
+
 import tensorflow as tf
 
 
-def float_mask(tensor: tf.Tensor, dtype=tf.float32):
+def float_mask(tensor: tf.Tensor, dtype=tf.float32) -> tf.Tensor:
     """creates a mask for nonzero elements of tensor. I.e. mask*tensor = tensor and
     (1. - mask) * tensor = 0
 
@@ -15,39 +17,34 @@ def float_mask(tensor: tf.Tensor, dtype=tf.float32):
     return mask
 
 
-class MyLRSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, initial_learning_rate=0.001, warmup=4000, d_model=128):
-        self.initial_learning_rate = initial_learning_rate
-        self.warmup = tf.cast(warmup, dtype=tf.float32)
-        self.d_model = tf.cast(d_model, dtype=tf.float32)
+def apply_random_mask(tensor: tf.Tensor, mask_percent: float) -> tf.Tensor:
+    if not isinstance(mask_percent, float):
+        raise Exception("Invalid mask percent")
 
-    def __call__(self, step):
-        s = tf.cast(step, dtype=tf.float32)
-        l1 = tf.pow(s, -0.5)
-        l2 = s * tf.pow(self.warmup, -1.5)
-        return tf.pow(self.d_model, -0.5) * tf.where(l1 < l2, l1, l2)
-
-    def get_config(self):
-        config = {
-            "initial_learning_rate": self.initial_learning_rate,
-            "warmup": self.warmup,
-        }
-        return {**config}
+    dtype = tf.type_spec_from_value(tensor).dtype
+    mask = float_mask(tensor)
+    random_mask = tf.random.uniform(tf.shape(tensor), minval=0, maxval=1)
+    random_mask = tf.cast(tf.greater_equal(random_mask, mask_percent), dtype=tf.float32)
+    mask = mask * random_mask
+    return tensor * tf.cast(mask, dtype=dtype)
 
 
-class LRDecrease(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, lr=0.0005, decay=0.99999):
-        self.lr = tf.Variable(lr, trainable=False)
-        self.decay = 0.9998
+def masked_loss(sparse_cat: bool = False):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(obj, target, pred):
+            if sparse_cat:
+                mask = float_mask(target, dtype=tf.type_spec_from_value(pred).dtype)
+                mask = tf.expand_dims(mask, axis=-1)
+            else:
+                mask = float_mask(target, dtype=tf.type_spec_from_value(pred).dtype)
 
-    def __call__(self, step):
-        lr = self.lr * self.decay
-        lr = tf.cond(lr < 0.0001, lambda: 0.0001, lambda: lr)
+            pred = pred * mask
+            total = tf.cast(tf.reduce_sum(mask), dtype=tf.float32)
 
-        self.lr.assign(lr)
+            loss = tf.reduce_sum(func(obj, target, pred))
+            return tf.math.divide_no_nan(loss, total)
 
-        return lr
+        return wrapper
 
-    def get_config(self):
-        config = {"lr": self.lr, "decay": self.decay}
-        return config
+    return decorator

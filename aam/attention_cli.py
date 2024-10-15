@@ -2,6 +2,7 @@ import datetime
 import os
 
 import click
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import load_table
@@ -16,7 +17,6 @@ from aam.callbacks import (
 )
 from aam.cv_utils import CVModel, EnsembleModel
 from aam.losses import ImbalancedCategoricalCrossEntropy
-from aam.transfer_nuc_model import TransferLearnNucleotideModel
 from aam.unifrac_model import UnifracModel
 
 
@@ -32,6 +32,24 @@ TEST_SIZE_DESC = "Fraction of input samples to exclude from training set and use
 CV_DESC = "Number of k-fold cross-validations to perform."
 STRAT_DESC = "Evenly stratify training and test data among metadata categories. If True, all values in column must match at least two samples."
 MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fail if missing samples are detected. "ignore" will cause the feature table and metadata to be filtered, so that only samples found in both files are retained.'
+
+
+def validate_metadata(table, metadata, missing_samples_flag):
+    # check for mismatch samples
+    ids = table.ids(axis="sample")
+    shared_ids = np.intersect1d(ids, metadata.index)
+    min_ids = min(len(shared_ids), len(ids), len(metadata.index))
+    max_ids = max(len(shared_ids), len(ids), len(metadata.index))
+    if len(shared_ids) == 0:
+        raise Exception("Table and Metadata have no matching sample ids")
+    if min_ids != max_ids and missing_samples_flag == "error":
+        raise Exception("Table and Metadata do not share all same sample ids.")
+    elif min_ids != max_ids and missing_samples_flag == "ignore":
+        print("Warning: Table and Metadata do not share all same sample ids.")
+        print("Table and metadata will be filtered")
+        table = table.filter(shared_ids, inplace=False)
+        metadata = metadata.loc[shared_ids]
+    return table.ids(), table, metadata
 
 
 @cli.command()
@@ -232,15 +250,8 @@ def fit_sample_regressor(
     p_mixed_precision: bool,
     output_dir: str,
 ):
-    from aam.transfer_data_utils import (
-        load_data,
-        # shuffle,
-        validate_metadata,
-    )
-
-    # if p_mixed_precision:
-    #     print("\nUsing mixed precision\n")
-    #     tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    from aam.data_handlers import SequenceGeneratorDataset
+    from aam.transfer_nuc_model import TransferLearnNucleotideModel
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -256,10 +267,9 @@ def fit_sample_regressor(
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
-    # table, df = shuffle(table, df)
     num_ids = len(ids)
 
-    fold_indices = [i for i in range(num_ids)]
+    fold_indices = np.arange(num_ids)
     if p_test_size > 0:
         test_size = int(num_ids * p_test_size)
         train_size = num_ids - test_size
@@ -268,36 +278,59 @@ def fit_sample_regressor(
 
     print(len(test_indices), len(fold_indices))
 
-    def _get_fold(indices, shuffle, shift=None, scale="minmax"):
+    def _get_fold(
+        indices,
+        shuffle,
+        shift=None,
+        scale="minmax",
+        epochs=1000,
+        num_tables=1,
+        gen_new_tables=False,
+    ):
         fold_ids = ids[indices]
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df.loc[fold_ids]
-        data = load_data(
-            table_fold,
-            False,
-            df_fold,
+        st = SequenceGeneratorDataset(
+            512,
             m_metadata_column,
-            shuffle_samples=shuffle,
+            False,
+            shift,
+            scale,
+            tax_level="Level 7",
+            shuffle=shuffle,
             batch_size=p_batch_size,
-            max_token_per_sample=p_asv_limit,
-            shift=shift,
-            scale=scale,
+            epochs=epochs,
+            num_tables=num_tables,
+            gen_new_tables=gen_new_tables,
+            table=table_fold,
+            metadata=df_fold,
+            taxonomy="/home/kalen/aam-research-exam/research-exam/healty-age-regression/taxonomy.tsv",
         )
-        return data
+        return st.get_data()
 
     kfolds = KFold(p_cv)
 
     models = []
     for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices)):
-        train_data = _get_fold(train_ind, shuffle=True, shift=0.0, scale=100.0)
+        train_data = _get_fold(
+            train_ind,
+            shuffle=True,
+            shift=0.0,
+            scale=100.0,
+            num_tables=3,
+            gen_new_tables=True,
+        )
         val_data = _get_fold(
-            val_ind, shuffle=False, shift=train_data["shift"], scale=train_data["scale"]
+            val_ind,
+            shuffle=False,
+            shift=train_data["shift"],
+            scale=train_data["scale"],
+            epochs=1,
         )
         with open(os.path.join(model_path, f"f{i}_val_ids.txt"), "w") as f:
             for id in ids[val_ind]:
                 f.write(id + "\n")
 
-        # base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         model = TransferLearnNucleotideModel(
             None,
             p_freeze_base_weights,
@@ -312,11 +345,15 @@ def fit_sample_regressor(
         fold_label = i + 1
         model_cv = CVModel(
             model,
-            train_data["dataset"],
-            val_data["dataset"],
+            train_data,
+            val_data,
             output_dir,
             fold_label,
         )
+        if "size" in train_data:
+            steps = train_data["size"]
+        else:
+            steps = None
         model_cv.fit_fold(
             loss,
             p_epochs,
@@ -324,6 +361,7 @@ def fit_sample_regressor(
             metric="loss",
             patience=p_patience,
             early_stop_warmup=p_early_stop_warmup,
+            step_per_epoch=steps,
             callbacks=[
                 MeanAbsoluteError(
                     dataset=val_data["dataset"],
@@ -501,6 +539,7 @@ def fit_sample_classifier(
         shuffle,
         validate_metadata,
     )
+    from aam.transfer_nuc_model import TransferLearnNucleotideModel
 
     if p_mixed_precision:
         print("\nUsing mixed precision\n")
@@ -578,8 +617,8 @@ def fit_sample_classifier(
         fold_label = i + 1
         model_cv = CVModel(
             model,
-            train_data["dataset"],
-            val_data["dataset"],
+            train_data,
+            val_data,
             output_dir,
             fold_label,
         )
