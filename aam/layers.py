@@ -32,7 +32,6 @@ class InputLayer(tf.keras.layers.Layer):
 class ASVEncoder(tf.keras.layers.Layer):
     def __init__(
         self,
-        token_dim,
         max_bp,
         attention_heads,
         attention_layers,
@@ -41,7 +40,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
-        self.token_dim = token_dim
         self.max_bp = max_bp
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
@@ -53,16 +51,15 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
             16,
-            # self.token_dim,
             input_length=self.max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
         self.avs_attention = NucleotideAttention(
-            self.token_dim,
             max_bp=self.max_bp,
             num_heads=self.attention_heads,
             num_layers=self.attention_layers,
-            dropout=self.dropout_rate,
+            # dropout=self.dropout_rate,
+            dropout=0.0,
             intermediate_ff=intermediate_ff,
         )
         self.asv_token = self.num_tokens - 1
@@ -93,7 +90,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         config = super(ASVEncoder, self).get_config()
         config.update(
             {
-                "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
@@ -182,7 +178,6 @@ class SampleEncoder(tf.keras.layers.Layer):
 class NucleotideAttention(tf.keras.layers.Layer):
     def __init__(
         self,
-        hidden_dim,
         max_bp,
         num_heads,
         num_layers,
@@ -191,7 +186,6 @@ class NucleotideAttention(tf.keras.layers.Layer):
         **kwargs,
     ):
         super(NucleotideAttention, self).__init__(**kwargs)
-        self.hidden_dim = hidden_dim
         self.max_bp = max_bp
         self.num_heads = num_heads
         self.num_layers = num_layers
@@ -227,7 +221,6 @@ class NucleotideAttention(tf.keras.layers.Layer):
         config = super(NucleotideAttention, self).get_config()
         config.update(
             {
-                "hidden_dim": self.hidden_dim,
                 "max_bp": self.max_bp,
                 "num_heads": self.num_heads,
                 "num_layers": self.num_layers,

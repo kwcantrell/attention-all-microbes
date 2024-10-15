@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
+import numpy as np
 import tensorflow as tf
 import tensorflow_models as tfm
 
@@ -20,11 +21,12 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         penalty: int = 5000,
         dropout: float = 0.0,
         num_tax_levels: Optional[int] = None,
+        tax_level_weights: Optional[np.ndarray] = None,
         **kwargs,
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
 
-        self.token_dim = 256
+        self.token_dim = 512
         self.mask_percent = mask_percent
         self.num_classes = num_classes
         self.shift = shift
@@ -32,6 +34,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.penalty = penalty
         self.dropout = dropout
         self.num_tax_levels = num_tax_levels
+        self.tax_level_weights = tf.constant(
+            tax_level_weights.reshape(-1), dtype=tf.float32
+        )
         self.loss_tracker = tf.keras.metrics.Mean()
         self.target_tracker = tf.keras.metrics.Mean()
 
@@ -39,11 +44,10 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.base_model = UnifracModel(
             self.token_dim,
             150,
-            attention_heads=2,
-            attention_layers=2,
-            attention_ff=64,
+            sample_attention_heads=2,
+            sample_attention_layers=2,
+            sample_attention_ff=2048,
             dropout_rate=0.1,
-            penalty=1,
             nuc_attention_heads=1,
             nuc_attention_layers=3,
             intermediate_ff=128,
@@ -133,7 +137,14 @@ class TransferLearnNucleotideModel(tf.keras.Model):
     def _compute_tax_loss(
         self, tax_tokens: tf.Tensor, tax_pred: tf.Tensor
     ) -> tf.Tensor:
-        return self.tax_loss(tax_tokens, tax_pred)
+        token_shape = tf.shape(tax_tokens)
+        loss = self.tax_loss(tax_tokens, tax_pred)
+
+        tax_tokens = tf.cast(tax_tokens, dtype=tf.int32)
+        tax_tokens = tf.reshape(tax_tokens, shape=[-1])
+        weights = tf.gather(self.tax_level_weights, tax_tokens)
+        weights = tf.reshape(weights, token_shape)
+        return loss * weights
 
     def _compute_loss(
         self,
@@ -328,22 +339,23 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             attention_mask=count_attention_mask > 0,
             training=training,
         )
-        count_pred = count_embeddings[:, :-1, :]
-        count_pred = self.count_out(count_pred)
 
         tax_embeddings = self.tax_encoder(
             count_embeddings,
             attention_mask=count_attention_mask > 0,
             training=training,
         )
-        tax_pred = tax_embeddings[:, :-1, :]
-        tax_pred = self.tax_level_logits(tax_pred)
 
         target_embeddings = self.transfer_encoder(
             tax_embeddings,
             attention_mask=count_attention_mask > 0,
             training=training,
         )
+
+        count_pred = target_embeddings[:, :-1, :]
+        count_pred = self.count_out(count_pred)
+        tax_pred = target_embeddings[:, :-1, :]
+        tax_pred = self.tax_level_logits(tax_pred)
         target_out = target_embeddings[:, -1, :]
         target_out = self.transfer_ff(target_out)
 

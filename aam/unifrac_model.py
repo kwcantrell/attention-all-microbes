@@ -18,11 +18,10 @@ class UnifracModel(tf.keras.Model):
         self,
         token_dim: int,
         max_bp: int,
-        attention_heads: int,
-        attention_layers: int,
-        attention_ff: int,
+        sample_attention_heads: int,
+        sample_attention_layers: int,
+        sample_attention_ff: int,
         dropout_rate: float,
-        penalty: float = 0.01,
         nuc_attention_heads: int = 2,
         nuc_attention_layers: int = 4,
         intermediate_ff: int = 1024,
@@ -31,11 +30,10 @@ class UnifracModel(tf.keras.Model):
         super(UnifracModel, self).__init__(**kwargs)
         self.token_dim = token_dim
         self.max_bp = max_bp
-        self.attention_heads = attention_heads
-        self.attention_layers = attention_layers
-        self.attention_ff = attention_ff
+        self.sample_attention_heads = sample_attention_heads
+        self.sample_attention_layers = sample_attention_layers
+        self.sample_attention_ff = sample_attention_ff
         self.dropout_rate = dropout_rate
-        self.penalty = penalty
         self.nuc_attention_heads = nuc_attention_heads
         self.nuc_attention_layers = nuc_attention_layers
         self.intermediate_ff = intermediate_ff
@@ -50,7 +48,6 @@ class UnifracModel(tf.keras.Model):
 
         # layers used in model
         self.asv_encoder = ASVEncoder(
-            token_dim,
             max_bp,
             nuc_attention_heads,
             nuc_attention_layers,
@@ -64,9 +61,9 @@ class UnifracModel(tf.keras.Model):
         self.sample_encoder = SampleEncoder(
             token_dim,
             max_bp,
-            attention_heads,
-            attention_layers,
-            attention_ff,
+            sample_attention_heads,
+            sample_attention_layers,
+            sample_attention_ff,
             dropout_rate,
             name="sample_encoder",
         )
@@ -123,8 +120,8 @@ class UnifracModel(tf.keras.Model):
         # to float when calling build()
         inputs = tf.cast(inputs, dtype=tf.int32)
 
-        if training:
-            inputs = apply_random_mask(inputs, 0.1)
+        # if training:
+        #     inputs = apply_random_mask(inputs, 0.1)
 
         embeddings = self.asv_encoder(
             inputs,
@@ -249,11 +246,10 @@ class UnifracModel(tf.keras.Model):
             {
                 "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
-                "attention_heads": self.attention_heads,
-                "attention_layers": self.attention_layers,
-                "attention_ff": self.attention_ff,
+                "sample_attention_heads": self.sample_attention_heads,
+                "sample_attention_layers": self.sample_attention_layers,
+                "sample_attention_ff": self.sample_attention_ff,
                 "dropout_rate": self.dropout_rate,
-                "penalty": self.penalty,
                 "nuc_attention_heads": self.nuc_attention_heads,
                 "nuc_attention_layers": self.nuc_attention_layers,
                 "intermediate_ff": self.intermediate_ff,

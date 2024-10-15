@@ -342,6 +342,7 @@ def fit_sample_regressor(
             penalty=p_penalty,
             dropout=p_dropout,
             num_tax_levels=train_data["num_tax_levels"],
+            tax_level_weights=train_data["level_weights"],
         )
         model.build()
         model.summary()
