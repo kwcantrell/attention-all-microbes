@@ -49,8 +49,9 @@ class SequenceGeneratorDataset(SequenceDataset):
 
         table = self._preprocess_data(rarefy_depth)
 
+        level = None
         if self.taxonomy is not None and isinstance(tax_level, str):
-            table, self.level = self._taxonomy_dataset(table, tax_level)
+            table, level = self._taxonomy_dataset(table, tax_level)
 
         shape = table.shape
         if self.metadata is not None and isinstance(metadata_col, str):
@@ -62,6 +63,27 @@ class SequenceGeneratorDataset(SequenceDataset):
 
         self.preprocessed_table = table
         self.obs_ids = self.preprocessed_table.ids(axis="observation")
+
+        if level is not None:
+            self.level = level.loc[self.obs_ids, :]
+            level_counts = self._counts_per_level(self.level)
+
+            if max(self.level.loc[:, "token"]) != len(level_counts):
+                raise Exception("Taxonomy tokenization is out of alignment")
+            if not np.equal(
+                np.squeeze(self.preprocessed_table.sum()),
+                np.squeeze(sum(level_counts.to_numpy())),
+            ):
+                raise Exception("Taxonomy is out of alignment with table")
+
+            level_counts = level_counts.to_numpy().reshape(-1)
+            level_mask = level_counts > 0
+            non_zero = np.sum(level_mask)
+            level_counts[level_mask] = np.sum(level_counts) / (
+                level_counts[level_mask] * non_zero
+            )
+            self.level_weights = np.pad(level_counts, (1, 0), constant_values=0)
+
         self.rarefy_tables = [
             self.preprocessed_table.copy().subsample(self.rarefy_depth)
             for _ in range(self.num_tables)
@@ -69,6 +91,14 @@ class SequenceGeneratorDataset(SequenceDataset):
         self.size = (
             self.preprocessed_table.shape[1] // self.batch_size
         ) * self.num_tables
+
+    def _counts_per_level(self, level: pd.DataFrame) -> pd.Series:
+        counts = self.preprocessed_table.sum(axis="observation")
+        obs = self.preprocessed_table.ids(axis="observation")
+
+        level_counts = level.loc[obs, ["token"]]
+        level_counts.loc[obs, "counts"] = counts.reshape((-1, 1))
+        return level_counts.groupby("token").agg("sum")
 
     def _preprocess_data(self, rarefy_depth: int) -> Table:
         table = self.table.copy()
@@ -217,9 +247,11 @@ class SequenceGeneratorDataset(SequenceDataset):
                 "size": self.size,
             }
             if self.tax_level is not None:
-                data_obj["num_tax_levels"] = max(self.level.loc[:, "token"]) + 1
+                data_obj["num_tax_levels"] = self.level_weights.size
+                data_obj["level_weights"] = self.level_weights
             else:
                 data_obj["num_tax_levels"] = None
+                data_obj["level_weights"] = None
         return data_obj
 
 
