@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
-import numpy as np
 import tensorflow as tf
 import tensorflow_models as tfm
 
@@ -21,7 +20,6 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         penalty: int = 5000,
         dropout: float = 0.0,
         num_tax_levels: Optional[int] = None,
-        tax_level_weights: Optional[np.ndarray] = None,
         **kwargs,
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
@@ -34,9 +32,6 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.penalty = penalty
         self.dropout = dropout
         self.num_tax_levels = num_tax_levels
-        self.tax_level_weights = tf.constant(
-            tax_level_weights.reshape(-1), dtype=tf.float32
-        )
         self.loss_tracker = tf.keras.metrics.Mean()
         self.target_tracker = tf.keras.metrics.Mean()
 
@@ -57,7 +52,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             num_attention_heads=4,
             intermediate_size=2048,
             dropout_rate=self.dropout,
-            activation="relu",
+            activation="silu",
             dtype=tf.float32,
         )
         self.count_out = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
@@ -71,7 +66,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             num_attention_heads=4,
             intermediate_size=2048,
             dropout_rate=self.dropout,
-            activation="relu",
+            activation="silu",
         )
 
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
@@ -79,7 +74,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             num_attention_heads=4,
             intermediate_size=2048,
             dropout_rate=self.dropout,
-            activation="relu",
+            activation="silu",
         )
 
         if self.num_tax_levels is not None:
@@ -135,16 +130,18 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
     @masked_loss(sparse_cat=True)
     def _compute_tax_loss(
-        self, tax_tokens: tf.Tensor, tax_pred: tf.Tensor
+        self,
+        tax_tokens: tf.Tensor,
+        tax_pred: tf.Tensor,
+        sample_weights: Optional[tf.Tensor] = None,
     ) -> tf.Tensor:
         token_shape = tf.shape(tax_tokens)
         loss = self.tax_loss(tax_tokens, tax_pred)
+        if sample_weights is not None:
+            sample_weights = tf.reshape(sample_weights, token_shape)
+            loss = loss * sample_weights
 
-        tax_tokens = tf.cast(tax_tokens, dtype=tf.int32)
-        tax_tokens = tf.reshape(tax_tokens, shape=[-1])
-        weights = tf.gather(self.tax_level_weights, tax_tokens)
-        weights = tf.reshape(weights, token_shape)
-        return loss * weights
+        return loss
 
     def _compute_loss(
         self,
@@ -154,6 +151,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             tuple[tf.Tensor, tf.Tensor, tf.Tensor],
             tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
         ],
+        sample_weights: Optional[tf.Tensor] = None,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
         nuc_tokens, counts = model_inputs
         if self.num_tax_levels is None:
@@ -163,7 +161,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         else:
             y_target, tax_tokens = y_true
             count_pred, y_pred, tax_pred, nuc_pred = outputs
-            tax_loss = self._compute_tax_loss(tax_tokens, tax_pred)
+            tax_loss = self._compute_tax_loss(
+                tax_tokens, tax_pred, sample_weights=sample_weights
+            )
 
         target_loss = self._compute_target_loss(y_target, y_pred)
         count_loss = self._compute_count_loss(counts, count_pred)
@@ -215,12 +215,11 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
+        inputs, (y, _) = data
         if self.num_tax_levels is None:
-            inputs, y = data
             _, y_pred, _ = self(inputs, training=False)
         else:
-            inputs, y_comb = data
-            y, _ = y_comb
+            y, _ = y
             _, y_pred, _, _ = self(inputs, training=False)
 
         if self.num_classes is None:
@@ -237,11 +236,12 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, y = data
+        inputs, (y, sample_weights) = data
+
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
             loss, target_loss, count_mse, tax_loss, nuc_loss = self._compute_loss(
-                inputs, y, outputs
+                inputs, y, outputs, sample_weights
             )
 
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -270,11 +270,11 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, y = data
+        inputs, (y, sample_weights) = data
 
         outputs = self(inputs, training=False)
         loss, target_loss, count_mse, tax_loss, nuc_loss = self._compute_loss(
-            inputs, y, outputs
+            inputs, y, outputs, sample_weights
         )
 
         self.loss_tracker.update_state(loss)

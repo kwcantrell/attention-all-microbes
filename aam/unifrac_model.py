@@ -56,7 +56,7 @@ class UnifracModel(tf.keras.Model):
             name="asv_encoder",
         )
 
-        self.asv_scale = tf.keras.layers.Dense(token_dim, activation="relu")
+        self.asv_scale = tf.keras.layers.Dense(token_dim, activation="silu")
         self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
         self.sample_encoder = SampleEncoder(
             token_dim,

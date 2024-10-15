@@ -32,7 +32,7 @@ def apply_random_mask(tensor: tf.Tensor, mask_percent: float) -> tf.Tensor:
 def masked_loss(sparse_cat: bool = False):
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(obj, target, pred):
+        def wrapper(obj, target, pred, **kwargs):
             shape = tf.shape(pred)
 
             if sparse_cat:
@@ -45,7 +45,7 @@ def masked_loss(sparse_cat: bool = False):
                 mask = tf.squeeze(mask, axis=-1)
                 pred = tf.reshape(pred, [shape[0], -1, 1])
 
-            loss = func(obj, target, pred)
+            loss = func(obj, target, pred, **kwargs)
 
             total = tf.cast(tf.reduce_sum(mask), dtype=tf.float32)
             loss = tf.reduce_sum(loss * mask)

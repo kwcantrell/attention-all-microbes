@@ -66,23 +66,6 @@ class SequenceGeneratorDataset(SequenceDataset):
 
         if level is not None:
             self.level = level.loc[self.obs_ids, :]
-            level_counts = self._counts_per_level(self.level)
-
-            if max(self.level.loc[:, "token"]) != len(level_counts):
-                raise Exception("Taxonomy tokenization is out of alignment")
-            if not np.equal(
-                np.squeeze(self.preprocessed_table.sum()),
-                np.squeeze(sum(level_counts.to_numpy())),
-            ):
-                raise Exception("Taxonomy is out of alignment with table")
-
-            level_counts = level_counts.to_numpy().reshape(-1)
-            level_mask = level_counts > 0
-            non_zero = np.sum(level_mask)
-            level_counts[level_mask] = np.sum(level_counts) / (
-                level_counts[level_mask] * non_zero
-            )
-            self.level_weights = np.pad(level_counts, (1, 0), constant_values=0)
 
         self.rarefy_tables = [
             self.preprocessed_table.copy().subsample(self.rarefy_depth)
@@ -92,13 +75,23 @@ class SequenceGeneratorDataset(SequenceDataset):
             self.preprocessed_table.shape[1] // self.batch_size
         ) * self.num_tables
 
-    def _counts_per_level(self, level: pd.DataFrame) -> pd.Series:
-        counts = self.preprocessed_table.sum(axis="observation")
-        obs = self.preprocessed_table.ids(axis="observation")
+    def _level_weights(self, table: Table) -> np.ndarray:
+        all_ids = self.preprocessed_table.ids(axis="observation")
+        level = self.level.loc[all_ids, ["token"]]
 
-        level_counts = level.loc[obs, ["token"]]
-        level_counts.loc[obs, "counts"] = counts.reshape((-1, 1))
-        return level_counts.groupby("token").agg("sum")
+        counts = table.pa(inplace=False).sum(axis="observation")
+        table_obs = table.ids(axis="observation")
+        level.loc[table_obs, "counts"] = 0
+        level.loc[table_obs, "counts"] = counts
+        level_counts = level.groupby("token").agg("sum")
+
+        level_counts = level_counts.to_numpy().reshape(-1)
+        level_mask = level_counts > 0
+        non_zero = np.sum(level_mask)
+        level_counts[level_mask] = np.sum(level_counts) / (
+            level_counts[level_mask] * non_zero
+        )
+        return np.pad(level_counts, (1, 0), constant_values=0)
 
     def _preprocess_data(self, rarefy_depth: int) -> Table:
         table = self.table.copy()
@@ -123,7 +116,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                 (id_array.reshape((-1, 1)), array.reshape((-1, 1))), axis=1
             )
 
-        return _add_id(row), col, table_data, obs_encodings
+        return _add_id(row), col, table_data, obs_encodings, obs_ids
 
     def _sample_indx(self, sample):
         return sample[1]
@@ -140,9 +133,10 @@ class SequenceGeneratorDataset(SequenceDataset):
         self,
         sample: np.ndarray,
         tables: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        level_weights: list[np.ndarray],
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         table_indx = sample[0]
-        row, col, table_data, obs_encodings = tables[table_indx]
+        row, col, table_data, obs_encodings, obs_ids = tables[table_indx]
         sample_indx = sample[1]
         target_data = self.target[sample_indx]
 
@@ -151,9 +145,19 @@ class SequenceGeneratorDataset(SequenceDataset):
         obs_indices = col[sample_mask]
         tokens = obs_encodings[obs_indices]
 
-        sample_obs = self.obs_ids[obs_indices]
+        sample_obs = obs_ids[obs_indices]
         tax_tokens = self.level.loc[sample_obs, "token"].to_numpy(dtype=np.int32)
-        return target_data, sample_counts, tokens, tax_tokens
+
+        weights = level_weights[table_indx]
+        weights = weights[tax_tokens]
+
+        return (
+            target_data,
+            sample_counts,
+            tokens,
+            tax_tokens,
+            weights,
+        )
 
     def _epoch_complete(self, processed):
         if processed < self.size * self.batch_size:
@@ -166,6 +170,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                 self._create_table_data(table, i)
                 for i, table in enumerate(self.rarefy_tables)
             ]
+            level_weights = [self._level_weights(table) for table in self.rarefy_tables]
             samples = self._unique_samples(table_data)
             samples_skipped = 0
             processed = 0
@@ -178,6 +183,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                     table_data[-1] = self._create_table_data(
                         new_table, self.num_tables - 1
                     )
+                    level_weights[-1] = self._level_weights(new_table)
 
                 while not self._epoch_complete(processed):
                     samples = self._unique_samples(table_data)
@@ -189,8 +195,8 @@ class SequenceGeneratorDataset(SequenceDataset):
                         if self._epoch_complete(processed):
                             break
 
-                        target, sample_counts, tokens, tax_tokens = self._sample_data(
-                            s, table_data
+                        target, sample_counts, tokens, tax_tokens, weights = (
+                            self._sample_data(s, table_data, level_weights)
                         )
                         if len(sample_counts) > self.max_token_per_sample:
                             samples_skipped += 1
@@ -208,10 +214,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                                     sorted_tokens.astype(np.int32),
                                     sorted_counts.astype(np.int32),
                                 ),
-                                (
-                                    target,
-                                    sorted_tax_tokens.astype(np.int32),
-                                ),
+                                ((target, sorted_tax_tokens.astype(np.int32)), weights),
                             )
 
         return generator
@@ -226,8 +229,11 @@ class SequenceGeneratorDataset(SequenceDataset):
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
                 (
-                    tf.TensorSpec(shape=[1], dtype=tf.float32),
-                    tf.TensorSpec(shape=[None], dtype=tf.int32),
+                    (
+                        tf.TensorSpec(shape=[1], dtype=tf.float32),
+                        tf.TensorSpec(shape=[None], dtype=tf.int32),
+                    ),
+                    tf.TensorSpec(shape=[None], dtype=tf.float32),
                 ),
             ),
         )
@@ -235,7 +241,7 @@ class SequenceGeneratorDataset(SequenceDataset):
             self.batch_size,
             (
                 ([None, 150], [None, 1]),
-                ([1], [None]),
+                (([1], [None]), [None]),
             ),
         ).prefetch(tf.data.AUTOTUNE)
 
@@ -247,11 +253,9 @@ class SequenceGeneratorDataset(SequenceDataset):
                 "size": self.size,
             }
             if self.tax_level is not None:
-                data_obj["num_tax_levels"] = self.level_weights.size
-                data_obj["level_weights"] = self.level_weights
+                data_obj["num_tax_levels"] = max(self.level.loc[:, "token"]) + 1
             else:
                 data_obj["num_tax_levels"] = None
-                data_obj["level_weights"] = None
         return data_obj
 
 

@@ -126,7 +126,7 @@ class SampleEncoder(tf.keras.layers.Layer):
             num_attention_heads=4,
             intermediate_size=self.attention_ff,
             norm_first=True,
-            activation="relu",
+            activation="silu",
             dropout_rate=self.dropout_rate,
         )
         self.sample_token = self.add_weight(
@@ -267,7 +267,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         self.inter_ff = tf.keras.layers.Dense(
-            self.intermediate_ff, activation="relu", use_bias=True
+            self.intermediate_ff, activation="silu", use_bias=True
         )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
