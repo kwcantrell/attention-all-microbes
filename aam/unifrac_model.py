@@ -58,6 +58,9 @@ class UnifracModel(tf.keras.Model):
             intermediate_ff,
             name="asv_encoder",
         )
+
+        self.asv_scale = tf.keras.layers.Dense(token_dim, activation="relu")
+        self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
         self.sample_encoder = SampleEncoder(
             token_dim,
             max_bp,
@@ -121,16 +124,18 @@ class UnifracModel(tf.keras.Model):
         inputs = tf.cast(inputs, dtype=tf.int32)
 
         if training:
-            inputs = apply_random_mask(inputs, 0.02)
+            inputs = apply_random_mask(inputs, 0.1)
 
         embeddings = self.asv_encoder(
             inputs,
             training=training,
         )
-        asv_embeddings = embeddings[:, :, -1, :]
+
+        asv_embeddings = self.asv_scale(embeddings[:, :, -1, :])
+        asv_embeddings = self.asv_norm(asv_embeddings)
 
         if randomly_mask_nucleotides and training:
-            asv_embeddings = apply_random_mask(asv_embeddings, 0.02)
+            asv_embeddings = apply_random_mask(asv_embeddings, 0.1)
 
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         sample_embeddings = self.sample_encoder(

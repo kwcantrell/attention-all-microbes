@@ -24,7 +24,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
 
-        self.token_dim = 128
+        self.token_dim = 256
         self.mask_percent = mask_percent
         self.num_classes = num_classes
         self.shift = shift
@@ -44,14 +44,14 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             attention_ff=64,
             dropout_rate=0.1,
             penalty=1,
-            nuc_attention_heads=2,
+            nuc_attention_heads=1,
             nuc_attention_layers=3,
-            intermediate_ff=64,
+            intermediate_ff=128,
         )
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
-            intermediate_size=1024,
+            intermediate_size=2048,
             dropout_rate=self.dropout,
             activation="relu",
             dtype=tf.float32,
@@ -65,7 +65,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.tax_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
-            intermediate_size=1024,
+            intermediate_size=2048,
             dropout_rate=self.dropout,
             activation="relu",
         )
@@ -73,7 +73,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
             num_attention_heads=4,
-            intermediate_size=1024,
+            intermediate_size=2048,
             dropout_rate=self.dropout,
             activation="relu",
         )

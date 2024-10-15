@@ -52,12 +52,13 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.num_tokens = self.base_tokens * self.max_bp + 2
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
-            self.token_dim,
+            16,
+            # self.token_dim,
             input_length=self.max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
         self.avs_attention = NucleotideAttention(
-            128,
+            self.token_dim,
             max_bp=self.max_bp,
             num_heads=self.attention_heads,
             num_layers=self.attention_layers,

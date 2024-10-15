@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import os
 
@@ -319,7 +321,7 @@ def fit_sample_regressor(
             shuffle=True,
             shift=0.0,
             scale=100.0,
-            num_tables=10,
+            num_tables=1,
             gen_new_tables=True,
         )
         val_data = _get_fold(
@@ -341,6 +343,8 @@ def fit_sample_regressor(
             dropout=p_dropout,
             num_tax_levels=train_data["num_tax_levels"],
         )
+        model.build()
+        model.summary()
         loss = tf.keras.losses.MeanSquaredError(reduction="none")
         fold_label = i + 1
         model_cv = CVModel(
