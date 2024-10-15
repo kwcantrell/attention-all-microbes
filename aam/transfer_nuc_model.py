@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Union
+from typing import Optional, Union
 
 import tensorflow as tf
 import tensorflow_models as tfm
@@ -13,13 +13,13 @@ from aam.utils import apply_random_mask, float_mask, masked_loss
 class TransferLearnNucleotideModel(tf.keras.Model):
     def __init__(
         self,
-        mask_percent=25,
-        num_classes=None,
-        shift=0,
-        scale=1,
-        penalty=5000,
-        dropout=0.0,
-        num_tax_levels=None,
+        mask_percent: int = 25,
+        num_classes: Optional[int] = None,
+        shift: float = 0.0,
+        scale: float = 1.0,
+        penalty: int = 5000,
+        dropout: float = 0.0,
+        num_tax_levels: Optional[int] = None,
         **kwargs,
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
@@ -37,7 +37,16 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         # layers used in model
         self.base_model = UnifracModel(
-            self.token_dim, 150, 0, 0, 0, 2, 2, 64, 0.1, 1, 2, 3, 64
+            self.token_dim,
+            150,
+            attention_heads=2,
+            attention_layers=2,
+            attention_ff=64,
+            dropout_rate=0.1,
+            penalty=1,
+            nuc_attention_heads=2,
+            nuc_attention_layers=3,
+            intermediate_ff=64,
         )
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=4,
@@ -188,7 +197,13 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             [tf.TensorShape([None, None, 150]), tf.TensorShape([None, None, 1])]
         )
 
-    def predict_step(self, data):
+    def predict_step(
+        self,
+        data: Union[
+            tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
+            tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
+        ],
+    ):
         if self.num_tax_levels is None:
             inputs, y = data
             _, y_pred, _ = self(inputs, training=False)
@@ -204,7 +219,13 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             return y_pred, y_true
         return tf.argmax(y_pred, axis=-1), y
 
-    def train_step(self, data):
+    def train_step(
+        self,
+        data: Union[
+            tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
+            tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
+        ],
+    ):
         inputs, y = data
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
@@ -231,7 +252,13 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             "mse": self.transfer2_tracker.result(),
         }
 
-    def test_step(self, data):
+    def test_step(
+        self,
+        data: Union[
+            tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
+            tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
+        ],
+    ):
         inputs, y = data
 
         outputs = self(inputs, training=False)
@@ -261,7 +288,12 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         rel_abundance = counts / count_sums
         return rel_abundance
 
-    def call(self, inputs, training=False):
+    def call(
+        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
+    ) -> Union[
+        tuple[tf.Tensor, tf.Tensor, tf.Tensor],
+        tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
+    ]:
         # keras cast all input to float so we need to manually cast to expected type
         tokens, counts = inputs
         tokens = tf.cast(tokens, dtype=tf.int32)

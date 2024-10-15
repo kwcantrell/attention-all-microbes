@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Union
+
 import tensorflow as tf
 
 from aam.layers import (
@@ -14,16 +16,16 @@ from aam.utils import apply_random_mask, float_mask, masked_loss
 class UnifracModel(tf.keras.Model):
     def __init__(
         self,
-        token_dim,
-        max_bp,
-        attention_heads,
-        attention_layers,
-        attention_ff,
-        dropout_rate,
-        penalty=0.01,
-        nuc_attention_heads=2,
-        nuc_attention_layers=4,
-        intermediate_ff=1024,
+        token_dim: int,
+        max_bp: int,
+        attention_heads: int,
+        attention_layers: int,
+        attention_ff: int,
+        dropout_rate: float,
+        penalty: float = 0.01,
+        nuc_attention_heads: int = 2,
+        nuc_attention_layers: int = 4,
+        intermediate_ff: int = 1024,
         **kwargs,
     ):
         super(UnifracModel, self).__init__(**kwargs)
@@ -71,25 +73,31 @@ class UnifracModel(tf.keras.Model):
 
         self.linear_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
 
+    def _compute_target_loss(
+        self, target: tf.Tensor, sample_embeddings: tf.Tensor
+    ) -> tf.Tensor:
+        loss = self.regresssion_loss(target, sample_embeddings)
+        num_samples = tf.reduce_sum(float_mask(loss))
+        return tf.math.divide_no_nan(tf.reduce_sum(loss), num_samples)
+
     @masked_loss(sparse_cat=True)
-    def _compute_nuc_loss(self, tokens, pred_tokens):
+    def _compute_nuc_loss(self, tokens: tf.Tensor, pred_tokens: tf.Tensor) -> tf.Tensor:
         return self.attention_loss(tokens, pred_tokens)
 
-    def _compute_loss(self, target, outputs):
+    def _compute_loss(
+        self, target: tf.Tensor, outputs: tf.Tensor
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         sample_embeddings, logits, tokens = outputs
 
         # Compute regression loss
-        reg_loss = self.regresssion_loss(target, sample_embeddings)
-        num_samples = tf.reduce_sum(float_mask(reg_loss))
-        reg_loss = tf.math.divide_no_nan(tf.reduce_sum(reg_loss), num_samples)
-
+        reg_loss = self._compute_target_loss(target, sample_embeddings)
         asv_loss = self._compute_nuc_loss(tokens, logits)
 
         # total
         loss = reg_loss + asv_loss
-        return [loss, reg_loss, asv_loss]
+        return loss, reg_loss, asv_loss
 
-    def _compute_accuracy(self, y_true, y_pred):
+    def _compute_accuracy(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         tokens = tf.cast(y_true, dtype=tf.float32)
 
         pred_classes = tf.cast(tf.argmax(y_pred, axis=-1), dtype=tf.float32)
@@ -102,18 +110,18 @@ class UnifracModel(tf.keras.Model):
 
     def call(
         self,
-        inputs,
-        return_nuc_embeddings=False,
-        randomly_mask_nucleotides=True,
-        training=False,
-    ):
+        inputs: tf.Tensor,
+        return_nuc_embeddings: bool = False,
+        randomly_mask_nucleotides: bool = True,
+        training: bool = False,
+    ) -> Union[tuple[tf.Tensor, tf.Tensor], tf.Tensor]:
         # need to cast inputs to int32 to avoid error
         # because keras converts all inputs
         # to float when calling build()
         inputs = tf.cast(inputs, dtype=tf.int32)
 
         if training:
-            inputs = apply_random_mask(inputs, 0.1)
+            inputs = apply_random_mask(inputs, 0.02)
 
         embeddings = self.asv_encoder(
             inputs,
@@ -122,7 +130,7 @@ class UnifracModel(tf.keras.Model):
         asv_embeddings = embeddings[:, :, -1, :]
 
         if randomly_mask_nucleotides and training:
-            asv_embeddings = apply_random_mask(asv_embeddings, 0.1)
+            asv_embeddings = apply_random_mask(asv_embeddings, 0.02)
 
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         sample_embeddings = self.sample_encoder(

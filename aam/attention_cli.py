@@ -228,6 +228,7 @@ def fit_unifrac_regressor(
 @click.option(
     "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
 )
+@click.option("--p-taxonomy", required=False, type=click.Path(exists=True))
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
@@ -248,6 +249,7 @@ def fit_sample_regressor(
     p_report_back: int,
     p_asv_limit: int,
     p_mixed_precision: bool,
+    p_taxonomy: str,
     output_dir: str,
 ):
     from aam.data_handlers import SequenceGeneratorDataset
@@ -304,7 +306,7 @@ def fit_sample_regressor(
             gen_new_tables=gen_new_tables,
             table=table_fold,
             metadata=df_fold,
-            taxonomy="/home/kalen/aam-research-exam/research-exam/healty-age-regression/taxonomy.tsv",
+            taxonomy=p_taxonomy,
         )
         return st.get_data()
 
@@ -317,7 +319,7 @@ def fit_sample_regressor(
             shuffle=True,
             shift=0.0,
             scale=100.0,
-            num_tables=3,
+            num_tables=10,
             gen_new_tables=True,
         )
         val_data = _get_fold(
@@ -332,8 +334,6 @@ def fit_sample_regressor(
                 f.write(id + "\n")
 
         model = TransferLearnNucleotideModel(
-            None,
-            p_freeze_base_weights,
             mask_percent=p_mask_percent,
             shift=train_data["shift"],
             scale=train_data["scale"],
@@ -358,12 +358,13 @@ def fit_sample_regressor(
             loss,
             p_epochs,
             os.path.join(model_path, f"model_f{fold_label}.keras"),
-            metric="loss",
+            metric="mae",
             patience=p_patience,
             early_stop_warmup=p_early_stop_warmup,
             step_per_epoch=steps,
             callbacks=[
                 MeanAbsoluteError(
+                    monitor="val_mae",
                     dataset=val_data["dataset"],
                     output_dir=os.path.join(
                         figure_path, f"model_f{fold_label}-val.png"
