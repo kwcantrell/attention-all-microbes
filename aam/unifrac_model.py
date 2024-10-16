@@ -16,7 +16,7 @@ from aam.utils import apply_random_mask, float_mask, masked_loss
 class UnifracModel(tf.keras.Model):
     def __init__(
         self,
-        token_dim: int,
+        embedding_dim: int,
         max_bp: int,
         sample_attention_heads: int,
         sample_attention_layers: int,
@@ -28,7 +28,7 @@ class UnifracModel(tf.keras.Model):
         **kwargs,
     ):
         super(UnifracModel, self).__init__(**kwargs)
-        self.token_dim = token_dim
+        self.embedding_dim = embedding_dim
         self.max_bp = max_bp
         self.sample_attention_heads = sample_attention_heads
         self.sample_attention_layers = sample_attention_layers
@@ -56,10 +56,10 @@ class UnifracModel(tf.keras.Model):
             name="asv_encoder",
         )
 
-        self.asv_scale = tf.keras.layers.Dense(token_dim, activation="silu")
+        self.asv_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
         self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
         self.sample_encoder = SampleEncoder(
-            token_dim,
+            embedding_dim,
             max_bp,
             sample_attention_heads,
             sample_attention_layers,
@@ -68,7 +68,7 @@ class UnifracModel(tf.keras.Model):
             name="sample_encoder",
         )
         self.nuc_logits = tf.keras.layers.Dense(
-            6, use_bias=False, name="nuc_logits", dtype=tf.float32, activation="softmax"
+            6, name="nuc_logits", dtype=tf.float32, activation="softmax"
         )
 
         self.linear_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
@@ -120,19 +120,24 @@ class UnifracModel(tf.keras.Model):
         # to float when calling build()
         inputs = tf.cast(inputs, dtype=tf.int32)
 
-        # if training:
-        #     inputs = apply_random_mask(inputs, 0.1)
+        asv_input = inputs
+        if training and randomly_mask_nucleotides:
+            asv_mask = apply_random_mask(
+                tf.ones_like(asv_input[:, :, :1], dtype=tf.int32),
+                mask_percent=self.dropout_rate,
+            )
+            asv_input = asv_input * asv_mask
 
         embeddings = self.asv_encoder(
-            inputs,
+            asv_input,
             training=training,
         )
 
         asv_embeddings = self.asv_scale(embeddings[:, :, -1, :])
         asv_embeddings = self.asv_norm(asv_embeddings)
 
-        if randomly_mask_nucleotides and training:
-            asv_embeddings = apply_random_mask(asv_embeddings, 0.1)
+        # if randomly_mask_nucleotides and training:
+        #     asv_embeddings = apply_random_mask(asv_embeddings, 0.1)
 
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
         sample_embeddings = self.sample_encoder(
@@ -244,7 +249,7 @@ class UnifracModel(tf.keras.Model):
         config = super(UnifracModel, self).get_config()
         config.update(
             {
-                "token_dim": self.token_dim,
+                "embedding_dim": self.embedding_dim,
                 "max_bp": self.max_bp,
                 "sample_attention_heads": self.sample_attention_heads,
                 "sample_attention_layers": self.sample_attention_layers,

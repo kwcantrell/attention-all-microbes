@@ -6,81 +6,76 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.unifrac_model import UnifracModel
-from aam.utils import apply_random_mask, float_mask, masked_loss
+from aam.utils import float_mask, masked_loss
 
 
 @tf.keras.saving.register_keras_serializable(package="TransferLearnNucleotideModel")
 class TransferLearnNucleotideModel(tf.keras.Model):
     def __init__(
         self,
-        mask_percent: int = 25,
         num_classes: Optional[int] = None,
         shift: float = 0.0,
         scale: float = 1.0,
-        penalty: int = 5000,
-        dropout: float = 0.0,
+        dropout_rate: float = 0.0,
         num_tax_levels: Optional[int] = None,
+        embedding_dim: int = 1024,
+        attention_heads: int = 4,
+        attention_layers: int = 6,
+        intermediate_size: int = 2024,
+        intermediate_activation: str = "relu",
         **kwargs,
     ):
         super(TransferLearnNucleotideModel, self).__init__(**kwargs)
 
-        self.token_dim = 512
-        self.mask_percent = mask_percent
+        self.embedding_dim = embedding_dim
+        self.attention_heads = attention_heads
+        self.attention_layers = attention_layers
+        self.intermediate_size = intermediate_size
+        self.intermediate_activation = intermediate_activation
         self.num_classes = num_classes
         self.shift = shift
         self.scale = scale
-        self.penalty = penalty
-        self.dropout = dropout
+        self.dropout_rate = dropout_rate
         self.num_tax_levels = num_tax_levels
         self.loss_tracker = tf.keras.metrics.Mean()
         self.target_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
         self.base_model = UnifracModel(
-            self.token_dim,
+            self.embedding_dim,
             150,
-            sample_attention_heads=2,
-            sample_attention_layers=2,
-            sample_attention_ff=2048,
-            dropout_rate=0.1,
+            sample_attention_heads=self.attention_heads,
+            sample_attention_layers=self.attention_layers,
+            sample_attention_ff=self.intermediate_size,
+            dropout_rate=self.dropout_rate,
             nuc_attention_heads=1,
             nuc_attention_layers=3,
             intermediate_ff=128,
         )
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=4,
-            num_attention_heads=4,
-            intermediate_size=2048,
-            dropout_rate=self.dropout,
-            activation="silu",
-            dtype=tf.float32,
+            num_layers=self.attention_layers,
+            num_attention_heads=self.attention_heads,
+            intermediate_size=intermediate_size,
+            dropout_rate=self.dropout_rate,
+            activation=self.intermediate_activation,
         )
-        self.count_out = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
+        self.count_out = tf.keras.layers.Dense(1, dtype=tf.float32)
         self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
         self.count_tracker = tf.keras.metrics.Mean()
 
         self.tax_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=4,
-            num_attention_heads=4,
-            intermediate_size=2048,
-            dropout_rate=self.dropout,
-            activation="silu",
-        )
-
-        self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
-            num_layers=4,
-            num_attention_heads=4,
-            intermediate_size=2048,
-            dropout_rate=self.dropout,
-            activation="silu",
+            num_layers=self.attention_layers,
+            num_attention_heads=self.attention_heads,
+            intermediate_size=intermediate_size,
+            dropout_rate=self.dropout_rate,
+            activation=self.intermediate_activation,
         )
 
         if self.num_tax_levels is not None:
             self.tax_level_logits = tf.keras.layers.Dense(
                 self.num_tax_levels,
-                use_bias=False,
                 dtype=tf.float32,
             )
             self.tax_loss = tf.keras.losses.SparseCategoricalCrossentropy(
@@ -88,10 +83,16 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             )
         self.tax_tracker = tf.keras.metrics.Mean()
 
+        self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
+            num_layers=self.attention_layers,
+            num_attention_heads=self.attention_heads,
+            intermediate_size=intermediate_size,
+            dropout_rate=self.dropout_rate,
+            activation=self.intermediate_activation,
+        )
+
         if self.num_classes is None:
-            self.transfer_ff = tf.keras.layers.Dense(
-                1, use_bias=False, dtype=tf.float32
-            )
+            self.transfer_ff = tf.keras.layers.Dense(1, dtype=tf.float32)
             self.transfer_tracker = tf.keras.metrics.MeanAbsoluteError()
             self.transfer2_tracker = tf.keras.metrics.MeanSquaredError()
             self.transfer_string = "mae"
@@ -99,9 +100,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
                 "linear", dtype=tf.float32
             )
         else:
-            self.transfer_ff = tf.keras.layers.Dense(
-                num_classes, use_bias=False, dtype=tf.float32
-            )
+            self.transfer_ff = tf.keras.layers.Dense(num_classes, dtype=tf.float32)
             self.transfer_tracker = tf.keras.metrics.CategoricalAccuracy()
             self.transfer_string = "accuracy"
             self.transfer_activation = tf.keras.layers.Activation(
@@ -310,12 +309,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         tokens = tf.cast(tokens, dtype=tf.int32)
         counts = tf.cast(counts, dtype=tf.int32)
 
-        # extended_counts = tf.expand_dims(counts, axis=-1)
         count_mask = float_mask(counts, dtype=tf.int32)
         rel_abundance = self._relative_abundance(counts)
-
-        if training:
-            rel_abundance = apply_random_mask(rel_abundance, 0.1)
 
         # account for <SAMPLE> token
         rel_abundance = tf.pad(
@@ -332,6 +327,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             count_embeddings + self.pos_embeddings(count_embeddings) * rel_abundance
         )
 
+        # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
         count_embeddings = self.count_encoder(
@@ -378,11 +374,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         config.update(
             {
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
-                "mask_percent": self.mask_percent,
                 "shift": self.shift,
                 "scale": self.scale,
-                "penalty": self.penalty,
-                "dropout": self.dropout,
+                "dropout": self.dropout_rate,
                 "num_tax_levels": self.num_tax_levels,
             }
         )

@@ -321,7 +321,7 @@ def fit_sample_regressor(
             shuffle=True,
             shift=0.0,
             scale=100.0,
-            num_tables=1,
+            num_tables=5,
             gen_new_tables=True,
         )
         val_data = _get_fold(
@@ -336,11 +336,9 @@ def fit_sample_regressor(
                 f.write(id + "\n")
 
         model = TransferLearnNucleotideModel(
-            mask_percent=p_mask_percent,
             shift=train_data["shift"],
             scale=train_data["scale"],
-            penalty=p_penalty,
-            dropout=p_dropout,
+            dropout_rate=p_dropout,
             num_tax_levels=train_data["num_tax_levels"],
         )
         model.build()

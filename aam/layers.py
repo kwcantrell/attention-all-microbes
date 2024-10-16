@@ -50,7 +50,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.num_tokens = self.base_tokens * self.max_bp + 2
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
-            16,
+            32,
             input_length=self.max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
@@ -58,8 +58,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             max_bp=self.max_bp,
             num_heads=self.attention_heads,
             num_layers=self.attention_layers,
-            # dropout=self.dropout_rate,
-            dropout=0.0,
+            dropout=self.dropout_rate,
             intermediate_ff=intermediate_ff,
         )
         self.asv_token = self.num_tokens - 1
@@ -122,11 +121,11 @@ class SampleEncoder(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
         self.sample_attention = tfm.nlp.models.TransformerEncoder(
-            num_layers=4,
-            num_attention_heads=4,
+            num_layers=self.attention_layers,
+            num_attention_heads=self.attention_heads,
             intermediate_size=self.attention_ff,
             norm_first=True,
-            activation="silu",
+            activation="relu",
             dropout_rate=self.dropout_rate,
         )
         self.sample_token = self.add_weight(
@@ -267,7 +266,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         self.inter_ff = tf.keras.layers.Dense(
-            self.intermediate_ff, activation="silu", use_bias=True
+            self.intermediate_ff, activation="relu", use_bias=True
         )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
