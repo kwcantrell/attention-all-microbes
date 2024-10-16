@@ -300,7 +300,7 @@ def fit_sample_regressor(
             False,
             shift,
             scale,
-            tax_level="Level 7",
+            tax_level="Level 4",
             shuffle=shuffle,
             batch_size=p_batch_size,
             epochs=epochs,
@@ -321,7 +321,7 @@ def fit_sample_regressor(
             shuffle=True,
             shift=0.0,
             scale=100.0,
-            num_tables=5,
+            num_tables=1,
             gen_new_tables=True,
         )
         val_data = _get_fold(

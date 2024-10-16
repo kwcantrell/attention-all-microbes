@@ -9,7 +9,7 @@ from aam.layers import (
     SampleEncoder,
 )
 from aam.losses import PairwiseLoss
-from aam.utils import apply_random_mask, float_mask, masked_loss
+from aam.utils import float_mask, masked_loss
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracModel")
@@ -121,12 +121,12 @@ class UnifracModel(tf.keras.Model):
         inputs = tf.cast(inputs, dtype=tf.int32)
 
         asv_input = inputs
-        if training and randomly_mask_nucleotides:
-            asv_mask = apply_random_mask(
-                tf.ones_like(asv_input[:, :, :1], dtype=tf.int32),
-                mask_percent=self.dropout_rate,
-            )
-            asv_input = asv_input * asv_mask
+        # if training and randomly_mask_nucleotides:
+        #     asv_mask = apply_random_mask(
+        #         tf.ones_like(asv_input[:, :, :1], dtype=tf.int32),
+        #         mask_percent=self.dropout_rate,
+        #     )
+        #     asv_input = asv_input * asv_mask
 
         embeddings = self.asv_encoder(
             asv_input,

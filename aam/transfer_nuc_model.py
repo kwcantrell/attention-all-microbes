@@ -20,7 +20,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         num_tax_levels: Optional[int] = None,
         embedding_dim: int = 1024,
         attention_heads: int = 4,
-        attention_layers: int = 6,
+        attention_layers: int = 8,
         intermediate_size: int = 2024,
         intermediate_activation: str = "relu",
         **kwargs,
@@ -348,7 +348,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             training=training,
         )
 
-        count_pred = target_embeddings[:, :-1, :]
+        count_pred = tax_embeddings[:, :-1, :]
         count_pred = self.count_out(count_pred)
         tax_pred = target_embeddings[:, :-1, :]
         tax_pred = self.tax_level_logits(tax_pred)
