@@ -288,7 +288,7 @@ def fit_sample_regressor(
         shift=None,
         scale="minmax",
         epochs=1000,
-        num_tables=1,
+        num_tables=5,
         gen_new_tables=False,
     ):
         fold_ids = ids[indices]

@@ -47,7 +47,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             sample_attention_heads=self.attention_heads,
             sample_attention_layers=self.attention_layers,
             sample_attention_ff=self.intermediate_size,
-            dropout_rate=self.dropout_rate,
+            dropout_rate=0.0,
             nuc_attention_heads=1,
             nuc_attention_layers=3,
             intermediate_ff=128,
@@ -90,6 +90,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
+        self.tax_pos = tfm.nlp.layers.PositionEmbedding(515)
 
         if self.num_classes is None:
             self.transfer_ff = tf.keras.layers.Dense(1, dtype=tf.float32)
@@ -136,9 +137,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
     ) -> tf.Tensor:
         token_shape = tf.shape(tax_tokens)
         loss = self.tax_loss(tax_tokens, tax_pred)
-        if sample_weights is not None:
-            sample_weights = tf.reshape(sample_weights, token_shape)
-            loss = loss * sample_weights
+        # if sample_weights is not None:
+        #     sample_weights = tf.reshape(sample_weights, token_shape)
+        #     loss = loss * sample_weights
 
         return loss
 
@@ -313,45 +314,47 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         rel_abundance = self._relative_abundance(counts)
 
         # account for <SAMPLE> token
-        rel_abundance = tf.pad(
-            rel_abundance, [[0, 0], [0, 1], [0, 0]], constant_values=1
-        )
+        count_mask = tf.pad(count_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
+        count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
 
-        count_embeddings, nuc_embeddings = self.base_model(
+        base_embeddings, nuc_embeddings = self.base_model(
             tokens,
             return_nuc_embeddings=True,
             randomly_mask_nucleotides=True,
             training=training,
         )
-        count_embeddings = (
-            count_embeddings + self.pos_embeddings(count_embeddings) * rel_abundance
+
+        tax_embeddings = base_embeddings + self.tax_pos(base_embeddings)
+        tax_embeddings = self.tax_encoder(
+            tax_embeddings,
+            attention_mask=count_attention_mask > 0,
+            training=training,
         )
+        tax_pred = tax_embeddings[:, :-1, :]
+        tax_pred = self.tax_level_logits(tax_pred)
 
         # account for <SAMPLE> token
-        count_mask = tf.pad(count_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
-        count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
+        rel_abundance = tf.pad(
+            rel_abundance, [[0, 0], [0, 1], [0, 0]], constant_values=1
+        )
+
+        count_embeddings = (
+            tax_embeddings + self.pos_embeddings(tax_embeddings) * rel_abundance
+        )
+
         count_embeddings = self.count_encoder(
             count_embeddings,
             attention_mask=count_attention_mask > 0,
             training=training,
         )
+        count_pred = tax_embeddings[:, :-1, :]
+        count_pred = self.count_out(count_pred)
 
-        tax_embeddings = self.tax_encoder(
+        target_embeddings = self.transfer_encoder(
             count_embeddings,
             attention_mask=count_attention_mask > 0,
             training=training,
         )
-
-        target_embeddings = self.transfer_encoder(
-            tax_embeddings,
-            attention_mask=count_attention_mask > 0,
-            training=training,
-        )
-
-        count_pred = tax_embeddings[:, :-1, :]
-        count_pred = self.count_out(count_pred)
-        tax_pred = target_embeddings[:, :-1, :]
-        tax_pred = self.tax_level_logits(tax_pred)
         target_out = target_embeddings[:, -1, :]
         target_out = self.transfer_ff(target_out)
 
