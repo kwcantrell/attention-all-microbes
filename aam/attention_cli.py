@@ -233,7 +233,7 @@ def fit_unifrac_regressor(
 @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
-@click.option("--p-intermediate_size", default=1024, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
 @click.option(
     "--p-intermediate_activation", default="relu", show_default=True, type=str
 )
