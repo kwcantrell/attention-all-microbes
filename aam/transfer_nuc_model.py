@@ -18,10 +18,10 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         scale: float = 1.0,
         dropout_rate: float = 0.0,
         num_tax_levels: Optional[int] = None,
-        embedding_dim: int = 1024,
+        embedding_dim: int = 128,
         attention_heads: int = 4,
-        attention_layers: int = 8,
-        intermediate_size: int = 2024,
+        attention_layers: int = 4,
+        intermediate_size: int = 1024,
         intermediate_activation: str = "relu",
         **kwargs,
     ):
@@ -38,7 +38,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         self.dropout_rate = dropout_rate
         self.num_tax_levels = num_tax_levels
         self.loss_tracker = tf.keras.metrics.Mean()
-        self.target_tracker = tf.keras.metrics.Mean()
+
+        self.embeddings_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
+        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
 
         # layers used in model
         self.base_model = UnifracModel(
@@ -52,6 +54,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             nuc_attention_layers=3,
             intermediate_ff=128,
         )
+
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
@@ -59,8 +62,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
+        self.count_pos = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
         self.count_out = tf.keras.layers.Dense(1, dtype=tf.float32)
-        self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
         self.count_tracker = tf.keras.metrics.Mean()
@@ -72,6 +75,7 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
+        self.tax_pos = tfm.nlp.layers.PositionEmbedding(515)
 
         if self.num_tax_levels is not None:
             self.tax_level_logits = tf.keras.layers.Dense(
@@ -83,32 +87,33 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             )
         self.tax_tracker = tf.keras.metrics.Mean()
 
-        self.transfer_encoder = tfm.nlp.models.TransformerEncoder(
+        self.target_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
             intermediate_size=intermediate_size,
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
-        self.tax_pos = tfm.nlp.layers.PositionEmbedding(515)
+        self.target_pos = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
+        self.target_tracker = tf.keras.metrics.Mean()
 
         if self.num_classes is None:
-            self.transfer_ff = tf.keras.layers.Dense(1, dtype=tf.float32)
-            self.transfer_tracker = tf.keras.metrics.MeanAbsoluteError()
-            self.transfer2_tracker = tf.keras.metrics.MeanSquaredError()
-            self.transfer_string = "mae"
-            self.transfer_activation = tf.keras.layers.Activation(
+            self.target_ff = tf.keras.layers.Dense(1, dtype=tf.float32)
+            self.metric_tracker = tf.keras.metrics.MeanAbsoluteError()
+            # self.metric_tracker = tf.keras.metrics.MeanSquaredError()
+            self.metric_string = "mae"
+            self.target_activation = tf.keras.layers.Activation(
                 "linear", dtype=tf.float32
             )
         else:
-            self.transfer_ff = tf.keras.layers.Dense(num_classes, dtype=tf.float32)
-            self.transfer_tracker = tf.keras.metrics.CategoricalAccuracy()
-            self.transfer_string = "accuracy"
-            self.transfer_activation = tf.keras.layers.Activation(
+            self.target_ff = tf.keras.layers.Dense(num_classes, dtype=tf.float32)
+            self.metric_tracker = tf.keras.metrics.CategoricalAccuracy()
+            self.metric_string = "accuracy"
+            self.target_activation = tf.keras.layers.Activation(
                 "softmax", dtype=tf.float32
             )
         self.loss_metrics = sorted(
-            ["loss", "target_loss", "count_mse", self.transfer_string]
+            ["loss", "target_loss", "count_mse", self.metric_string]
         )
 
     def evaluate_metric(self, dataset, metric, **kwargs):
@@ -196,12 +201,12 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         if self.num_classes is None:
             y_true = y_true * self.scale + self.shift
             y_pred = y_pred * self.scale + self.shift
-            self.transfer_tracker(y_true, y_pred)
-            self.transfer2_tracker(y_true, y_pred)
+            self.metric_tracker(y_true, y_pred)
+            # self.metric_tracker(y_true, y_pred)
         else:
             y_true = tf.cast(y_true, dtype=tf.int32)
             y_true = tf.one_hot(y_true, depth=self.num_classes)
-            self.transfer_tracker(y_true, y_pred)
+            self.metric_tracker(y_true, y_pred)
 
     def build(self, input_shape=None):
         super(TransferLearnNucleotideModel, self).build(
@@ -259,8 +264,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             "count_mse": self.count_tracker.result(),
             "tax_entoropy": self.tax_tracker.result(),
             "nuc_entropy": self.base_model.entropy.result(),
-            self.transfer_string: self.transfer_tracker.result(),
-            "mse": self.transfer2_tracker.result(),
+            self.metric_string: self.metric_tracker.result(),
+            # "mse": self.target_tracker.result(),
         }
 
     def test_step(
@@ -289,8 +294,8 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             "count_mse": self.count_tracker.result(),
             "tax_entoropy": self.tax_tracker.result(),
             "nuc_entropy": self.base_model.entropy.result(),
-            self.transfer_string: self.transfer_tracker.result(),
-            "mse": self.transfer2_tracker.result(),
+            self.metric_string: self.metric_tracker.result(),
+            # "mse": self.target_tracker.result(),
         }
 
     def _relative_abundance(self, counts: tf.Tensor) -> tf.Tensor:
@@ -298,6 +303,55 @@ class TransferLearnNucleotideModel(tf.keras.Model):
         count_sums = tf.reduce_sum(counts, axis=1, keepdims=True)
         rel_abundance = counts / count_sums
         return rel_abundance
+
+    def _compute_tax_embeddings(
+        self,
+        tensor: tf.Tensor,
+        attention_mask: Optional[tf.Tensor] = None,
+        training: bool = False,
+    ) -> tf.Tensor:
+        tax_embeddings = tensor + self.tax_pos(tensor)
+        tax_embeddings = self.tax_encoder(
+            tax_embeddings,
+            attention_mask=attention_mask > 0,
+            training=training,
+        )
+        tax_pred = tax_embeddings[:, :-1, :]
+        tax_pred = self.tax_level_logits(tax_pred)
+        return tax_embeddings, tax_pred
+
+    def _compute_count_embeddings(
+        self,
+        tensor: tf.Tensor,
+        relative_abundances: tf.Tensor,
+        attention_mask: Optional[tf.Tensor] = None,
+        training: bool = False,
+    ) -> tf.Tensor:
+        count_embeddings = tensor + self.count_pos(tensor) * relative_abundances
+        count_embeddings = self.count_encoder(
+            count_embeddings,
+            attention_mask=attention_mask > 0,
+            training=training,
+        )
+        count_pred = count_embeddings[:, :-1, :]
+        count_pred = self.count_out(count_pred)
+        return count_embeddings, count_pred
+
+    def _compute_target_embeddings(
+        self,
+        tensor: tf.Tensor,
+        attention_mask: Optional[tf.Tensor] = None,
+        training: bool = False,
+    ) -> tf.Tensor:
+        target_embeddings = tensor + self.target_pos(tensor)
+        target_embeddings = self.target_encoder(
+            target_embeddings,
+            attention_mask=attention_mask > 0,
+            training=training,
+        )
+        target_out = target_embeddings[:, -1, :]
+        target_out = self.target_ff(target_out)
+        return target_embeddings, target_out
 
     def call(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
@@ -315,6 +369,9 @@ class TransferLearnNucleotideModel(tf.keras.Model):
 
         # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
+        rel_abundance = tf.pad(
+            rel_abundance, [[0, 0], [0, 1], [0, 0]], constant_values=1
+        )
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
 
         base_embeddings, nuc_embeddings = self.base_model(
@@ -323,51 +380,34 @@ class TransferLearnNucleotideModel(tf.keras.Model):
             randomly_mask_nucleotides=True,
             training=training,
         )
+        base_embeddings = self.embeddings_scale(base_embeddings)
+        base_embeddings = self.embeddings_norm(base_embeddings)
 
-        tax_embeddings = base_embeddings + self.tax_pos(base_embeddings)
-        tax_embeddings = self.tax_encoder(
+        tax_embeddings, tax_pred = self._compute_tax_embeddings(
+            base_embeddings, attention_mask=count_attention_mask, training=training
+        )
+
+        count_embeddings, count_pred = self._compute_count_embeddings(
             tax_embeddings,
-            attention_mask=count_attention_mask > 0,
+            rel_abundance,
+            attention_mask=count_attention_mask,
             training=training,
         )
-        tax_pred = tax_embeddings[:, :-1, :]
-        tax_pred = self.tax_level_logits(tax_pred)
 
-        # account for <SAMPLE> token
-        rel_abundance = tf.pad(
-            rel_abundance, [[0, 0], [0, 1], [0, 0]], constant_values=1
+        target_embeddings, target_out = self._compute_target_embeddings(
+            count_embeddings, attention_mask=count_attention_mask, training=training
         )
-
-        count_embeddings = (
-            tax_embeddings + self.pos_embeddings(tax_embeddings) * rel_abundance
-        )
-
-        count_embeddings = self.count_encoder(
-            count_embeddings,
-            attention_mask=count_attention_mask > 0,
-            training=training,
-        )
-        count_pred = tax_embeddings[:, :-1, :]
-        count_pred = self.count_out(count_pred)
-
-        target_embeddings = self.transfer_encoder(
-            count_embeddings,
-            attention_mask=count_attention_mask > 0,
-            training=training,
-        )
-        target_out = target_embeddings[:, -1, :]
-        target_out = self.transfer_ff(target_out)
 
         if self.num_tax_levels is None:
             return (
                 self.count_activation(count_pred),
-                self.transfer_activation(target_out),
+                self.target_activation(target_out),
                 nuc_embeddings,
             )
 
         return (
             self.count_activation(count_pred),
-            self.transfer_activation(target_out),
+            self.target_activation(target_out),
             tax_pred,
             nuc_embeddings,
         )

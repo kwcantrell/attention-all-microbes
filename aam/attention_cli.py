@@ -230,7 +230,16 @@ def fit_unifrac_regressor(
 @click.option(
     "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
 )
+@click.option("--p-attention-heads", default=4, show_default=True, type=int)
+@click.option("--p-attention-layers", default=4, show_default=True, type=int)
+@click.option("--p-intermediate_size", default=1024, show_default=True, type=int)
+@click.option(
+    "--p-intermediate_activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-taxonomy", required=False, type=click.Path(exists=True))
+@click.option("--p-taxonomy-level", default=4, show_default=True, type=int)
+@click.option("--p-num-tables", default=1, show_default=True, type=int)
+@click.option("--p-gen-new-table", default=False, show_default=True, type=bool)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
@@ -251,7 +260,14 @@ def fit_sample_regressor(
     p_report_back: int,
     p_asv_limit: int,
     p_mixed_precision: bool,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
     p_taxonomy: str,
+    p_taxonomy_level: int,
+    p_num_tables: int,
+    p_gen_new_table: bool,
     output_dir: str,
 ):
     from aam.data_handlers import SequenceGeneratorDataset
@@ -288,19 +304,19 @@ def fit_sample_regressor(
         shift=None,
         scale="minmax",
         epochs=1000,
-        num_tables=5,
+        num_tables=1,
         gen_new_tables=False,
     ):
         fold_ids = ids[indices]
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df.loc[fold_ids]
         st = SequenceGeneratorDataset(
-            512,
+            p_asv_limit,
             m_metadata_column,
             False,
             shift,
             scale,
-            tax_level="Level 4",
+            tax_level=f"Level {p_taxonomy_level}",
             shuffle=shuffle,
             batch_size=p_batch_size,
             epochs=epochs,
@@ -321,8 +337,8 @@ def fit_sample_regressor(
             shuffle=True,
             shift=0.0,
             scale=100.0,
-            num_tables=1,
-            gen_new_tables=True,
+            num_tables=p_num_tables,
+            gen_new_tables=p_gen_new_table,
         )
         val_data = _get_fold(
             val_ind,
@@ -330,12 +346,17 @@ def fit_sample_regressor(
             shift=train_data["shift"],
             scale=train_data["scale"],
             epochs=1,
+            num_tables=1,
         )
         with open(os.path.join(model_path, f"f{i}_val_ids.txt"), "w") as f:
             for id in ids[val_ind]:
                 f.write(id + "\n")
 
         model = TransferLearnNucleotideModel(
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
             shift=train_data["shift"],
             scale=train_data["scale"],
             dropout_rate=p_dropout,

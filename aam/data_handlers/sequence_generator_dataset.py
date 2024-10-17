@@ -67,6 +67,7 @@ class SequenceGeneratorDataset(SequenceDataset):
         if level is not None:
             self.level = level.loc[self.obs_ids, :]
 
+        print(f"creating {self.num_tables} table(s)...")
         self.rarefy_tables = [
             self.preprocessed_table.copy().subsample(self.rarefy_depth)
             for _ in range(self.num_tables)
@@ -179,6 +180,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                 processed = 0
 
                 if epoch > 0 and self.gen_new_tables:
+                    print("generating new table...")
                     new_table = self.preprocessed_table.subsample(self.rarefy_depth)
                     table_data[-1] = self._create_table_data(
                         new_table, self.num_tables - 1
