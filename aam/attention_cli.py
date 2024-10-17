@@ -230,6 +230,7 @@ def fit_unifrac_regressor(
 @click.option(
     "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
 )
+@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
 @click.option("--p-intermediate_size", default=1024, show_default=True, type=int)
@@ -260,6 +261,7 @@ def fit_sample_regressor(
     p_report_back: int,
     p_asv_limit: int,
     p_mixed_precision: bool,
+    p_embedding_dim: int,
     p_attention_heads: int,
     p_attention_layers: int,
     p_intermediate_size: int,
@@ -353,6 +355,7 @@ def fit_sample_regressor(
                 f.write(id + "\n")
 
         model = TransferLearnNucleotideModel(
+            embedding_dim=p_embedding_dim,
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
