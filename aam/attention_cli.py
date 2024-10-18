@@ -12,7 +12,6 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 from aam.callbacks import (
     ConfusionMatrx,
-    MeanAbsoluteError,
     SaveModel,
     _confusion_matrix,
     _mean_absolute_error,
@@ -186,7 +185,7 @@ def fit_unifrac_regressor(
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-base-model-path", required=True, type=click.Path(exists=True))
+@click.option("--i-base-model-path", required=False, type=click.Path(exists=True))
 @click.option(
     "--p-freeze-base-weights / --p-no-freeze-base-weights",
     default=True,
@@ -272,8 +271,9 @@ def fit_sample_regressor(
     p_gen_new_table: bool,
     output_dir: str,
 ):
+    from aam.callbacks import MeanAbsoluteError
     from aam.data_handlers import SequenceGeneratorDataset
-    from aam.transfer_nuc_model import TransferLearnNucleotideModel
+    from aam.models import SequenceRegressor
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -354,7 +354,7 @@ def fit_sample_regressor(
             for id in ids[val_ind]:
                 f.write(id + "\n")
 
-        model = TransferLearnNucleotideModel(
+        model = SequenceRegressor(
             embedding_dim=p_embedding_dim,
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
@@ -410,7 +410,14 @@ def fit_sample_regressor(
         f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}"
     )
 
-    test_data = _get_fold(test_indices, shuffle=False)
+    test_data = _get_fold(
+        test_indices,
+        shuffle=False,
+        shift=train_data["shift"],
+        scale=train_data["scale"],
+        epochs=1,
+        num_tables=1,
+    )
     best_mae, ensemble_mae = model_ensemble.plot_fn(
         _mean_absolute_error, test_data["dataset"], figure_path
     )

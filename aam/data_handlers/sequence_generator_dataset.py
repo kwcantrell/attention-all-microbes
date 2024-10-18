@@ -80,9 +80,10 @@ class SequenceGeneratorDataset(SequenceDataset):
         all_ids = self.preprocessed_table.ids(axis="observation")
         level = self.level.loc[all_ids, ["token"]]
 
-        counts = table.pa(inplace=False).sum(axis="observation")
+        # counts = table.pa(inplace=False).sum(axis="observation")
+        counts = table.sum(axis="observation")
         table_obs = table.ids(axis="observation")
-        level.loc[table_obs, "counts"] = 0
+        level.loc[:, "counts"] = 0
         level.loc[table_obs, "counts"] = counts
         level_counts = level.groupby("token").agg("sum")
 
@@ -186,6 +187,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                         new_table, self.num_tables - 1
                     )
                     level_weights[-1] = self._level_weights(new_table)
+                    # level_weights[-1] = self._level_weights(self.preprocessed_table)
 
                 while not self._epoch_complete(processed):
                     samples = self._unique_samples(table_data)
