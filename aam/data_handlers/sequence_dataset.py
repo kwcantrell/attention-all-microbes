@@ -134,8 +134,9 @@ class SequenceDataset:
 
     def _align_to_taxonomy(self, table, taxonomy):
         obs_id = np.intersect1d(table.ids(axis="observation"), taxonomy.index)
-        taxonomy = taxonomy.loc[obs_id]
-        table = table.filter(obs_id, axis="observation")
+        table = table.filter(obs_id, axis="observation", inplace=False)
+        taxonomy = taxonomy.loc[table.ids(axis="observation")]
+        taxonomy = taxonomy.reindex(table.ids(axis="observation"))
         return table, taxonomy
 
     def _retrieve_level(self, level: str) -> pd.DataFrame:
@@ -238,11 +239,12 @@ class SequenceDataset:
         if metadata_col not in metadata.columns:
             raise Exception(f"Invalid metadata column {metadata_col}")
         samp_ids = np.intersect1d(table.ids(axis="sample"), metadata.index)
-        table = table.filter(samp_ids, axis="sample")
-        metadata = metadata.loc[table.ids(axis="sample"), metadata_col]
+        table = table.filter(samp_ids, axis="sample", inplace=False)
+        metadata = metadata.loc[table.ids(), metadata_col]
+        print(f"table shape: {table.shape}")
+        print(f"metadata shape: {metadata.shape}")
         if not is_categorical:
             metadata = metadata.astype(np.float32)
-            metadata = metadata.to_numpy().reshape((-1, 1))
             if not isinstance(scale, (str, float)):
                 raise Exception("Invalid scale argument.")
             if shift is None and isinstance(scale, float):
@@ -256,6 +258,7 @@ class SequenceDataset:
                 scale = np.std(metadata)
 
             metadata = (metadata - shift) / scale
+        metadata = metadata.reindex(table.ids())
         return table, metadata
 
     def _taxonomy_dataset(

@@ -38,11 +38,8 @@ class TaxonomyEncoder(tf.keras.Model):
         )
         self.tax_tracker = tf.keras.metrics.Mean()
 
-        self.embeddings_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
-
         # layers used in model
-        self.base_model = BaseSequenceEncoder(
+        self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,
             150,
             sample_attention_heads=self.attention_heads,
@@ -52,6 +49,14 @@ class TaxonomyEncoder(tf.keras.Model):
             nuc_attention_heads=1,
             nuc_attention_layers=3,
             nuc_intermediate_size=128,
+            name="base_encoder",
+        )
+
+        self.embeddings_scale = tf.keras.layers.Dense(
+            embedding_dim, activation="relu", name="embeddings_scale"
+        )
+        self.embeddings_norm = tf.keras.layers.LayerNormalization(
+            epsilon=0.000001, name="embeddings_norm"
         )
 
         self.tax_encoder = tfm.nlp.models.TransformerEncoder(
@@ -60,12 +65,12 @@ class TaxonomyEncoder(tf.keras.Model):
             intermediate_size=intermediate_size,
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
+            name="tax_encoder",
         )
-        self.tax_pos = tfm.nlp.layers.PositionEmbedding(515)
+        self.tax_pos = tfm.nlp.layers.PositionEmbedding(515, name="tax_pos")
 
         self.tax_level_logits = tf.keras.layers.Dense(
-            self.num_tax_levels,
-            dtype=tf.float32,
+            self.num_tax_levels, dtype=tf.float32, name="tax_level_logits"
         )
 
         self.loss_metrics = sorted(["loss", "target_loss", "count_mse"])
@@ -76,7 +81,7 @@ class TaxonomyEncoder(tf.keras.Model):
         return evaluated_metrics[metric_index]
 
     def _compute_nuc_loss(self, nuc_tokens, nuc_pred):
-        return self.base_model._compute_nuc_loss(nuc_tokens, nuc_pred)
+        return self.base_encoder._compute_nuc_loss(nuc_tokens, nuc_pred)
 
     @masked_loss(sparse_cat=True)
     def _compute_tax_loss(
@@ -108,11 +113,6 @@ class TaxonomyEncoder(tf.keras.Model):
         loss = tax_loss + nuc_loss
 
         return (loss, tax_loss, nuc_loss)
-
-    def build(self, input_shape=None):
-        super(TaxonomyEncoder, self).build(
-            [tf.TensorShape([None, None, 150]), tf.TensorShape([None, None, 1])]
-        )
 
     def predict_step(
         self,
@@ -148,11 +148,11 @@ class TaxonomyEncoder(tf.keras.Model):
 
         self.loss_tracker.update_state(loss)
         self.tax_tracker.update_state(tax_loss)
-        self.base_model.nuc_entropy.update_state(nuc_loss)
+        self.base_encoder.nuc_entropy.update_state(nuc_loss)
         return {
             "loss": self.loss_tracker.result(),
             "tax_entoropy": self.tax_tracker.result(),
-            "nuc_entropy": self.base_model.nuc_entropy.result(),
+            "nuc_entropy": self.base_encoder.nuc_entropy.result(),
         }
 
     def test_step(
@@ -171,11 +171,11 @@ class TaxonomyEncoder(tf.keras.Model):
 
         self.loss_tracker.update_state(loss)
         self.tax_tracker.update_state(tax_loss)
-        self.base_model.nuc_entropy.update_state(nuc_loss)
+        self.base_encoder.nuc_entropy.update_state(nuc_loss)
         return {
             "loss": self.loss_tracker.result(),
             "tax_entoropy": self.tax_tracker.result(),
-            "nuc_entropy": self.base_model.nuc_entropy.result(),
+            "nuc_entropy": self.base_encoder.nuc_entropy.result(),
         }
 
     def _compute_sequece_embeddings(
@@ -183,7 +183,7 @@ class TaxonomyEncoder(tf.keras.Model):
         tensor: tf.Tensor,
         training: bool = False,
     ) -> tf.Tensor:
-        base_embeddings, nuc_embeddings = self.base_model(tensor, training=training)
+        base_embeddings, nuc_embeddings = self.base_encoder(tensor, training=training)
         base_embeddings = self.embeddings_scale(base_embeddings)
         base_embeddings = self.embeddings_norm(base_embeddings)
         return base_embeddings, nuc_embeddings
@@ -226,7 +226,7 @@ class TaxonomyEncoder(tf.keras.Model):
             base_embeddings, attention_mask=count_attention_mask, training=training
         )
 
-        return (tax_embeddings, tax_pred, nuc_embeddings)
+        return [tax_embeddings, tax_pred, nuc_embeddings]
 
     def get_config(self):
         config = super(TaxonomyEncoder, self).get_config()

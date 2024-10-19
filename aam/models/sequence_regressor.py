@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.models.taxonomy_encoder import TaxonomyEncoder
-from aam.utils import apply_random_mask, float_mask, masked_loss
+from aam.utils import float_mask, masked_loss
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceRegressor")
@@ -23,34 +23,42 @@ class SequenceRegressor(tf.keras.Model):
         attention_layers: int = 4,
         intermediate_size: int = 1024,
         intermediate_activation: str = "relu",
+        base_model: Optional[TaxonomyEncoder] = None,
+        freeze_base: bool = False,
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
 
-        self.embedding_dim = embedding_dim
-        self.attention_heads = attention_heads
-        self.attention_layers = attention_layers
-        self.intermediate_size = intermediate_size
-        self.intermediate_activation = intermediate_activation
         self.num_classes = num_classes
         self.shift = shift
         self.scale = scale
         self.dropout_rate = dropout_rate
         self.num_tax_levels = num_tax_levels
+        self.embedding_dim = embedding_dim
+        self.attention_heads = attention_heads
+        self.attention_layers = attention_layers
+        self.intermediate_size = intermediate_size
+        self.intermediate_activation = intermediate_activation
         self.loss_tracker = tf.keras.metrics.Mean()
 
         self.embeddings_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
         self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
 
         # layers used in model
-        self.base_model = TaxonomyEncoder(
-            num_tax_levels=self.num_tax_levels,
-            dropout_rate=self.dropout_rate,
-            embedding_dim=self.embedding_dim,
-            attention_heads=self.attention_heads,
-            attention_layers=self.attention_layers,
-            intermediate_size=self.intermediate_size,
-        )
+        if base_model is not None:
+            self.base_model = base_model
+        else:
+            self.base_model = TaxonomyEncoder(
+                num_tax_levels=self.num_tax_levels,
+                dropout_rate=self.dropout_rate,
+                embedding_dim=self.embedding_dim,
+                attention_heads=self.attention_heads,
+                attention_layers=self.attention_layers,
+                intermediate_size=self.intermediate_size,
+            )
+
+        if freeze_base:
+            self.base_model.trainable = False
 
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=self.attention_layers,
@@ -158,11 +166,6 @@ class SequenceRegressor(tf.keras.Model):
             y_true = tf.one_hot(y_true, depth=self.num_classes)
             self.metric_tracker(y_true, y_pred)
 
-    def build(self, input_shape=None):
-        super(SequenceRegressor, self).build(
-            [tf.TensorShape([None, None, 150]), tf.TensorShape([None, None, 1])]
-        )
-
     def predict_step(
         self,
         data: Union[
@@ -206,14 +209,14 @@ class SequenceRegressor(tf.keras.Model):
         self.target_tracker.update_state(target_loss)
         self.count_tracker.update_state(count_mse)
         self.base_model.tax_tracker.update_state(tax_loss)
-        self.base_model.base_model.nuc_entropy.update_state(nuc_loss)
+        self.base_model.base_encoder.nuc_entropy.update_state(nuc_loss)
         self._compute_metric(y, outputs)
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
             "count_mse": self.count_tracker.result(),
             "tax_entoropy": self.base_model.tax_tracker.result(),
-            "nuc_entropy": self.base_model.base_model.nuc_entropy.result(),
+            "nuc_entropy": self.base_model.base_encoder.nuc_entropy.result(),
             self.metric_string: self.metric_tracker.result(),
             # "mse": self.target_tracker.result(),
         }
@@ -236,14 +239,14 @@ class SequenceRegressor(tf.keras.Model):
         self.target_tracker.update_state(target_loss)
         self.count_tracker.update_state(count_mse)
         self.base_model.tax_tracker.update_state(tax_loss)
-        self.base_model.base_model.nuc_entropy.update_state(nuc_loss)
+        self.base_model.base_encoder.nuc_entropy.update_state(nuc_loss)
         self._compute_metric(y, outputs)
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
             "count_mse": self.count_tracker.result(),
             "tax_entoropy": self.base_model.tax_tracker.result(),
-            "nuc_entropy": self.base_model.base_model.nuc_entropy.result(),
+            "nuc_entropy": self.base_model.base_encoder.nuc_entropy.result(),
             self.metric_string: self.metric_tracker.result(),
             # "mse": self.target_tracker.result(),
         }
@@ -300,8 +303,6 @@ class SequenceRegressor(tf.keras.Model):
 
         count_mask = float_mask(counts, dtype=tf.int32)
         rel_abundance = self._relative_abundance(counts)
-        if training:
-            rel_abundance = apply_random_mask(rel_abundance, mask_percent=0.1)
 
         # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
@@ -346,10 +347,16 @@ class SequenceRegressor(tf.keras.Model):
         config.update(
             {
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
+                "num_classes": self.num_classes,
                 "shift": self.shift,
                 "scale": self.scale,
-                "dropout": self.dropout_rate,
+                "dropout_rate": self.dropout_rate,
                 "num_tax_levels": self.num_tax_levels,
+                "embedding_dim": self.embedding_dim,
+                "attention_heads": self.attention_heads,
+                "attention_layers": self.attention_layers,
+                "intermediate_size": self.intermediate_size,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
         return config

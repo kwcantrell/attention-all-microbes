@@ -121,11 +121,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
         return sample_embeddings, nucleotides
 
-    def build(self, input_shape=None):
-        super(BaseSequenceEncoder, self).build(
-            tf.TensorShape([None, None, self.max_bp])
-        )
-
     def get_config(self):
         config = super(BaseSequenceEncoder, self).get_config()
         config.update(

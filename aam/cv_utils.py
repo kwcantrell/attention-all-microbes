@@ -42,7 +42,7 @@ class CVModel:
             os.makedirs(self.log_dir)
         lr = tf.keras.optimizers.schedules.PolynomialDecay(
             3.2e-4,
-            100000,
+            1000000,
             end_learning_rate=1.28e-5,
             power=1.0,
             cycle=False,

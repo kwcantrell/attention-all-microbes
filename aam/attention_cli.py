@@ -49,7 +49,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
         print("Warning: Table and Metadata do not share all same sample ids.")
         print("Table and metadata will be filtered")
         table = table.filter(shared_ids, inplace=False)
-        metadata = metadata.loc[shared_ids]
+        metadata = metadata.loc[table.ids()]
     return table.ids(), table, metadata
 
 
@@ -185,7 +185,9 @@ def fit_unifrac_regressor(
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-base-model-path", required=False, type=click.Path(exists=True))
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
 @click.option(
     "--p-freeze-base-weights / --p-no-freeze-base-weights",
     default=True,
@@ -300,6 +302,12 @@ def fit_sample_regressor(
 
     print(len(test_indices), len(fold_indices))
 
+    base_model = None
+    freeze_base = False
+    if i_base_model_path:
+        base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
+        # freeze_base = True
+
     def _get_fold(
         indices,
         shuffle,
@@ -364,8 +372,12 @@ def fit_sample_regressor(
             scale=train_data["scale"],
             dropout_rate=p_dropout,
             num_tax_levels=train_data["num_tax_levels"],
+            base_model=base_model,
+            freeze_base=freeze_base,
         )
-        model.build()
+        token_shape = tf.TensorShape([None, None, 150])
+        count_shape = tf.TensorShape([None, None, 1])
+        model.build([token_shape, count_shape])
         model.summary()
         loss = tf.keras.losses.MeanSquaredError(reduction="none")
         fold_label = i + 1
@@ -416,7 +428,7 @@ def fit_sample_regressor(
         shift=train_data["shift"],
         scale=train_data["scale"],
         epochs=1,
-        num_tables=1,
+        num_tables=5,
     )
     best_mae, ensemble_mae = model_ensemble.plot_fn(
         _mean_absolute_error, test_data["dataset"], figure_path

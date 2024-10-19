@@ -55,11 +55,20 @@ class SequenceGeneratorDataset(SequenceDataset):
 
         shape = table.shape
         if self.metadata is not None and isinstance(metadata_col, str):
-            table, self.target = self._metadata_dataset(
+            table, target = self._metadata_dataset(
                 table, metadata_col, is_categorical, shift, scale
             )
-            if not np.array_equal(shape, table.shape):
+            if not np.array_equal(shape[0], table.shape[0]):
                 raise Exception("Data out of alignment")
+
+            table_ids = table.ids()
+            target_ids = target.index.to_numpy()
+            if not np.array_equal(table_ids, target_ids):
+                raise Exception(
+                    "Data out of alignment",
+                    set(table).symmetric_difference(target_ids),
+                )
+            self.target = target.to_numpy().reshape((-1, 1))
 
         self.preprocessed_table = table
         self.obs_ids = self.preprocessed_table.ids(axis="observation")
@@ -96,11 +105,10 @@ class SequenceGeneratorDataset(SequenceDataset):
         return np.pad(level_counts, (1, 0), constant_values=0)
 
     def _preprocess_data(self, rarefy_depth: int) -> Table:
-        table = self.table.copy()
-        counts = table.sum(axis="sample")
+        counts = self.table.sum(axis="sample")
         count_mask = counts >= rarefy_depth
-        valid_samples = table.ids(axis="sample")[count_mask]
-        table = table.filter(valid_samples, axis="sample", inplace=False)
+        valid_samples = self.table.ids(axis="sample")[count_mask]
+        table = self.table.filter(valid_samples, axis="sample", inplace=False)
         return table
 
     def _create_table_data(self, table, id):
@@ -187,7 +195,6 @@ class SequenceGeneratorDataset(SequenceDataset):
                         new_table, self.num_tables - 1
                     )
                     level_weights[-1] = self._level_weights(new_table)
-                    # level_weights[-1] = self._level_weights(self.preprocessed_table)
 
                 while not self._epoch_complete(processed):
                     samples = self._unique_samples(table_data)
