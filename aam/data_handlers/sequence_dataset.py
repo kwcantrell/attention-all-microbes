@@ -32,9 +32,6 @@ def add_lock(func):
     return wrapper
 
 
-# class train_val_split()
-
-
 class SequenceDataset:
     taxon_field = "Taxon"
     levels = [f"Level {i}" for i in range(1, 8)]

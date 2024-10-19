@@ -32,7 +32,6 @@ class CVModel:
         loss,
         epochs,
         model_save_path,
-        step_per_epoch=None,
         metric="mae",
         patience=10,
         early_stop_warmup=50,
@@ -66,8 +65,8 @@ class CVModel:
             validation_data=self.val_data["dataset"],
             callbacks=[*callbacks, *core_callbacks],
             epochs=epochs,
-            steps_per_epoch=self.train_data["size"],
-            validation_steps=self.val_data["size"],
+            steps_per_epoch=self.train_data["steps_pre_epoch"],
+            validation_steps=self.val_data["steps_pre_epoch"],
         )
         self.model.set_weights(model_saver.best_weights)
         self.metric_value = self.model.evaluate_metric(self.val_data["dataset"], metric)

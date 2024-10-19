@@ -84,7 +84,7 @@ def fit_unifrac_regressor(
 ):
     from biom import load_table
 
-    from aam.data_handlers import UniFracGeneratorDataset
+    from aam.data_handlers import UniFracGenerator
     from aam.models import UniFracEncoder
 
     if not os.path.exists(output_dir):
@@ -98,6 +98,7 @@ def fit_unifrac_regressor(
         model: tf.keras.Model = tf.keras.models.load_model(i_model)
     else:
         model: tf.keras.Model = UniFracEncoder(
+            p_asv_limit,
             dropout_rate=p_dropout,
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
@@ -134,18 +135,20 @@ def fit_unifrac_regressor(
     val_ids = ids[val_indices]
     val_table = table.filter(val_ids, inplace=False)
 
-    train_gen = UniFracGeneratorDataset(
+    train_gen = UniFracGenerator(
         table=train_table,
         tree_path=i_tree,
         max_token_per_sample=p_asv_limit,
         shuffle=True,
         gen_new_tables=True,
-        samples_per_epoch=100,
     )
     train_data = train_gen.get_data()
 
-    val_gen = UniFracGeneratorDataset(
-        table=val_table, tree_path=i_tree, shuffle=False, samples_per_epoch=20
+    val_gen = UniFracGenerator(
+        table=val_table,
+        tree_path=i_tree,
+        max_token_per_sample=p_asv_limit,
+        shuffle=False,
     )
     val_data = val_gen.get_data()
 
@@ -221,9 +224,9 @@ def fit_unifrac_regressor(
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
 @click.option("--p-report-back", default=5, show_default=True, type=int)
-@click.option("--p-asv-limit", default=512, show_default=True, type=int)
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option(
     "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
 )
@@ -235,7 +238,7 @@ def fit_unifrac_regressor(
     "--p-intermediate_activation", default="relu", show_default=True, type=str
 )
 @click.option("--p-taxonomy", required=False, type=click.Path(exists=True))
-@click.option("--p-taxonomy-level", default=4, show_default=True, type=int)
+@click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-num-tables", default=1, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=False, show_default=True, type=bool)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
@@ -270,7 +273,7 @@ def fit_sample_regressor(
     output_dir: str,
 ):
     from aam.callbacks import MeanAbsoluteError
-    from aam.data_handlers import SequenceGeneratorDataset
+    from aam.data_handlers import UniFracGenerator
     from aam.models import SequenceRegressor
 
     if not os.path.exists(output_dir):
@@ -298,11 +301,10 @@ def fit_sample_regressor(
 
     print(len(test_indices), len(fold_indices))
 
-    base_model = None
+    base_model = "unifrac"
     freeze_base = False
-    if i_base_model_path:
+    if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
-        # freeze_base = True
 
     def _get_fold(
         indices,
@@ -310,27 +312,24 @@ def fit_sample_regressor(
         shift=None,
         scale="minmax",
         epochs=1000,
-        num_tables=1,
         gen_new_tables=False,
     ):
         fold_ids = ids[indices]
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df.loc[fold_ids]
-        st = SequenceGeneratorDataset(
-            p_asv_limit,
-            m_metadata_column,
-            False,
-            shift,
-            scale,
-            tax_level=f"Level {p_taxonomy_level}",
+        st = UniFracGenerator(
+            tree_path="/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk",
+            max_token_per_sample=p_asv_limit,
+            metadata_column=m_metadata_column,
+            is_categorical=False,
+            shift=shift,
+            scale=scale,
             shuffle=shuffle,
             batch_size=p_batch_size,
             epochs=epochs,
-            num_tables=num_tables,
             gen_new_tables=gen_new_tables,
             table=table_fold,
             metadata=df_fold,
-            taxonomy=p_taxonomy,
         )
         return st.get_data()
 
@@ -343,7 +342,6 @@ def fit_sample_regressor(
             shuffle=True,
             shift=0.0,
             scale=100.0,
-            num_tables=p_num_tables,
             gen_new_tables=p_gen_new_table,
         )
         val_data = _get_fold(
@@ -352,13 +350,13 @@ def fit_sample_regressor(
             shift=train_data["shift"],
             scale=train_data["scale"],
             epochs=1,
-            num_tables=1,
         )
         with open(os.path.join(model_path, f"f{i}_val_ids.txt"), "w") as f:
             for id in ids[val_ind]:
                 f.write(id + "\n")
 
         model = SequenceRegressor(
+            token_limit=p_asv_limit,
             embedding_dim=p_embedding_dim,
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
@@ -367,7 +365,6 @@ def fit_sample_regressor(
             shift=train_data["shift"],
             scale=train_data["scale"],
             dropout_rate=p_dropout,
-            num_tax_levels=train_data["num_tax_levels"],
             base_model=base_model,
             freeze_base=freeze_base,
         )
@@ -384,10 +381,6 @@ def fit_sample_regressor(
             output_dir,
             fold_label,
         )
-        if "size" in train_data:
-            steps = train_data["size"]
-        else:
-            steps = None
         model_cv.fit_fold(
             loss,
             p_epochs,
@@ -395,7 +388,6 @@ def fit_sample_regressor(
             metric="mae",
             patience=p_patience,
             early_stop_warmup=p_early_stop_warmup,
-            step_per_epoch=steps,
             callbacks=[
                 MeanAbsoluteError(
                     monitor="val_mae",

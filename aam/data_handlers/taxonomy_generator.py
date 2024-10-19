@@ -1,89 +1,88 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 import tensorflow as tf
 from biom import Table
 
-from aam.data_handlers import SequenceDataset
+from aam.data_handlers.generator_dataset import GeneratorDataset, add_lock
 
 
-class SequenceGeneratorDataset(SequenceDataset):
-    def __init__(
-        self,
-        max_token_per_sample: int = 512,
-        metadata_col: Optional[str] = None,
-        is_categorical: Optional[bool] = None,
-        shift: Optional[Union[str, float]] = None,
-        scale: Union[str, float] = "minmax",
-        tax_level: Optional[str] = None,
-        shuffle: bool = True,
-        batch_size: int = 8,
-        rarefy_depth: int = 5000,
-        rare_freq: int = 10,
-        epochs: int = 1000,
-        num_tables: int = 1,
-        gen_new_tables: bool = False,
-        **kwargs,
-    ):
+class TaxonomyGenerator(GeneratorDataset):
+    taxon_field = "Taxon"
+    levels = [f"Level {i}" for i in range(1, 8)]
+    level_attrs = {f"l{lvl[-1]}": lvl for lvl in levels}
+    empty_level = ["d__", "p__", "c__", "o__", "f__", "g__", "s__"]
+    taxonomy_fn = "taxonomy.tsv"
+
+    def __init__(self, taxonomy, tax_level: int, **kwargs):
         super().__init__(**kwargs)
-        self.max_token_per_sample = max_token_per_sample
-        self.metadata_col = metadata_col
-        self.is_categorical = is_categorical
-        self.shift = shift
-        self.scale = scale
-        self.tax_level = tax_level
-        self.shuffle = shuffle
-        self.batch_size = batch_size
-        self.rarefy_depth = rarefy_depth
-        self.rare_freq = rare_freq
-        self.epochs = epochs
-        self.num_tables = num_tables
-        self.gen_new_tables = gen_new_tables
+        self.taxonomy = taxonomy
+        self.tax_level = f"Taxon {tax_level}"
 
-        if metadata_col is not None and self.metadata is None:
-            raise Exception("No metadata present.")
         if tax_level is not None and self.taxonomy is None:
             raise Exception("No taxonomy present.")
 
-        table = self._preprocess_data(rarefy_depth)
-
-        level = None
         if self.taxonomy is not None and isinstance(tax_level, str):
             table, level = self._taxonomy_dataset(table, tax_level)
 
-        shape = table.shape
-        if self.metadata is not None and isinstance(metadata_col, str):
-            table, target = self._metadata_dataset(
-                table, metadata_col, is_categorical, shift, scale
+        # shape = table.shape
+        # if self.metadata is not None and isinstance(metadata_col, str):
+        #     table, target = self._metadata_dataset(
+        #         table, metadata_col, is_categorical, shift, scale
+        #     )
+        #     if not np.array_equal(shape[0], table.shape[0]):
+        #         raise Exception("Data out of alignment")
+
+        #     table_ids = table.ids()
+        #     target_ids = target.index.to_numpy()
+        #     if not np.array_equal(table_ids, target_ids):
+        #         raise Exception(
+        #             "Data out of alignment",
+        #             set(table).symmetric_difference(target_ids),
+        #         )
+        #     self.target = target.to_numpy().reshape((-1, 1))
+
+        # self.preprocessed_table = table
+        # self.obs_ids = self.preprocessed_table.ids(axis="observation")
+
+        # if level is not None:
+        #     self.level = level.loc[self.obs_ids, :]
+
+        # print(f"creating {self.num_tables} table(s)...")
+        # self.rarefy_tables = [
+        #     self.preprocessed_table.copy().subsample(self.rarefy_depth)
+        #     for _ in range(self.num_tables)
+        # ]
+        # self.size = (
+        #     self.preprocessed_table.shape[1] // self.batch_size
+        # ) * self.num_tables
+
+    @property
+    def taxonomy(self) -> pd.DataFrame:
+        if isinstance(self._taxonomy, str):
+            self._taxonomy = pd.read_csv(self._taxonomy, sep="\t", index_col=0)
+            if self.taxon_field not in self._taxonomy.columns:
+                raise Exception("Invalid taxonomy: missing 'Taxon' field")
+        if self._taxonomy is not None and not self._taxonomy_built:
+            self._taxonomy[self.levels] = self._taxonomy[self.taxon_field].str.split(
+                "; ", expand=True
             )
-            if not np.array_equal(shape[0], table.shape[0]):
-                raise Exception("Data out of alignment")
+            self._taxonomy_built = True
+        return self._taxonomy
 
-            table_ids = table.ids()
-            target_ids = target.index.to_numpy()
-            if not np.array_equal(table_ids, target_ids):
-                raise Exception(
-                    "Data out of alignment",
-                    set(table).symmetric_difference(target_ids),
-                )
-            self.target = target.to_numpy().reshape((-1, 1))
+    @taxonomy.setter
+    @add_lock
+    def taxonomy(self, taxonomy: Union[str, pd.DataFrame]):
+        if hasattr(self, "_taxon_set"):
+            raise Exception("Taxon already set")
+        if taxonomy is None:
+            self._taxonomy = taxonomy
+            return
 
-        self.preprocessed_table = table
-        self.obs_ids = self.preprocessed_table.ids(axis="observation")
-
-        if level is not None:
-            self.level = level.loc[self.obs_ids, :]
-
-        print(f"creating {self.num_tables} table(s)...")
-        self.rarefy_tables = [
-            self.preprocessed_table.copy().subsample(self.rarefy_depth)
-            for _ in range(self.num_tables)
-        ]
-        self.size = (
-            self.preprocessed_table.shape[1] // self.batch_size
-        ) * self.num_tables
+        self._taxonomy_built = False
+        self._taxonomy = taxonomy
 
     def _level_weights(self, table: Table) -> np.ndarray:
         all_ids = self.preprocessed_table.ids(axis="observation")
@@ -225,7 +224,7 @@ class SequenceGeneratorDataset(SequenceDataset):
                                     sorted_tokens.astype(np.int32),
                                     sorted_counts.astype(np.int32),
                                 ),
-                                ((target, sorted_tax_tokens.astype(np.int32)), weights),
+                                (target, sorted_tax_tokens.astype(np.int32)),
                             )
 
         return generator
@@ -240,11 +239,8 @@ class SequenceGeneratorDataset(SequenceDataset):
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
                 (
-                    (
-                        tf.TensorSpec(shape=[1], dtype=tf.float32),
-                        tf.TensorSpec(shape=[None], dtype=tf.int32),
-                    ),
-                    tf.TensorSpec(shape=[None], dtype=tf.float32),
+                    tf.TensorSpec(shape=[1], dtype=tf.float32),
+                    tf.TensorSpec(shape=[None], dtype=tf.int32),
                 ),
             ),
         )
@@ -252,7 +248,7 @@ class SequenceGeneratorDataset(SequenceDataset):
             self.batch_size,
             (
                 ([None, 150], [None, 1]),
-                (([1], [None]), [None]),
+                ([1], [None]),
             ),
         ).prefetch(tf.data.AUTOTUNE)
 
@@ -282,7 +278,7 @@ if __name__ == "__main__":
         sep="\t",
         index_col=0,
     )
-    sd = SequenceGeneratorDataset(
+    sd = TaxonomyGenerator(
         150,
         "host_age",
         False,

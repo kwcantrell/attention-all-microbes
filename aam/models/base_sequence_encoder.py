@@ -15,6 +15,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self,
         embedding_dim: int,
         max_bp: int,
+        token_limit: int,
         sample_attention_heads: int,
         sample_attention_layers: int,
         sample_intermediate_size: int,
@@ -27,6 +28,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
         self.embedding_dim = embedding_dim
         self.max_bp = max_bp
+        self.token_limit = token_limit
         self.sample_attention_heads = sample_attention_heads
         self.sample_attention_layers = sample_attention_layers
         self.sample_intermediate_size = sample_intermediate_size
@@ -54,7 +56,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
         self.asv_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
         self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
-        self.asv_pos = tfm.nlp.layers.PositionEmbedding(515)
+        self.asv_pos = tfm.nlp.layers.PositionEmbedding(self.token_limit + 5)
 
         self.sample_encoder = tfm.nlp.models.TransformerEncoder(
             num_layers=self.sample_attention_layers,
@@ -127,6 +129,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             {
                 "embedding_dim": self.embedding_dim,
                 "max_bp": self.max_bp,
+                "token_limit": self.token_limit,
                 "sample_attention_heads": self.sample_attention_heads,
                 "sample_attention_layers": self.sample_attention_layers,
                 "sample_intermediate_size": self.sample_intermediate_size,

@@ -5,7 +5,7 @@ from typing import Optional, Union
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from aam.models import BaseSequenceEncoder
+from aam.models.base_sequence_encoder import BaseSequenceEncoder
 from aam.utils import float_mask, masked_loss
 
 
@@ -14,6 +14,7 @@ class TaxonomyEncoder(tf.keras.Model):
     def __init__(
         self,
         num_tax_levels: int,
+        token_limit: int,
         dropout_rate: float = 0.0,
         embedding_dim: int = 128,
         attention_heads: int = 4,
@@ -25,6 +26,7 @@ class TaxonomyEncoder(tf.keras.Model):
         super(TaxonomyEncoder, self).__init__(**kwargs)
 
         self.num_tax_levels = num_tax_levels
+        self.token_limit = token_limit
         self.dropout_rate = dropout_rate
         self.embedding_dim = embedding_dim
         self.attention_heads = attention_heads
@@ -42,6 +44,7 @@ class TaxonomyEncoder(tf.keras.Model):
         self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,
             150,
+            self.token_limit,
             sample_attention_heads=self.attention_heads,
             sample_attention_layers=self.attention_layers,
             sample_intermediate_size=self.intermediate_size,
@@ -67,7 +70,9 @@ class TaxonomyEncoder(tf.keras.Model):
             activation=self.intermediate_activation,
             name="tax_encoder",
         )
-        self.tax_pos = tfm.nlp.layers.PositionEmbedding(515, name="tax_pos")
+        self.tax_pos = tfm.nlp.layers.PositionEmbedding(
+            self.token_limit, name="tax_pos"
+        )
 
         self.tax_level_logits = tf.keras.layers.Dense(
             self.num_tax_levels, dtype=tf.float32, name="tax_level_logits"
@@ -233,6 +238,7 @@ class TaxonomyEncoder(tf.keras.Model):
         config.update(
             {
                 "num_tax_levels": self.num_tax_levels,
+                "token_limit": self.token_limit,
                 "dropout_rate": self.dropout_rate,
                 "embedding_dim": self.embedding_dim,
                 "attention_heads": self.attention_heads,

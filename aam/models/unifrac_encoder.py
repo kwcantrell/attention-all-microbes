@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
-from aam.models import BaseSequenceEncoder
+from aam.models.base_sequence_encoder import BaseSequenceEncoder
 from aam.utils import float_mask
 
 
@@ -14,6 +14,7 @@ from aam.utils import float_mask
 class UniFracEncoder(tf.keras.Model):
     def __init__(
         self,
+        token_limit: int,
         dropout_rate: float = 0.0,
         embedding_dim: int = 128,
         attention_heads: int = 4,
@@ -24,6 +25,7 @@ class UniFracEncoder(tf.keras.Model):
     ):
         super(UniFracEncoder, self).__init__(**kwargs)
 
+        self.token_limit = token_limit
         self.dropout_rate = dropout_rate
         self.embedding_dim = embedding_dim
         self.attention_heads = attention_heads
@@ -39,6 +41,7 @@ class UniFracEncoder(tf.keras.Model):
         self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,
             150,
+            self.token_limit,
             sample_attention_heads=self.attention_heads,
             sample_attention_layers=self.attention_layers,
             sample_intermediate_size=self.intermediate_size,
@@ -64,7 +67,9 @@ class UniFracEncoder(tf.keras.Model):
             activation=self.intermediate_activation,
             name="unifrac_encoder",
         )
-        self.unifrac_pos = tfm.nlp.layers.PositionEmbedding(515, name="unifrac_pos")
+        self.unifrac_pos = tfm.nlp.layers.PositionEmbedding(
+            self.token_limit, name="unifrac_pos"
+        )
 
         self.unifrac_ff = tf.keras.layers.Dense(
             self.embedding_dim, dtype=tf.float32, name="unifrac_ff"
@@ -112,12 +117,10 @@ class UniFracEncoder(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, (y, _) = data
-        _, y = y
+        inputs, sample_ids = data
         _, y_pred, _ = self(inputs, training=False)
 
-        y_true = y
-        return y_pred, y_true
+        return y_pred, sample_ids
 
     def train_step(
         self,
@@ -219,6 +222,7 @@ class UniFracEncoder(tf.keras.Model):
         config = super(UniFracEncoder, self).get_config()
         config.update(
             {
+                "token_limit": self.token_limit,
                 "dropout_rate": self.dropout_rate,
                 "embedding_dim": self.embedding_dim,
                 "attention_heads": self.attention_heads,

@@ -6,6 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.models.taxonomy_encoder import TaxonomyEncoder
+from aam.models.unifrac_encoder import UniFracEncoder
 from aam.utils import float_mask, masked_loss
 
 
@@ -13,6 +14,7 @@ from aam.utils import float_mask, masked_loss
 class SequenceRegressor(tf.keras.Model):
     def __init__(
         self,
+        token_limit: int,
         num_classes: Optional[int] = None,
         shift: float = 0.0,
         scale: float = 1.0,
@@ -23,12 +25,12 @@ class SequenceRegressor(tf.keras.Model):
         attention_layers: int = 4,
         intermediate_size: int = 1024,
         intermediate_activation: str = "relu",
-        base_model: Optional[TaxonomyEncoder] = None,
+        base_model: Union[str, TaxonomyEncoder, UniFracEncoder] = "taxonomy",
         freeze_base: bool = False,
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
-
+        self.token_limit = token_limit
         self.num_classes = num_classes
         self.shift = shift
         self.scale = scale
@@ -39,25 +41,58 @@ class SequenceRegressor(tf.keras.Model):
         self.attention_layers = attention_layers
         self.intermediate_size = intermediate_size
         self.intermediate_activation = intermediate_activation
+        self.freeze_base = freeze_base
         self.loss_tracker = tf.keras.metrics.Mean()
 
         self.embeddings_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
         self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
 
         # layers used in model
-        if base_model is not None:
-            self.base_model = base_model
+        if isinstance(base_model, str):
+            if base_model == "taxonomy":
+                self.base_model = TaxonomyEncoder(
+                    num_tax_levels=self.num_tax_levels,
+                    token_limit=self.token_limit,
+                    dropout_rate=self.dropout_rate,
+                    embedding_dim=self.embedding_dim,
+                    attention_heads=self.attention_heads,
+                    attention_layers=self.attention_layers,
+                    intermediate_size=self.intermediate_size,
+                )
+            elif base_model == "unifrac":
+                self.base_model = UniFracEncoder(
+                    self.token_limit,
+                    dropout_rate=self.dropout_rate,
+                    embedding_dim=self.embedding_dim,
+                    attention_heads=self.attention_heads,
+                    attention_layers=self.attention_layers,
+                    intermediate_size=self.intermediate_size,
+                )
+            else:
+                raise Exception("Invalid base model option.")
         else:
-            self.base_model = TaxonomyEncoder(
-                num_tax_levels=self.num_tax_levels,
-                dropout_rate=self.dropout_rate,
-                embedding_dim=self.embedding_dim,
-                attention_heads=self.attention_heads,
-                attention_layers=self.attention_layers,
-                intermediate_size=self.intermediate_size,
-            )
+            if not isinstance(base_model, (TaxonomyEncoder, UniFracEncoder)):
+                raise Exception(f"Unsupported base model of type {type(base_model)}")
+            self.base_model = base_model
 
-        if freeze_base:
+        if isinstance(self.base_model, TaxonomyEncoder):
+            self.base_losses = {"base_loss": self.base_model._compute_tax_loss}
+            self.base_metrics = {
+                "base_loss": ("tax_entropy", self.base_model.tax_tracker)
+            }
+        else:
+            self.base_losses = {"base_loss": self.base_model._compute_unifrac_loss}
+            self.base_metrics = {
+                "base_loss": ["unifrac_mse", self.base_model.unifrac_tracker]
+            }
+
+        self.base_losses.update({"nuc_entropy": self.base_model._compute_nuc_loss})
+        self.base_metrics.update(
+            {"nuc_entropy": ["nuc_entropy", self.base_model.base_encoder.nuc_entropy]}
+        )
+
+        if self.freeze_base:
+            print("Freezing base model...")
             self.base_model.trainable = False
 
         self.count_encoder = tfm.nlp.models.TransformerEncoder(
@@ -67,7 +102,9 @@ class SequenceRegressor(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
-        self.count_pos = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
+        self.count_pos = tfm.nlp.layers.PositionEmbedding(
+            self.token_limit + 5, dtype=tf.float32
+        )
         self.count_out = tf.keras.layers.Dense(1, dtype=tf.float32)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
@@ -80,7 +117,9 @@ class SequenceRegressor(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
-        self.target_pos = tfm.nlp.layers.PositionEmbedding(515, dtype=tf.float32)
+        self.target_pos = tfm.nlp.layers.PositionEmbedding(
+            self.token_limit + 5, dtype=tf.float32
+        )
         self.target_tracker = tf.keras.metrics.Mean()
 
         self.target_ff = tf.keras.layers.Dense(1, dtype=tf.float32)
@@ -117,28 +156,27 @@ class SequenceRegressor(tf.keras.Model):
         sample_weights: Optional[tf.Tensor] = None,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
         nuc_tokens, counts = model_inputs
-        if self.num_tax_levels is None:
-            y_target = y_true
-            count_pred, y_pred, nuc_pred = outputs
-            tax_loss = 0.0
-        else:
-            y_target, tax_tokens = y_true
-            count_pred, y_pred, tax_pred, nuc_pred = outputs
-            tax_loss = self.base_model._compute_tax_loss(
-                tax_tokens, tax_pred, sample_weights=sample_weights
-            )
+        y_target, base_target = y_true
+
+        target_embeddings, count_pred, y_pred, base_pred, nuc_pred = outputs
 
         target_loss = self._compute_target_loss(y_target, y_pred)
         count_loss = self._compute_count_loss(counts, count_pred)
-        nuc_loss = self.base_model._compute_nuc_loss(nuc_tokens, nuc_pred)
 
-        loss = target_loss + tax_loss + nuc_loss + count_loss
+        loss = target_loss + count_loss
+        if not self.freeze_base:
+            base_loss = self.base_losses["base_loss"](base_target, base_pred)
+            nuc_loss = self.base_losses["nuc_entropy"](nuc_tokens, nuc_pred)
+            loss += base_loss + nuc_loss
+        else:
+            base_loss = 0
+            nuc_loss = 0
 
         return (
             loss,
             target_loss,
             count_loss,
-            tax_loss,
+            base_loss,
             nuc_loss,
         )
 
@@ -150,21 +188,12 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
         ],
     ):
-        if self.num_tax_levels is None:
-            _, y_pred, _ = outputs
-        else:
-            y_true, _ = y_true
-            _, y_pred, _, _ = outputs
+        y_true, base_target = y_true
 
-        if self.num_classes is None:
-            y_true = y_true * self.scale + self.shift
-            y_pred = y_pred * self.scale + self.shift
-            self.metric_tracker(y_true, y_pred)
-            # self.metric_tracker(y_true, y_pred)
-        else:
-            y_true = tf.cast(y_true, dtype=tf.int32)
-            y_true = tf.one_hot(y_true, depth=self.num_classes)
-            self.metric_tracker(y_true, y_pred)
+        target_embeddings, count_pred, y_pred, base_pred, nuc_pred = outputs
+        y_true = y_true * self.scale + self.shift
+        y_pred = y_pred * self.scale + self.shift
+        self.metric_tracker.update_state(y_true, y_pred)
 
     def predict_step(
         self,
@@ -173,19 +202,14 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, (y, _) = data
-        if self.num_tax_levels is None:
-            _, y_pred, _ = self(inputs, training=False)
-        else:
-            y, _ = y
-            _, y_pred, _, _ = self(inputs, training=False)
+        inputs, (y_true, _) = data
+        target_embeddings, count_pred, y_pred, base_pred, nuc_pred = self(
+            inputs, training=False
+        )
 
-        if self.num_classes is None:
-            y_true = y
-            y_true = y_true * self.scale + self.shift
-            y_pred = y_pred * self.scale + self.shift
-            return y_pred, y_true
-        return tf.argmax(y_pred, axis=-1), y
+        y_true = y_true * self.scale + self.shift
+        y_pred = y_pred * self.scale + self.shift
+        return y_pred, y_true
 
     def train_step(
         self,
@@ -194,12 +218,12 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, (y, sample_weights) = data
+        inputs, y = data
 
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, target_loss, count_mse, tax_loss, nuc_loss = self._compute_loss(
-                inputs, y, outputs, sample_weights
+            loss, target_loss, count_mse, base_loss, nuc_loss = self._compute_loss(
+                inputs, y, outputs
             )
 
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -208,17 +232,18 @@ class SequenceRegressor(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
         self.count_tracker.update_state(count_mse)
-        self.base_model.tax_tracker.update_state(tax_loss)
-        self.base_model.base_encoder.nuc_entropy.update_state(nuc_loss)
+        base_loss_key, base_loss_metric = self.base_metrics["base_loss"]
+        base_loss_metric.update_state(base_loss)
+        nuc_entropy_key, nuc_entropy_metric = self.base_metrics["nuc_entropy"]
+        nuc_entropy_metric.update_state(nuc_loss)
         self._compute_metric(y, outputs)
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
             "count_mse": self.count_tracker.result(),
-            "tax_entoropy": self.base_model.tax_tracker.result(),
-            "nuc_entropy": self.base_model.base_encoder.nuc_entropy.result(),
+            base_loss_key: base_loss_metric.result(),
+            nuc_entropy_key: nuc_entropy_metric.result(),
             self.metric_string: self.metric_tracker.result(),
-            # "mse": self.target_tracker.result(),
         }
 
     def test_step(
@@ -228,27 +253,28 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, (y, sample_weights) = data
+        inputs, y = data
 
         outputs = self(inputs, training=False)
-        loss, target_loss, count_mse, tax_loss, nuc_loss = self._compute_loss(
-            inputs, y, outputs, sample_weights
+        loss, target_loss, count_mse, base_loss, nuc_loss = self._compute_loss(
+            inputs, y, outputs
         )
 
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
         self.count_tracker.update_state(count_mse)
-        self.base_model.tax_tracker.update_state(tax_loss)
-        self.base_model.base_encoder.nuc_entropy.update_state(nuc_loss)
+        base_loss_key, base_loss_metric = self.base_metrics["base_loss"]
+        base_loss_metric.update_state(base_loss)
+        nuc_entropy_key, nuc_entropy_metric = self.base_metrics["nuc_entropy"]
+        nuc_entropy_metric.update_state(nuc_loss)
         self._compute_metric(y, outputs)
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
             "count_mse": self.count_tracker.result(),
-            "tax_entoropy": self.base_model.tax_tracker.result(),
-            "nuc_entropy": self.base_model.base_encoder.nuc_entropy.result(),
+            base_loss_key: base_loss_metric.result(),
+            nuc_entropy_key: nuc_entropy_metric.result(),
             self.metric_string: self.metric_tracker.result(),
-            # "mse": self.target_tracker.result(),
         }
 
     def _relative_abundance(self, counts: tf.Tensor) -> tf.Tensor:
@@ -311,14 +337,14 @@ class SequenceRegressor(tf.keras.Model):
         )
         count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
 
-        tax_embeddings, tax_pred, nuc_embeddings = self.base_model(
+        base_embeddings, base_pred, nuc_embeddings = self.base_model(
             (tokens, counts), training=training
         )
-        tax_embeddings = self.embeddings_scale(tax_embeddings)
-        tax_embeddings = self.embeddings_norm(tax_embeddings)
+        base_embeddings = self.embeddings_scale(base_embeddings)
+        base_embeddings = self.embeddings_norm(base_embeddings)
 
         count_embeddings, count_pred = self._compute_count_embeddings(
-            tax_embeddings,
+            base_embeddings,
             rel_abundance,
             attention_mask=count_attention_mask,
             training=training,
@@ -328,17 +354,11 @@ class SequenceRegressor(tf.keras.Model):
             count_embeddings, attention_mask=count_attention_mask, training=training
         )
 
-        if self.num_tax_levels is None:
-            return (
-                self.count_activation(count_pred),
-                self.target_activation(target_out),
-                nuc_embeddings,
-            )
-
         return (
+            target_embeddings,
             self.count_activation(count_pred),
             self.target_activation(target_out),
-            tax_pred,
+            base_pred,
             nuc_embeddings,
         )
 
@@ -346,6 +366,7 @@ class SequenceRegressor(tf.keras.Model):
         config = super(SequenceRegressor, self).get_config()
         config.update(
             {
+                "token_limit": self.token_limit,
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
                 "num_classes": self.num_classes,
                 "shift": self.shift,
@@ -357,6 +378,7 @@ class SequenceRegressor(tf.keras.Model):
                 "attention_layers": self.attention_layers,
                 "intermediate_size": self.intermediate_size,
                 "intermediate_activation": self.intermediate_activation,
+                "freeze_base": self.freeze_base,
             }
         )
         return config
