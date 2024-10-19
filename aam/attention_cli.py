@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import os
+from typing import Optional
 
 import click
 import numpy as np
@@ -18,7 +19,6 @@ from aam.callbacks import (
 )
 from aam.cv_utils import CVModel, EnsembleModel
 from aam.losses import ImbalancedCategoricalCrossEntropy
-from aam.unifrac_model import UnifracModel
 
 
 @click.group()
@@ -57,52 +57,35 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-tree", required=True, type=click.Path(exists=True))
 @click.option("--p-max-bp", required=True, type=int)
-@click.option("--p-batch-size", default=8, type=int, show_default=True)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-ff-d-model", default=128, show_default=True, type=int)
-@click.option("--p-pca-heads", default=8, show_default=True, type=int)
-@click.option("--p-enc-layers", default=4, show_default=True, type=int)
-@click.option("--p-enc-heads", default=4, show_default=True, type=int)
-@click.option("--p-penalty", default=0.01, type=float)
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-@click.option("--i-model", default="", required=False, type=str)
-@click.option("--p-nuc-attention-heads", default=2, type=int)
-@click.option("--p-nuc-attention-layers", default=4, type=int)
-@click.option("--p-intermediate-ff", default=1024, type=int)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-attention-layers", default=4, type=int)
+@click.option("--p-intermediate-size", default=1024, type=int)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
-@click.option(
-    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
-)
 @click.option("--output-dir", required=True)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
     p_max_bp: int,
-    p_batch_size: int,
     p_epochs: int,
     p_dropout: float,
-    p_ff_d_model: int,
-    p_pca_heads: int,
-    p_enc_layers: int,
-    p_enc_heads: int,
-    p_penalty: float,
     p_patience: int,
     p_early_stop_warmup: int,
-    i_model: str,
-    p_nuc_attention_heads: int,
-    p_nuc_attention_layers: int,
-    p_intermediate_ff: int,
+    i_model: Optional[str],
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
     p_asv_limit: int,
-    p_mixed_precision: bool,
     output_dir: str,
 ):
-    from aam.unifrac_data_utils import load_data
+    from biom import load_table
 
-    if p_mixed_precision:
-        print("\nUsing mixed precision\n")
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    from aam.data_handlers import UniFracGeneratorDataset
+    from aam.models import UniFracEncoder
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -111,47 +94,61 @@ def fit_unifrac_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    if os.path.exists(i_model):
-        model = tf.keras.models.load_model(i_model)
+    if i_model is not None:
+        model: tf.keras.Model = tf.keras.models.load_model(i_model)
     else:
-        model = UnifracModel(
-            p_ff_d_model,
-            p_max_bp,
-            p_ff_d_model,
-            p_pca_heads,
-            8,
-            p_enc_heads,
-            p_enc_layers,
-            1024,
-            p_dropout,
-            penalty=p_penalty,
-            nuc_attention_heads=p_nuc_attention_heads,
-            nuc_attention_layers=p_nuc_attention_layers,
-            intermediate_ff=p_intermediate_ff,
+        model: tf.keras.Model = UniFracEncoder(
+            dropout_rate=p_dropout,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
         )
-    lr = tf.keras.optimizers.schedules.PolynomialDecay(
-        3.2e-4,
-        1000000,
-        end_learning_rate=1.28e-5,
-        power=1.0,
-        cycle=False,
-    )
-
-    optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
-    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-
-    model.build()
-    model.compile(
-        optimizer=optimizer,
-        run_eagerly=False,
-    )
-    data_obj = load_data(
-        i_table,
-        tree_path=i_tree,
-        batch_size=p_batch_size,
-        max_token_per_sample=p_asv_limit,
-    )
+        lr = tf.keras.optimizers.schedules.PolynomialDecay(
+            3.2e-4,
+            100000,
+            end_learning_rate=1.28e-5,
+            power=1.0,
+            cycle=False,
+        )
+        optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
+        token_shape = tf.TensorShape([None, None, 150])
+        count_shape = tf.TensorShape([None, None, 1])
+        model.build([token_shape, count_shape])
+        model.compile(
+            optimizer=optimizer,
+            run_eagerly=False,
+        )
     model.summary()
+
+    table = load_table(i_table)
+    ids = table.ids()
+    indices = np.arange(len(ids), dtype=np.int32)
+    np.random.shuffle(indices)
+    train_size = int(len(ids) * 0.9)
+
+    train_indices = indices[:train_size]
+    train_ids = ids[train_indices]
+    train_table = table.filter(train_ids, inplace=False)
+
+    val_indices = indices[train_size:]
+    val_ids = ids[val_indices]
+    val_table = table.filter(val_ids, inplace=False)
+
+    train_gen = UniFracGeneratorDataset(
+        table=train_table,
+        tree_path=i_tree,
+        max_token_per_sample=p_asv_limit,
+        shuffle=True,
+        gen_new_tables=True,
+        samples_per_epoch=100,
+    )
+    train_data = train_gen.get_data()
+
+    val_gen = UniFracGeneratorDataset(
+        table=val_table, tree_path=i_tree, shuffle=False, samples_per_epoch=20
+    )
+    val_data = val_gen.get_data()
+
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
@@ -159,20 +156,19 @@ def fit_unifrac_regressor(
     model_save_path = os.path.join(output_dir, "model.keras")
     model_saver = SaveModel(model_save_path, 1)
     core_callbacks = [
-        tf.keras.callbacks.TensorBoard(
-            log_dir=log_dir,
-            histogram_freq=0,
-        ),
+        tf.keras.callbacks.TensorBoard(log_dir=log_dir),
         tf.keras.callbacks.EarlyStopping(
             "val_loss", patience=p_patience, start_from_epoch=p_early_stop_warmup
         ),
         model_saver,
     ]
     model.fit(
-        data_obj["training_dataset"],
-        validation_data=data_obj["validation_dataset"],
+        train_data["dataset"],
+        validation_data=val_data["dataset"],
         callbacks=[*core_callbacks],
         epochs=p_epochs,
+        steps_per_epoch=train_data["steps_pre_epoch"],
+        validation_steps=val_data["steps_pre_epoch"],
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")

@@ -44,7 +44,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             max_bp,
             nuc_attention_heads,
             nuc_attention_layers,
-            dropout_rate,
+            0.0,
             nuc_intermediate_size,
             name="asv_encoder",
         )
