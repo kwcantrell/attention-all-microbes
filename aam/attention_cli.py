@@ -370,7 +370,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
-@click.option("--p-gen-new-table", default=False, show_default=True, type=bool)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,

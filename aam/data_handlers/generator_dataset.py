@@ -32,7 +32,7 @@ def _matching_sample_indices(query, search):
     search = np.expand_dims(search, axis=0)
     query = np.expand_dims(query, axis=1)
     mask = np.equal(query, search)
-    mask = np.ay(mask, axis=0)
+    mask = np.any(mask, axis=0)
     indices = np.arange(len(search))
     return indices[mask]
 
