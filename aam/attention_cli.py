@@ -186,7 +186,7 @@ def fit_unifrac_regressor(
 @click.option("--p-tax-level", default=7, type=int)
 @click.option("--p-max-bp", required=True, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--i-model", default=None, required=False, type=str)

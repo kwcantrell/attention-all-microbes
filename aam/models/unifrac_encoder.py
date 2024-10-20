@@ -121,9 +121,9 @@ class UniFracEncoder(tf.keras.Model):
         ],
     ):
         inputs, sample_ids = data
-        _, y_pred, _ = self(inputs, training=False)
+        embeddings, _, _ = self(inputs, training=False)
 
-        return y_pred, sample_ids
+        return embeddings, sample_ids
 
     def train_step(
         self,

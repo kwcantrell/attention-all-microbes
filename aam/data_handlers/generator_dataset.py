@@ -29,12 +29,12 @@ def add_lock(func):
 
 
 def _matching_sample_indices(query, search):
+    indices = np.arange(len(search), dtype=np.int32)
     search = np.expand_dims(search, axis=0)
     query = np.expand_dims(query, axis=1)
     mask = np.equal(query, search)
     mask = np.any(mask, axis=0)
-    indices = np.arange(len(search))
-    return indices[mask]
+    return mask, indices[mask]
 
 
 class GeneratorDataset:
@@ -421,9 +421,11 @@ class GeneratorDataset:
     def get_data_by_id(
         self, samples: np.ndarray[str], axis: Union[str, tuple[str]] = None
     ):
-        sample_indices = _matching_sample_indices(samples, self.table_data[-1])
-        axes = _matching_sample_indices(axis, self.axes)
+        if isinstance(axis, str):
+            axis = [axis]
+        _, sample_indices = _matching_sample_indices(samples, self.table_data[-2])
+        mask, _ = _matching_sample_indices(axis, self.axes)
         sample_data = self._sample_data(
             sample_indices, self.table_data, self.y_data, self.encoder_target
         )
-        return sample_data[axes]
+        return [d for d, m in zip(sample_data, mask) if m]
