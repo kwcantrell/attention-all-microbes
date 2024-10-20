@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .callbacks import SaveModel
 from .cv_utils import CVModel, EnsembleModel
 from .transfer_nuc_model import TransferLearnNucleotideModel
 from .unifrac_data_utils import load_data as _load_unifrac_data
@@ -12,4 +13,5 @@ __all__ = [
     "TransferLearnNucleotideModel",
     "CVModel",
     "EnsembleModel",
+    "SaveModel",
 ]

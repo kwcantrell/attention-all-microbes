@@ -62,6 +62,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-embedding-dim", default=128, type=int)
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
@@ -76,6 +77,7 @@ def fit_unifrac_regressor(
     p_patience: int,
     p_early_stop_warmup: int,
     i_model: Optional[str],
+    p_embedding_dim: int,
     p_attention_heads: int,
     p_attention_layers: int,
     p_intermediate_size: int,
@@ -99,6 +101,7 @@ def fit_unifrac_regressor(
     else:
         model: tf.keras.Model = UniFracEncoder(
             p_asv_limit,
+            embedding_dim=p_embedding_dim,
             dropout_rate=p_dropout,
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,

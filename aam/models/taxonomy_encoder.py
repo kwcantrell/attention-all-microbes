@@ -126,11 +126,9 @@ class TaxonomyEncoder(tf.keras.Model):
         ],
     ):
         inputs, (y, _) = data
-        _, y = y
-        _, y_pred, _, _ = self(inputs, training=False)
+        embeddings, _, _ = self(inputs, training=False)
 
-        y_true = y
-        return y_pred, y_true
+        return embeddings, y
 
     def train_step(
         self,

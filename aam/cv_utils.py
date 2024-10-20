@@ -39,12 +39,15 @@ class CVModel:
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        lr = tf.keras.optimizers.schedules.PolynomialDecay(
-            3.2e-4,
-            1000000,
-            end_learning_rate=1.28e-5,
-            power=1.0,
-            cycle=False,
+        decay_steps = 1000
+        initial_learning_rate = 0
+        warmup_steps = 1000
+        target_learning_rate = 0.005
+        lr = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate,
+            decay_steps,
+            warmup_target=target_learning_rate,
+            warmup_steps=warmup_steps,
         )
 
         optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)

@@ -28,10 +28,19 @@ def add_lock(func):
     return wrapper
 
 
+def _matching_sample_indices(query, search):
+    search = np.expand_dims(search, axis=0)
+    query = np.expand_dims(query, axis=1)
+    mask = np.equal(query, search)
+    mask = np.ay(mask, axis=0)
+    indices = np.arange(len(search))
+    return indices[mask]
+
+
 class GeneratorDataset:
     table_fn = "table.biom"
     taxonomy_fn = "taxonomy.tsv"
-
+    axes = np.array(["counts", "tokens", "y", "encoder"])
     # These are the UTF-8 encodings of A, C, T, G respectively
     # lookup table converts utf-8 encodings to token
     # tokens start at 1 to make room for pad token
@@ -409,52 +418,12 @@ class GeneratorDataset:
         }
         return data_obj
 
-    # def get_data_by_id(self, sample_ids):
-    #     intersect = np.intersect1d(sample_ids, self.rarefy_table.ids())
-    #     if len(intersect) != len(sample_ids):
-    #         raise Exception(f"Invalid ids: {intersect}")
-
-    #     generator = self._create_sample_generator(sample_ids)
-    #     dataset: tf.data.Dataset = tf.data.Dataset.from_generator(
-    #         generator,
-    #         output_signature=(
-    #             (
-    #                 tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
-    #                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-    #             ),
-    #             tf.TensorSpec(shape=(), dtype=tf.string),
-    #         ),
-    #     )
-    #     dataset = dataset.padded_batch(self.batch_size, (([None, 150], [None, 1]), ()))
-    #     dataset = dataset.prefetch(tf.data.AUTOTUNE)
-
-    #     data_obj = {
-    #         "dataset": dataset,
-    #         "size": self.size,
-    #         "steps_pre_epoch": self.steps_per_epoch,
-    #     }
-    #     return data_obj
-
-
-if __name__ == "__main__":
-    import tensorflow as tf
-
-    from aam.data_handlers import GeneratorDataset
-
-    ug = GeneratorDataset(
-        table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
-        # tree_path="/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk",
-        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-healthy.txt",
-        metadata_column="host_age",
-        gen_new_tables=True,
-        epochs=1,
-    )
-    data = ug.get_data()
-    for i, (x, y) in enumerate(data["dataset"]):
-        print(x)
-        break
-
-    # data = ug.get_data_by_id(ug.rarefy_table.ids()[:16])
-    # for x, y in data["dataset"]:
-    #     print(y)
-    #     break
+    def get_data_by_id(
+        self, samples: np.ndarray[str], axis: Union[str, tuple[str]] = None
+    ):
+        sample_indices = _matching_sample_indices(samples, self.table_data[-1])
+        axes = _matching_sample_indices(axis, self.axes)
+        sample_data = self._sample_data(
+            sample_indices, self.table_data, self.y_data, self.encoder_target
+        )
+        return sample_data[axes]
