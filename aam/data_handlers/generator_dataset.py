@@ -88,6 +88,7 @@ class GeneratorDataset:
         self.table_data = self._create_table_data(self.rarefy_table)
         self.y_data = self._create_y_data(self.rarefy_table)
         self.encoder_target = None
+        self.encoder_dtype = None
         self.encoder_output_type = None
 
     def _validate_dataframe(self, df: pd.DataFrame):
@@ -176,7 +177,7 @@ class GeneratorDataset:
         table_ids = table.ids()
         return self.metadata.loc[table_ids]
 
-    def _encoder_output(self, encoder_target, sample_ids):
+    def _encoder_output(self, encoder_target, sample_ids, obs_ids):
         return None
 
     def _y_output(
@@ -203,14 +204,14 @@ class GeneratorDataset:
 
         table_data, row, col, shape = self._table_data(table)
 
-        return row, col, table_data, obs_encodings, sample_ids
+        return row, col, table_data, obs_encodings, sample_ids, obs_ids
 
     def _sample_data(
         self, samples: np.ndarray, table_data=None, y_data=None, encoder_target=None
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if table_data is None:
             table_data = self.table_data
-        row, col, counts, obs_encodings, sample_ids = table_data
+        row, col, counts, obs_encodings, sample_ids, obs_ids = table_data
 
         if max(samples) >= len(sample_ids):
             raise Exception(
@@ -226,11 +227,12 @@ class GeneratorDataset:
             sorted_order = sorted_order[::-1]
             s_counts = s_counts[sorted_order].reshape(-1, 1)
             s_tokens = s_tokens[sorted_order]
-            return s_counts, s_tokens
+            return s_counts, s_tokens, s_obs_indices
 
         s_data = [_s_info(s) for s in samples]
-        s_counts = [c for c, _ in s_data]
-        s_tokens = [t for _, t in s_data]
+        s_counts = [c for c, _, _ in s_data]
+        s_tokens = [t for _, t, _ in s_data]
+        s_obj_ids = [obs_ids[o] for _, _, o in s_data]
         s_max_token = max([len(t) for t in s_tokens])
 
         if s_max_token > self.max_token_per_sample:
@@ -245,7 +247,7 @@ class GeneratorDataset:
 
         if encoder_target is None:
             encoder_target = self.encoder_target
-        encoder_output = self._encoder_output(encoder_target, s_ids)
+        encoder_output = self._encoder_output(encoder_target, s_ids, s_obj_ids)
 
         return s_counts, s_tokens, y_output, encoder_output
 
@@ -332,9 +334,12 @@ class GeneratorDataset:
 
                         if encoder_out is not None:
                             if output is None:
-                                output = encoder_out.astype(np.float32)
+                                output = encoder_out.astype(self.encoder_dtype)
                             else:
-                                output = (output, encoder_out.astype(np.float32))
+                                output = (
+                                    output,
+                                    encoder_out.astype(self.encoder_dtype),
+                                )
 
                         if output is not None:
                             yield (table_output, output)

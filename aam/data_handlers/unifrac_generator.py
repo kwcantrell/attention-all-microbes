@@ -20,6 +20,7 @@ class UniFracGenerator(GeneratorDataset):
         if self.batch_size % 2 != 0:
             raise Exception("Batch size must be multiple of 2")
         self.encoder_target = self._create_encoder_target(self.rarefy_table)
+        self.encoder_dtype = np.float32
         self.encoder_output_type = tf.TensorSpec(
             shape=[self.batch_size, self.batch_size], dtype=tf.float32
         )
@@ -37,7 +38,10 @@ class UniFracGenerator(GeneratorDataset):
         return distances
 
     def _encoder_output(
-        self, encoder_target: DistanceMatrix, sample_ids: Iterable[str]
+        self,
+        encoder_target: DistanceMatrix,
+        sample_ids: Iterable[str],
+        ob_ids: list[str],
     ) -> np.ndarray[float]:
         return encoder_target.filter(sample_ids).data
 

@@ -107,10 +107,9 @@ class TaxonomyEncoder(tf.keras.Model):
         sample_weights: Optional[tf.Tensor] = None,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         nuc_tokens, counts = model_inputs
-        y_target, tax_tokens = y_true
         taxonomy_embeddings, tax_pred, nuc_pred = outputs
         tax_loss = self._compute_tax_loss(
-            tax_tokens, tax_pred, sample_weights=sample_weights
+            y_true, tax_pred, sample_weights=sample_weights
         )
 
         nuc_loss = self._compute_nuc_loss(nuc_tokens, nuc_pred)
@@ -140,13 +139,11 @@ class TaxonomyEncoder(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, (y, sample_weights) = data
+        inputs, y = data
 
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, tax_loss, nuc_loss = self._compute_loss(
-                inputs, y, outputs, sample_weights
-            )
+            loss, tax_loss, nuc_loss = self._compute_loss(inputs, y, outputs)
 
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -156,7 +153,7 @@ class TaxonomyEncoder(tf.keras.Model):
         self.base_encoder.nuc_entropy.update_state(nuc_loss)
         return {
             "loss": self.loss_tracker.result(),
-            "tax_entoropy": self.tax_tracker.result(),
+            "tax_entropy": self.tax_tracker.result(),
             "nuc_entropy": self.base_encoder.nuc_entropy.result(),
         }
 
@@ -167,19 +164,17 @@ class TaxonomyEncoder(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, (y, sample_weights) = data
+        inputs, y = data
 
         outputs = self(inputs, training=False)
-        loss, tax_loss, nuc_loss = self._compute_loss(
-            inputs, y, outputs, sample_weights
-        )
+        loss, tax_loss, nuc_loss = self._compute_loss(inputs, y, outputs)
 
         self.loss_tracker.update_state(loss)
         self.tax_tracker.update_state(tax_loss)
         self.base_encoder.nuc_entropy.update_state(nuc_loss)
         return {
             "loss": self.loss_tracker.result(),
-            "tax_entoropy": self.tax_tracker.result(),
+            "tax_entropy": self.tax_tracker.result(),
             "nuc_entropy": self.base_encoder.nuc_entropy.result(),
         }
 
