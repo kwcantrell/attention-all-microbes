@@ -88,6 +88,7 @@ def fit_unifrac_regressor(
 
     from aam.data_handlers import UniFracGenerator
     from aam.models import UniFracEncoder
+    from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -107,14 +108,8 @@ def fit_unifrac_regressor(
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
         )
-        lr = tf.keras.optimizers.schedules.PolynomialDecay(
-            3.2e-4,
-            100000,
-            end_learning_rate=1.28e-5,
-            power=1.0,
-            cycle=False,
-        )
-        optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
+
+        optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(), beta_2=0.95)
         token_shape = tf.TensorShape([None, None, 150])
         count_shape = tf.TensorShape([None, None, 1])
         model.build([token_shape, count_shape])
@@ -217,6 +212,7 @@ def fit_taxonomy_regressor(
 
     from aam.data_handlers import TaxonomyGenerator
     from aam.models import TaxonomyEncoder
+    from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -284,14 +280,8 @@ def fit_taxonomy_regressor(
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
         )
-        lr = tf.keras.optimizers.schedules.PolynomialDecay(
-            3.2e-4,
-            100000,
-            end_learning_rate=1.28e-5,
-            power=1.0,
-            cycle=False,
-        )
-        optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
+
+        optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(), beta_2=0.95)
         token_shape = tf.TensorShape([None, None, 150])
         count_shape = tf.TensorShape([None, None, 1])
         model.build([token_shape, count_shape])

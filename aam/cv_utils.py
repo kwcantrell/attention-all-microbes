@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 from aam.callbacks import SaveModel
+from aam.models.utils import cos_decay_with_warmup
 
 
 class CVModel:
@@ -39,18 +40,8 @@ class CVModel:
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        decay_steps = 1000
-        initial_learning_rate = 0
-        warmup_steps = 1000
-        target_learning_rate = 0.005
-        lr = tf.keras.optimizers.schedules.CosineDecay(
-            initial_learning_rate,
-            decay_steps,
-            warmup_target=target_learning_rate,
-            warmup_steps=warmup_steps,
-        )
 
-        optimizer = tf.keras.optimizers.AdamW(lr, beta_2=0.95)
+        optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(), beta_2=0.95)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(
