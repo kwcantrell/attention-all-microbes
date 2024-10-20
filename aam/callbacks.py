@@ -107,6 +107,12 @@ class SaveModel(tf.keras.callbacks.Callback):
         self.monitor = monitor
 
     def on_epoch_end(self, epoch, logs=None):
+        learning_rate = float(
+            tf.keras.backend.get_value(self.model.optimizer.learning_rate)
+        )
+        # Add the learning rate to the logs dictionary
+        logs["learning_rate"] = learning_rate
+
         metric = logs[self.monitor]
         if self.best_weights is None or self.best_metric > metric:
             self.best_metric = metric
