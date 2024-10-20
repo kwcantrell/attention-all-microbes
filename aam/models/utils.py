@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 
+@tf.keras.saving.register_keras_serializable(package="TransformerLearningRateSchedule")
 class TransformerLearningRateSchedule(
     tf.keras.optimizers.schedules.LearningRateSchedule
 ):
@@ -45,6 +46,18 @@ class TransformerLearningRateSchedule(
             )
 
         return learning_rate
+
+    def get_config(self):
+        config = {}
+        config.update(
+            {
+                "d_model": self.d_model,
+                "warmup_steps": self.warmup_steps,
+                "decay_method": self.decay_method,
+                "initial_lr": self.initial_lr,
+            }
+        )
+        return config
 
 
 def cos_decay_with_warmup():
