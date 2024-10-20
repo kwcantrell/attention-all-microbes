@@ -49,11 +49,14 @@ class UniFracEncoder(tf.keras.Model):
             nuc_attention_heads=1,
             nuc_attention_layers=3,
             nuc_intermediate_size=128,
+            intermediate_activation=self.intermediate_activation,
             name="base_encoder",
         )
 
         self.embeddings_scale = tf.keras.layers.Dense(
-            embedding_dim, activation="relu", name="embeddings_scale"
+            embedding_dim,
+            activation=self.intermediate_activation,
+            name="embeddings_scale",
         )
         self.embeddings_norm = tf.keras.layers.LayerNormalization(
             epsilon=0.000001, name="embeddings_norm"

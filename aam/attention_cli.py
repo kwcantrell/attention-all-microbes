@@ -66,6 +66,9 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--output-dir", required=True)
 def fit_unifrac_regressor(
@@ -81,6 +84,7 @@ def fit_unifrac_regressor(
     p_attention_heads: int,
     p_attention_layers: int,
     p_intermediate_size: int,
+    p_intermediate_activation: str,
     p_asv_limit: int,
     output_dir: str,
 ):
@@ -107,6 +111,7 @@ def fit_unifrac_regressor(
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
         )
 
         optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(), beta_2=0.95)
@@ -189,6 +194,9 @@ def fit_unifrac_regressor(
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--output-dir", required=True)
 def fit_taxonomy_regressor(
@@ -205,6 +213,7 @@ def fit_taxonomy_regressor(
     p_attention_heads: int,
     p_attention_layers: int,
     p_intermediate_size: int,
+    p_intermediate_activation: str,
     p_asv_limit: int,
     output_dir: str,
 ):
@@ -279,6 +288,7 @@ def fit_taxonomy_regressor(
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
         )
 
         optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(), beta_2=0.95)
@@ -355,7 +365,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
 @click.option(
-    "--p-intermediate_activation", default="relu", show_default=True, type=str
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
 )
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)

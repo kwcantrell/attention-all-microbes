@@ -37,6 +37,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         attention_layers,
         dropout_rate,
         intermediate_ff,
+        intermediate_activation,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -45,7 +46,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.attention_layers = attention_layers
         self.dropout_rate = dropout_rate
         self.intermediate_ff = intermediate_ff
-
+        self.intermediate_activation = intermediate_activation
         self.base_tokens = 6
         self.num_tokens = self.base_tokens * self.max_bp + 2
         self.emb_layer = tf.keras.layers.Embedding(
@@ -60,6 +61,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             num_layers=self.attention_layers,
             dropout=self.dropout_rate,
             intermediate_ff=intermediate_ff,
+            intermediate_activation=self.intermediate_activation,
         )
         self.asv_token = self.num_tokens - 1
 
@@ -94,6 +96,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "attention_layers": self.attention_layers,
                 "dropout_rate": self.dropout_rate,
                 "intermediate_ff": self.intermediate_ff,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
         return config
@@ -182,6 +185,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         num_layers,
         dropout,
         intermediate_ff=1024,
+        intermediate_activation="relu",
         **kwargs,
     ):
         super(NucleotideAttention, self).__init__(**kwargs)
@@ -191,6 +195,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         self.dropout = dropout
         self.epsilon = 0.000001
         self.intermediate_ff = intermediate_ff
+        self.intermediate_activation = intermediate_activation
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(151, seq_axis=2, name="nuc_pos")
         self.attention_layers = []
         for i in range(self.num_layers):
@@ -200,6 +205,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
                     dropout=self.dropout,
                     epsilon=self.epsilon,
                     intermediate_ff=intermediate_ff,
+                    intermediate_activation=self.intermediate_activation,
                     name=("layer_%d" % i),
                 )
             )
@@ -225,6 +231,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
                 "num_layers": self.num_layers,
                 "dropout": self.dropout,
                 "intermediate_ff": self.intermediate_ff,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
         return config
@@ -233,7 +240,13 @@ class NucleotideAttention(tf.keras.layers.Layer):
 @tf.keras.saving.register_keras_serializable(package="NucleotideAttentionBlock")
 class NucleotideAttentionBlock(tf.keras.layers.Layer):
     def __init__(
-        self, num_heads, dropout, epsilon=0.000001, intermediate_ff=1024, **kwargs
+        self,
+        num_heads,
+        dropout,
+        epsilon=0.000001,
+        intermediate_ff=1024,
+        intermediate_activation="relu",
+        **kwargs,
     ):
         super(NucleotideAttentionBlock, self).__init__(**kwargs)
         self.num_heads = num_heads
@@ -248,6 +261,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.ff_norm = tf.keras.layers.LayerNormalization(
             epsilon=self.epsilon, dtype=tf.float32
         )
+        self.intermediate_activation = intermediate_activation
 
     def build(self, input_shape):
         self._shape = input_shape
@@ -266,7 +280,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         self.inter_ff = tf.keras.layers.Dense(
-            self.intermediate_ff, activation="relu", use_bias=True
+            self.intermediate_ff, activation=self.intermediate_activation, use_bias=True
         )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
@@ -358,6 +372,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
                 "num_heads": self.num_heads,
                 "dropout": self.dropout,
                 "intermediate_ff": self.intermediate_ff,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
 

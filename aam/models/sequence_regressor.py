@@ -58,6 +58,7 @@ class SequenceRegressor(tf.keras.Model):
                     attention_heads=self.attention_heads,
                     attention_layers=self.attention_layers,
                     intermediate_size=self.intermediate_size,
+                    intermediate_activation=self.intermediate_activation,
                 )
             elif base_model == "unifrac":
                 self.base_model = UniFracEncoder(
@@ -67,6 +68,7 @@ class SequenceRegressor(tf.keras.Model):
                     attention_heads=self.attention_heads,
                     attention_layers=self.attention_layers,
                     intermediate_size=self.intermediate_size,
+                    intermediate_activation=self.intermediate_activation,
                 )
             else:
                 raise Exception("Invalid base model option.")

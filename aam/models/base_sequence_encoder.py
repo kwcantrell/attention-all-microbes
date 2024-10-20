@@ -23,6 +23,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         nuc_attention_heads: int = 2,
         nuc_attention_layers: int = 4,
         nuc_intermediate_size: int = 1024,
+        intermediate_activation: str = "relu",
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -36,6 +37,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.nuc_attention_heads = nuc_attention_heads
         self.nuc_attention_layers = nuc_attention_layers
         self.nuc_intermediate_size = nuc_intermediate_size
+        self.intermediate_activation = intermediate_activation
         self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy(
             ignore_class=0, from_logits=False, reduction="none"
         )
@@ -48,6 +50,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             nuc_attention_layers,
             0.0,
             nuc_intermediate_size,
+            intermediate_activation=self.intermediate_activation,
             name="asv_encoder",
         )
         self.nuc_logits = tf.keras.layers.Dense(
@@ -63,7 +66,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             num_attention_heads=self.sample_attention_heads,
             intermediate_size=self.sample_intermediate_size,
             norm_first=True,
-            activation="relu",
+            activation=self.intermediate_activation,
             dropout_rate=self.dropout_rate,
         )
         self.sample_token = self.add_weight(
