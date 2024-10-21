@@ -37,10 +37,11 @@ class CVModel:
         patience=10,
         early_stop_warmup=50,
         callbacks=[],
+        lr=1e-4,
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(), beta_2=0.95)
+        optimizer = tf.keras.optimizers.AdamW(cos_decay_with_warmup(lr), beta_2=0.95)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(
