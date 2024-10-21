@@ -56,6 +56,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @cli.command()
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-tree", required=True, type=click.Path(exists=True))
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-max-bp", required=True, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
@@ -74,6 +75,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
+    p_batch_size: int,
     p_max_bp: int,
     p_epochs: int,
     p_dropout: float,
@@ -144,6 +146,7 @@ def fit_unifrac_regressor(
         max_token_per_sample=p_asv_limit,
         shuffle=True,
         gen_new_tables=True,
+        batch_size=p_batch_size,
     )
     train_data = train_gen.get_data()
 

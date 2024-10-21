@@ -184,31 +184,6 @@ class TaxonomyEncoder(tf.keras.Model):
             "nuc_entropy": self.base_encoder.nuc_entropy.result(),
         }
 
-    def _compute_sequece_embeddings(
-        self,
-        tensor: tf.Tensor,
-        mask: Optional[tf.Tensor] = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        base_embeddings, nuc_embeddings = self.base_encoder(tensor, training=training)
-        base_embeddings = self.embeddings_scale(base_embeddings)
-        base_embeddings = self.embeddings_norm(base_embeddings)
-        return base_embeddings, nuc_embeddings
-
-    def _compute_tax_embeddings(
-        self,
-        tensor: tf.Tensor,
-        attention_mask: Optional[tf.Tensor] = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        tax_embeddings = tensor + self.tax_pos(tensor)
-        tax_embeddings = self.tax_encoder(
-            tax_embeddings, mask=attention_mask, training=training
-        )
-        tax_pred = tax_embeddings[:, 1:, :]
-        tax_pred = self.tax_level_logits(tax_pred)
-        return tax_embeddings, tax_pred
-
     def call(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
@@ -217,9 +192,6 @@ class TaxonomyEncoder(tf.keras.Model):
         tokens = tf.cast(tokens, dtype=tf.int32)
         counts = tf.cast(counts, dtype=tf.int32)
 
-        # base_embeddings, nuc_embeddings = self._compute_sequece_embeddings(
-        #     tokens, training=training
-        # )
         sample_embeddings, nuc_embeddings = self.base_encoder(tokens, training=training)
 
         # account for <SAMPLE> token
@@ -227,9 +199,12 @@ class TaxonomyEncoder(tf.keras.Model):
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
 
-        tax_gated_embeddings, tax_pred = self._compute_tax_embeddings(
-            sample_embeddings, attention_mask=count_attention_mask, training=training
+        tax_gated_embeddings = self.tax_encoder(
+            sample_embeddings, mask=count_attention_mask, training=training
         )
+
+        tax_pred = tax_gated_embeddings[:, 1:, :]
+        tax_pred = self.tax_level_logits(tax_pred)
 
         tax_embeddings = sample_embeddings + tax_gated_embeddings * self._tax_alpha
 

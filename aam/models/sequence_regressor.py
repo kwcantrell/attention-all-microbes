@@ -314,9 +314,8 @@ class SequenceRegressor(tf.keras.Model):
         attention_mask: Optional[tf.Tensor] = None,
         training: bool = False,
     ) -> tf.Tensor:
-        target_embeddings = tensor + self.target_pos(tensor)
         target_embeddings = self.target_encoder(
-            target_embeddings, mask=attention_mask, training=training
+            tensor, mask=attention_mask, training=training
         )
         target_out = target_embeddings[:, 0, :]
         target_out = self.target_ff(target_out)

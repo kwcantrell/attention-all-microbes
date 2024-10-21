@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 
 import tensorflow as tf
 import tensorflow_models as tfm
@@ -173,58 +173,32 @@ class UniFracEncoder(tf.keras.Model):
             "nuc_entropy": self.base_encoder.nuc_entropy.result(),
         }
 
-    def _compute_sequece_embeddings(
-        self,
-        tensor: tf.Tensor,
-        mask: Optional[tf.Tensor] = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        base_embeddings, nuc_embeddings = self.base_encoder(
-            tensor, mask=mask, training=training
-        )
-        base_embeddings = self.embeddings_scale(base_embeddings)
-        # base_embeddings = self.embeddings_norm(base_embeddings)
-        return base_embeddings, nuc_embeddings
-
-    def _compute_embeddings(
-        self,
-        tensor: tf.Tensor,
-        attention_mask: Optional[tf.Tensor] = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        embeddings = tensor + self.unifrac_pos(tensor)
-        embeddings = self.unifrac_encoder(
-            embeddings, mask=attention_mask, training=training
-        )
-        unifrac_embedding = embeddings[:, 0, :]
-        unifrac_embedding = self.unifrac_ff(unifrac_embedding)
-        return embeddings, unifrac_embedding
-
     def call(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
         tokens, counts = inputs
         tokens = tf.cast(tokens, dtype=tf.int32)
-        counts = tf.cast(counts, dtype=tf.float32)
+        counts = tf.cast(counts, dtype=tf.int32)
 
-        count_mask = float_mask(counts, dtype=tf.int32)
+        sample_embeddings, nuc_embeddings = self.base_encoder(tokens, training=training)
 
         # account for <SAMPLE> token
+        count_mask = float_mask(counts, dtype=tf.int32)
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
 
-        base_embeddings, nuc_embeddings = self._compute_sequece_embeddings(
-            tokens, count_mask, training=training
+        unifrac_gated_embeddings = self.unifrac_encoder(
+            sample_embeddings, mask=count_attention_mask, training=training
+        )
+        unifrac_pred = unifrac_gated_embeddings[:, 0, :]
+        unifrac_pred = self.unifrac_ff(unifrac_pred)
+
+        unifrac_embeddings = (
+            sample_embeddings + unifrac_gated_embeddings * self._unifrac_alpha
         )
 
-        unifrac_gated_embeddings, unifrac_embedding = self._compute_embeddings(
-            base_embeddings, attention_mask=count_attention_mask, training=training
-        )
-
-        embeddings = base_embeddings + self._unifrac_alpha * unifrac_gated_embeddings
-
-        return [embeddings, unifrac_embedding, nuc_embeddings]
+        return [unifrac_embeddings, unifrac_pred, nuc_embeddings]
 
     def get_config(self):
         config = super(UniFracEncoder, self).get_config()
