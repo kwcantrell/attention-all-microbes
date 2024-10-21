@@ -363,6 +363,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-dropout", default=0.1, show_default=True, type=float)
 @click.option("--p-report-back", default=5, show_default=True, type=int)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
@@ -391,6 +392,7 @@ def fit_sample_regressor(
     p_dropout: float,
     p_report_back: int,
     p_asv_limit: int,
+    p_penalty: float,
     p_embedding_dim: int,
     p_attention_heads: int,
     p_attention_layers: int,
@@ -544,6 +546,7 @@ def fit_sample_regressor(
             base_model=base_model,
             freeze_base=p_no_freeze_base_weights,
             num_tax_levels=train_data["num_tokens"],
+            penalty=p_penalty,
         )
         token_shape = tf.TensorShape([None, None, 150])
         count_shape = tf.TensorShape([None, None, 1])

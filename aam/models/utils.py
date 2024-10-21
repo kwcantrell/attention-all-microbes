@@ -61,5 +61,5 @@ class TransformerLearningRateSchedule(
 
 
 def cos_decay_with_warmup():
-    lr = tf.keras.optimizers.schedules.ExponentialDecay(3e-4, 1000, 0.96)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(3e-4, 10000, 0.96)
     return lr

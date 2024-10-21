@@ -28,6 +28,7 @@ class SequenceRegressor(tf.keras.Model):
         intermediate_activation: str = "relu",
         base_model: Union[str, TaxonomyEncoder, UniFracEncoder] = "taxonomy",
         freeze_base: bool = False,
+        penalty: float = 1.0,
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
@@ -43,6 +44,7 @@ class SequenceRegressor(tf.keras.Model):
         self.intermediate_size = intermediate_size
         self.intermediate_activation = intermediate_activation
         self.freeze_base = freeze_base
+        self.penalty = penalty
         self.loss_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
@@ -169,9 +171,11 @@ class SequenceRegressor(tf.keras.Model):
 
         loss = target_loss + count_loss
         if not self.freeze_base:
-            base_loss = self.base_losses["base_loss"](base_target, base_pred)
+            base_loss = (
+                self.base_losses["base_loss"](base_target, base_pred) * self.penalty
+            )
             nuc_loss = self.base_losses["nuc_entropy"](nuc_tokens, nuc_pred)
-            loss += base_loss + nuc_loss
+            loss = loss + nuc_loss + base_loss
         else:
             base_loss = 0
             nuc_loss = 0
@@ -376,6 +380,7 @@ class SequenceRegressor(tf.keras.Model):
                 "intermediate_size": self.intermediate_size,
                 "intermediate_activation": self.intermediate_activation,
                 "freeze_base": self.freeze_base,
+                "penalty": self.penalty,
             }
         )
         return config

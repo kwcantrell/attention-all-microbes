@@ -106,6 +106,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         nucleotides = self.nuc_logits(nuc_embeddings)
 
         asv_embeddings = embeddings[:, :, 0, :]
+        asv_embeddings = self.asv_norm(asv_embeddings)
         asv_embeddings = asv_embeddings + self.asv_pos(asv_embeddings)
 
         return asv_embeddings, nucleotides
@@ -119,7 +120,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         asv_input = tf.cast(inputs, dtype=tf.int32)
 
         embeddings = self.asv_encoder(asv_input, training=training)
-        embeddings = self.asv_norm(embeddings)
         embeddings = self.asv_scale(embeddings)
         asv_embeddings, nucleotides = self._split_asvs(embeddings)
 
@@ -132,9 +132,9 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             asv_embeddings, [[0, 0], [1, 0], [0, 0]], constant_values=0
         )
 
-        asv_embeddings = self._add_sample_token(asv_embeddings)
+        sample_gated_embeddings = self._add_sample_token(asv_embeddings)
         sample_gated_embeddings = self.sample_encoder(
-            asv_embeddings, mask=padded_asv_mask, training=training
+            sample_gated_embeddings, mask=padded_asv_mask, training=training
         )
 
         sample_embeddings = (
