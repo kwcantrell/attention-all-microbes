@@ -376,6 +376,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
@@ -404,6 +405,7 @@ def fit_sample_regressor(
     p_tree: str,
     p_gen_new_table: bool,
     p_lr,
+    p_warmup_steps,
     output_dir: str,
 ):
     from aam.callbacks import MeanAbsoluteError
@@ -581,6 +583,7 @@ def fit_sample_regressor(
                 )
             ],
             lr=p_lr,
+            warmup_steps=p_warmup_steps,
         )
         models.append(model_cv)
         print(f"Fold {i+1} mae: {model_cv.metric_value}")

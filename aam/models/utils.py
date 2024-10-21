@@ -60,16 +60,12 @@ class TransformerLearningRateSchedule(
         return config
 
 
-def cos_decay_with_warmup(lr):
-    # Set the learning rate
-    initial_learning_rate = 1e-4
-    warmup_steps = 1000
-
+def cos_decay_with_warmup(lr, warmup_steps=10000):
     # Learning rate schedule: Warmup followed by cosine decay
     lr_schedule = tf.keras.optimizers.schedules.CosineDecayRestarts(
-        initial_learning_rate=initial_learning_rate, first_decay_steps=warmup_steps
+        initial_learning_rate=lr, first_decay_steps=warmup_steps
     )
-    return lr_schedule
+    return 1e-4  # lr_schedule
 
 
 if __name__ == "__main__":
