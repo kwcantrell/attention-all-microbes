@@ -193,7 +193,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
-        self.epsilon = 0.000001
+        self.epsilon = 1e-6
         self.intermediate_ff = intermediate_ff
         self.intermediate_activation = intermediate_activation
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(151, seq_axis=2, name="nuc_pos")

@@ -98,8 +98,8 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
-        self._seq_alpha = self.add_weight(
-            name="seq_alpha",
+        self._count_alpha = self.add_weight(
+            name="count_alpha",
             initializer=tf.keras.initializers.Zeros(),
             trainable=True,
             dtype=tf.float32,
@@ -342,26 +342,21 @@ class SequenceRegressor(tf.keras.Model):
             rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1
         )
         count_attention_mask = count_mask
-
         base_embeddings, base_pred, nuc_embeddings = self.base_model(
             (tokens, counts), training=training
         )
 
-        scaled_base_embeddings = self.embeddings_scale(base_embeddings)
-        # scaled_base_embeddings = self.embeddings_norm(scaled_base_embeddings)
         count_gated_embeddings, count_pred = self._compute_count_embeddings(
-            scaled_base_embeddings,
+            base_embeddings,
             rel_abundance,
             attention_mask=count_attention_mask,
             training=training,
         )
+        count_embeddings = base_embeddings + count_gated_embeddings * self._count_alpha
 
-        count_embeddings = base_embeddings + count_gated_embeddings * self._seq_alpha
-
-        target_gated_embedings, target_out = self._compute_target_embeddings(
+        target_embeddings, target_out = self._compute_target_embeddings(
             count_embeddings, attention_mask=count_attention_mask, training=training
         )
-        target_embeddings = count_embeddings + target_gated_embedings * self._seq_alpha
 
         return (
             target_embeddings,

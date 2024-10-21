@@ -90,7 +90,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
     def _compute_nuc_loss(self, tokens: tf.Tensor, pred_tokens: tf.Tensor) -> tf.Tensor:
         return self.nuc_loss(tokens, pred_tokens)
 
-    def _add_sample_token(self, tensor: tf.Tensor, mask: tf.Tensor) -> tf.Tensor:
+    def _add_sample_token(self, tensor: tf.Tensor) -> tf.Tensor:
         # add <SAMPLE> token empbedding
         asv_shape = tf.shape(tensor)
         batch_len = asv_shape[0]
@@ -100,8 +100,17 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         sample_emb_shape[-1] = emb_len
         sample_token = tf.broadcast_to(self.sample_token, sample_emb_shape)
         embeddings = tf.concat([sample_token, tensor], axis=1)
-        mask = tf.pad(mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-        return embeddings, mask
+        return embeddings
+
+    def _split_asvs(self, embeddings):
+        nuc_embeddings = embeddings[:, :, :-1, :]
+        nucleotides = self.nuc_logits(nuc_embeddings)
+
+        asv_embeddings = embeddings[:, :, 0, :]
+        asv_embeddings = asv_embeddings + self.asv_pos(asv_embeddings)
+        asv_embeddings = self.asv_norm(asv_embeddings)
+
+        return asv_embeddings, nucleotides
 
     def call(
         self, inputs: tf.Tensor, training: bool = False
@@ -110,22 +119,28 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         # because keras converts all inputs
         # to float when calling build()
         asv_input = tf.cast(inputs, dtype=tf.int32)
+
         embeddings = self.asv_encoder(asv_input, training=training)
-        nuc_embeddings = embeddings[:, :, :-1, :]
-        nucleotides = self.nuc_logits(nuc_embeddings)
+        embeddings = self.asv_scale(embeddings)
+        asv_embeddings, nucleotides = self._split_asvs(embeddings)
 
-        attention_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
-        asv_embeddings = self.asv_scale(embeddings[:, :, -1, :])
-        asv_embeddings, attention_mask = self._add_sample_token(
-            asv_embeddings, attention_mask
+        asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
+        padded_asv_mask = tf.pad(asv_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
+
+        # padded embeddings are the skip connection
+        # normal asv embeddings continue through next block
+        padded_asv_embeddings = tf.pad(
+            asv_embeddings, [[0, 0], [1, 0], [0, 0]], constant_values=0
         )
-        asv_embeddings = asv_embeddings + self.asv_pos(asv_embeddings)
-        asv_embeddings = self.asv_norm(asv_embeddings)
+
+        asv_embeddings = self._add_sample_token(asv_embeddings)
         sample_gated_embeddings = self.sample_encoder(
-            asv_embeddings, mask=attention_mask, training=training
+            asv_embeddings, mask=padded_asv_mask, training=training
         )
 
-        sample_embeddings = asv_embeddings + sample_gated_embeddings * self._base_alpha
+        sample_embeddings = (
+            padded_asv_embeddings + sample_gated_embeddings * self._base_alpha
+        )
         return sample_embeddings, nucleotides
 
     def get_config(self):

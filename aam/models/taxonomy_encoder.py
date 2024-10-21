@@ -217,21 +217,21 @@ class TaxonomyEncoder(tf.keras.Model):
         tokens = tf.cast(tokens, dtype=tf.int32)
         counts = tf.cast(counts, dtype=tf.int32)
 
-        count_mask = float_mask(counts, dtype=tf.int32)
+        # base_embeddings, nuc_embeddings = self._compute_sequece_embeddings(
+        #     tokens, training=training
+        # )
+        sample_embeddings, nuc_embeddings = self.base_encoder(tokens, training=training)
 
         # account for <SAMPLE> token
+        count_mask = float_mask(counts, dtype=tf.int32)
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
 
-        base_embeddings, nuc_embeddings = self._compute_sequece_embeddings(
-            tokens, mask=count_attention_mask, training=training
-        )
-
         tax_gated_embeddings, tax_pred = self._compute_tax_embeddings(
-            base_embeddings, attention_mask=count_attention_mask, training=training
+            sample_embeddings, attention_mask=count_attention_mask, training=training
         )
 
-        tax_embeddings = base_embeddings + tax_gated_embeddings * self._tax_alpha
+        tax_embeddings = sample_embeddings + tax_gated_embeddings * self._tax_alpha
 
         return [tax_embeddings, tax_pred, nuc_embeddings]
 
