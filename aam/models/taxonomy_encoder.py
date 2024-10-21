@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Optional, Union
 
 import tensorflow as tf
-import tensorflow_models as tfm
 
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
 from aam.models.transformers import TransformerEncoder
@@ -21,7 +20,7 @@ class TaxonomyEncoder(tf.keras.Model):
         attention_heads: int = 4,
         attention_layers: int = 4,
         intermediate_size: int = 1024,
-        intermediate_activation: str = "relu",
+        intermediate_activation: str = "gelu",
         **kwargs,
     ):
         super(TaxonomyEncoder, self).__init__(**kwargs)
@@ -49,7 +48,7 @@ class TaxonomyEncoder(tf.keras.Model):
             sample_attention_heads=self.attention_heads,
             sample_attention_layers=self.attention_layers,
             sample_intermediate_size=self.intermediate_size,
-            dropout_rate=0.0,
+            dropout_rate=self.dropout_rate,
             nuc_attention_heads=1,
             nuc_attention_layers=3,
             nuc_intermediate_size=128,
@@ -63,12 +62,6 @@ class TaxonomyEncoder(tf.keras.Model):
             trainable=True,
             dtype=tf.float32,
         )
-        self.embeddings_scale = tf.keras.layers.Dense(
-            embedding_dim,
-            activation=self.intermediate_activation,
-            name="embeddings_scale",
-        )
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         self.tax_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -78,12 +71,12 @@ class TaxonomyEncoder(tf.keras.Model):
             activation=self.intermediate_activation,
             name="tax_encoder",
         )
-        self.tax_pos = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit, name="tax_pos"
-        )
 
         self.tax_level_logits = tf.keras.layers.Dense(
-            self.num_tax_levels, dtype=tf.float32, name="tax_level_logits"
+            self.num_tax_levels,
+            use_bias=False,
+            dtype=tf.float32,
+            name="tax_level_logits",
         )
 
         self.loss_metrics = sorted(["loss", "target_loss", "count_mse"])

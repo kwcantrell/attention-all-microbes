@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Union
 
 import tensorflow as tf
-import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
@@ -21,7 +20,7 @@ class UniFracEncoder(tf.keras.Model):
         attention_heads: int = 4,
         attention_layers: int = 4,
         intermediate_size: int = 1024,
-        intermediate_activation: str = "relu",
+        intermediate_activation: str = "gelu",
         **kwargs,
     ):
         super(UniFracEncoder, self).__init__(**kwargs)
@@ -60,12 +59,6 @@ class UniFracEncoder(tf.keras.Model):
             trainable=True,
             dtype=tf.float32,
         )
-        self.embeddings_scale = tf.keras.layers.Dense(
-            embedding_dim,
-            activation=self.intermediate_activation,
-            name="embeddings_scale",
-        )
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         self.unifrac_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -75,12 +68,9 @@ class UniFracEncoder(tf.keras.Model):
             activation=self.intermediate_activation,
             name="unifrac_encoder",
         )
-        self.unifrac_pos = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit, name="unifrac_pos"
-        )
 
         self.unifrac_ff = tf.keras.layers.Dense(
-            self.embedding_dim, dtype=tf.float32, name="unifrac_ff"
+            self.embedding_dim, use_bias=False, dtype=tf.float32, name="unifrac_ff"
         )
 
         self.loss_metrics = sorted(["loss", "target_loss", "count_mse"])

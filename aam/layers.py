@@ -37,7 +37,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         attention_layers,
         dropout_rate,
         intermediate_ff,
-        intermediate_activation="relu",
+        intermediate_activation="gelu",
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -55,6 +55,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             input_length=self.max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
+
         self.avs_attention = NucleotideAttention(
             max_bp=self.max_bp,
             num_heads=self.attention_heads,
@@ -64,7 +65,6 @@ class ASVEncoder(tf.keras.layers.Layer):
             intermediate_activation=self.intermediate_activation,
         )
         self.asv_token = self.num_tokens - 1
-
         self.nucleotide_position = tf.range(
             0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
         )
@@ -185,7 +185,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
         num_layers,
         dropout,
         intermediate_ff=1024,
-        intermediate_activation="relu",
+        intermediate_activation="gelu",
         **kwargs,
     ):
         super(NucleotideAttention, self).__init__(**kwargs)
@@ -243,9 +243,9 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self,
         num_heads,
         dropout,
-        epsilon=0.000001,
+        epsilon=1e-6,
         intermediate_ff=1024,
-        intermediate_activation="relu",
+        intermediate_activation="gelu",
         **kwargs,
     ):
         super(NucleotideAttentionBlock, self).__init__(**kwargs)

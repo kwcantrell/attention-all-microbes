@@ -45,9 +45,6 @@ class SequenceRegressor(tf.keras.Model):
         self.freeze_base = freeze_base
         self.loss_tracker = tf.keras.metrics.Mean()
 
-        self.embeddings_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-
         # layers used in model
         if isinstance(base_model, str):
             if base_model == "taxonomy":
@@ -114,7 +111,7 @@ class SequenceRegressor(tf.keras.Model):
         self.count_pos = tfm.nlp.layers.PositionEmbedding(
             self.token_limit + 5, dtype=tf.float32
         )
-        self.count_out = tf.keras.layers.Dense(1, dtype=tf.float32)
+        self.count_out = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
         self.count_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
         self.count_tracker = tf.keras.metrics.Mean()
@@ -126,12 +123,9 @@ class SequenceRegressor(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
-        self.target_pos = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit + 5, dtype=tf.float32
-        )
         self.target_tracker = tf.keras.metrics.Mean()
 
-        self.target_ff = tf.keras.layers.Dense(1, dtype=tf.float32)
+        self.target_ff = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
         self.metric_tracker = tf.keras.metrics.MeanAbsoluteError()
         self.metric_string = "mae"
         self.target_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)

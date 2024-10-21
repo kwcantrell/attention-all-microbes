@@ -6,7 +6,7 @@ class TransformerLearningRateSchedule(
     tf.keras.optimizers.schedules.LearningRateSchedule
 ):
     def __init__(
-        self, d_model, warmup_steps=4000, decay_method="cosine", initial_lr=1e-4
+        self, d_model, warmup_steps=100, decay_method="cosine", initial_lr=3e-4
     ):
         super(TransformerLearningRateSchedule, self).__init__()
 
@@ -61,4 +61,5 @@ class TransformerLearningRateSchedule(
 
 
 def cos_decay_with_warmup():
-    return 0.0003  # TransformerLearningRateSchedule(512)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(3e-4, 1000, 0.96)
+    return lr

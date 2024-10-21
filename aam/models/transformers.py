@@ -3,26 +3,17 @@ import tensorflow_models as tfm
 
 
 class TransformerEncoder(tf.keras.layers.Layer):
-    """Transformer encoder.
-
-    Transformer encoder is made up of N identical layers. Each layer is composed
-    of the sublayers:
-      1. Self-attention layer
-      2. Feedforward network (which is 2 fully-connected layers)
-    """
-
     def __init__(
         self,
         num_layers=6,
         num_attention_heads=8,
         intermediate_size=2048,
-        activation="relu",
+        activation="gelu",
         dropout_rate=0.0,
         attention_dropout_rate=0.0,
         use_bias=False,
         norm_first=True,
         norm_epsilon=1e-6,
-        intermediate_dropout=0.0,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -35,7 +26,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._use_bias = use_bias
         self._norm_first = norm_first
         self._norm_epsilon = norm_epsilon
-        self._intermediate_dropout = intermediate_dropout
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
@@ -48,7 +38,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     inner_dim=self._intermediate_size,
                     inner_activation=self._activation,
                     dropout_rate=self._dropout_rate,
-                    attention_dropout_rate=self._attention_dropout_rate,
+                    attention_dropout_rate=self._dropout_rate,
                     name=("layer_%d" % i),
                 )
             )
@@ -66,7 +56,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "use_bias": self._use_bias,
             "norm_first": self._norm_first,
             "norm_epsilon": self._norm_epsilon,
-            "intermediate_dropout": self._intermediate_dropout,
         }
         base_config = super(TransformerEncoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -93,5 +82,4 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 [encoder_inputs, attention_mask], training=training
             )
         output_tensor = encoder_inputs
-        # return self.output_normalization(output_tensor)
         return output_tensor

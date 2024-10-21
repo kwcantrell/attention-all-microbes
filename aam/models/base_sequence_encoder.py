@@ -24,7 +24,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         nuc_attention_heads: int = 2,
         nuc_attention_layers: int = 4,
         nuc_intermediate_size: int = 1024,
-        intermediate_activation: str = "relu",
+        intermediate_activation: str = "gelu",
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -55,10 +55,10 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             name="asv_encoder",
         )
         self.nuc_logits = tf.keras.layers.Dense(
-            6, name="nuc_logits", dtype=tf.float32, activation="softmax"
+            6, use_bias=False, name="nuc_logits", dtype=tf.float32, activation="softmax"
         )
 
-        self.asv_scale = tf.keras.layers.Dense(self.embedding_dim, activation="relu")
+        self.asv_scale = tf.keras.layers.Dense(self.embedding_dim, use_bias=False)
         self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.asv_pos = tfm.nlp.layers.PositionEmbedding(self.token_limit + 5)
 
@@ -66,7 +66,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             num_layers=self.sample_attention_layers,
             num_attention_heads=self.sample_attention_heads,
             intermediate_size=self.sample_intermediate_size,
-            norm_first=True,
             activation=self.intermediate_activation,
             dropout_rate=self.dropout_rate,
         )
@@ -74,7 +73,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             "sample_token",
             [1, 1, self.embedding_dim],
             dtype=tf.float32,
-            initializer=tf.keras.initializers.GlorotNormal(),
+            initializer=tf.keras.initializers.Zeros(),
             trainable=True,
         )
         self._base_alpha = self.add_weight(
@@ -108,7 +107,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
         asv_embeddings = embeddings[:, :, 0, :]
         asv_embeddings = asv_embeddings + self.asv_pos(asv_embeddings)
-        asv_embeddings = self.asv_norm(asv_embeddings)
 
         return asv_embeddings, nucleotides
 
@@ -121,6 +119,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         asv_input = tf.cast(inputs, dtype=tf.int32)
 
         embeddings = self.asv_encoder(asv_input, training=training)
+        embeddings = self.asv_norm(embeddings)
         embeddings = self.asv_scale(embeddings)
         asv_embeddings, nucleotides = self._split_asvs(embeddings)
 
