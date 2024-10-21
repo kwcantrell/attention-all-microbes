@@ -32,58 +32,46 @@ class InputLayer(tf.keras.layers.Layer):
 class ASVEncoder(tf.keras.layers.Layer):
     def __init__(
         self,
-        token_dim,
         max_bp,
-        pca_hidden_dim,
-        pca_heads,
-        pca_layers,
         attention_heads,
         attention_layers,
-        attention_ff,
         dropout_rate,
         intermediate_ff,
+        intermediate_activation="gelu",
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
-        self.token_dim = token_dim
         self.max_bp = max_bp
-        self.pca_hidden_dim = pca_hidden_dim
-        self.pca_heads = pca_heads
-        self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
-        self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
         self.intermediate_ff = intermediate_ff
-
+        self.intermediate_activation = intermediate_activation
         self.base_tokens = 6
         self.num_tokens = self.base_tokens * self.max_bp + 2
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
-            self.token_dim,
+            32,
             input_length=self.max_bp,
             embeddings_initializer=tf.keras.initializers.GlorotNormal(),
         )
+
         self.avs_attention = NucleotideAttention(
-            128,
             max_bp=self.max_bp,
             num_heads=self.attention_heads,
             num_layers=self.attention_layers,
             dropout=self.dropout_rate,
             intermediate_ff=intermediate_ff,
+            intermediate_activation=self.intermediate_activation,
         )
         self.asv_token = self.num_tokens - 1
-
         self.nucleotide_position = tf.range(
             0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
         )
 
-    def call(self, inputs, seq_mask=None, training=False):
+    def call(self, inputs, training=False):
         seq = inputs
         seq = seq + self.nucleotide_position
-
-        if seq_mask is not None:
-            seq = seq * seq_mask
 
         # add <ASV> token
         seq = tf.pad(seq, [[0, 0], [0, 0], [0, 1]], constant_values=self.asv_token)
@@ -103,16 +91,12 @@ class ASVEncoder(tf.keras.layers.Layer):
         config = super(ASVEncoder, self).get_config()
         config.update(
             {
-                "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
-                "pca_hidden_dim": self.pca_hidden_dim,
-                "pca_heads": self.pca_heads,
-                "pca_layers": self.pca_layers,
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
-                "attention_ff": self.attention_ff,
                 "dropout_rate": self.dropout_rate,
                 "intermediate_ff": self.intermediate_ff,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
         return config
@@ -124,9 +108,6 @@ class SampleEncoder(tf.keras.layers.Layer):
         self,
         token_dim,
         max_bp,
-        pca_hidden_dim,
-        pca_heads,
-        pca_layers,
         attention_heads,
         attention_layers,
         attention_ff,
@@ -137,17 +118,14 @@ class SampleEncoder(tf.keras.layers.Layer):
         dropout_rate = dropout_rate
         self.token_dim = token_dim
         self.max_bp = max_bp
-        self.pca_hidden_dim = pca_hidden_dim
-        self.pca_heads = pca_heads
-        self.pca_layers = pca_layers
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
         self.attention_ff = attention_ff
         self.dropout_rate = dropout_rate
 
         self.sample_attention = tfm.nlp.models.TransformerEncoder(
-            num_layers=4,
-            num_attention_heads=4,
+            num_layers=self.attention_layers,
+            num_attention_heads=self.attention_heads,
             intermediate_size=self.attention_ff,
             norm_first=True,
             activation="relu",
@@ -189,9 +167,6 @@ class SampleEncoder(tf.keras.layers.Layer):
             {
                 "token_dim": self.token_dim,
                 "max_bp": self.max_bp,
-                "pca_hidden_dim": self.pca_hidden_dim,
-                "pca_heads": self.pca_heads,
-                "pca_layers": self.pca_layers,
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
                 "attention_ff": self.attention_ff,
@@ -205,27 +180,23 @@ class SampleEncoder(tf.keras.layers.Layer):
 class NucleotideAttention(tf.keras.layers.Layer):
     def __init__(
         self,
-        hidden_dim,
         max_bp,
         num_heads,
         num_layers,
         dropout,
         intermediate_ff=1024,
+        intermediate_activation="gelu",
         **kwargs,
     ):
         super(NucleotideAttention, self).__init__(**kwargs)
-        self.hidden_dim = hidden_dim
         self.max_bp = max_bp
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
-        # self.epsilon = 0.000001
-        self.epsilon = 1e-3
+        self.epsilon = 1e-6
         self.intermediate_ff = intermediate_ff
-
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            max_length=self.max_bp + 1, seq_axis=2, name="nuc_pos"
-        )
+        self.intermediate_activation = intermediate_activation
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(151, seq_axis=2, name="nuc_pos")
         self.attention_layers = []
         for i in range(self.num_layers):
             self.attention_layers.append(
@@ -234,6 +205,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
                     dropout=self.dropout,
                     epsilon=self.epsilon,
                     intermediate_ff=intermediate_ff,
+                    intermediate_activation=self.intermediate_activation,
                     name=("layer_%d" % i),
                 )
             )
@@ -247,7 +219,6 @@ class NucleotideAttention(tf.keras.layers.Layer):
             attention_input = self.attention_layers[layer_idx](
                 attention_input, training=training
             )
-
         output = self.output_normalization(attention_input)
         return output
 
@@ -255,12 +226,12 @@ class NucleotideAttention(tf.keras.layers.Layer):
         config = super(NucleotideAttention, self).get_config()
         config.update(
             {
-                "hidden_dim": self.hidden_dim,
                 "max_bp": self.max_bp,
                 "num_heads": self.num_heads,
                 "num_layers": self.num_layers,
                 "dropout": self.dropout,
                 "intermediate_ff": self.intermediate_ff,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
         return config
@@ -269,7 +240,13 @@ class NucleotideAttention(tf.keras.layers.Layer):
 @tf.keras.saving.register_keras_serializable(package="NucleotideAttentionBlock")
 class NucleotideAttentionBlock(tf.keras.layers.Layer):
     def __init__(
-        self, num_heads, dropout, epsilon=0.000001, intermediate_ff=1024, **kwargs
+        self,
+        num_heads,
+        dropout,
+        epsilon=1e-6,
+        intermediate_ff=1024,
+        intermediate_activation="gelu",
+        **kwargs,
     ):
         super(NucleotideAttentionBlock, self).__init__(**kwargs)
         self.num_heads = num_heads
@@ -284,6 +261,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.ff_norm = tf.keras.layers.LayerNormalization(
             epsilon=self.epsilon, dtype=tf.float32
         )
+        self.intermediate_activation = intermediate_activation
 
     def build(self, input_shape):
         self._shape = input_shape
@@ -302,7 +280,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         self.inter_ff = tf.keras.layers.Dense(
-            self.intermediate_ff, activation="relu", use_bias=True
+            self.intermediate_ff, activation=self.intermediate_activation, use_bias=True
         )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
@@ -333,7 +311,7 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         )
 
         scaled_dot_tensor = tf.multiply(dot_tensor, 1 / self.scale_dot_factor)
-        softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-2)
+        softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-1)
 
         # [B, A, H, N, N] => [B, A, H, N, S]
         attention_output = tf.matmul(softmax_tensor, wv_tensor)
@@ -394,81 +372,8 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
                 "num_heads": self.num_heads,
                 "dropout": self.dropout,
                 "intermediate_ff": self.intermediate_ff,
+                "intermediate_activation": self.intermediate_activation,
             }
         )
 
-        return config
-
-
-@tf.keras.saving.register_keras_serializable(package="CountEncoder")
-class CountEncoder(tf.keras.layers.Layer):
-    def __init__(
-        self, dropout_rate=0.0, activity_regularizer=None, dtype=tf.float32, **kwargs
-    ):
-        super(CountEncoder, self).__init__(
-            activity_regularizer=activity_regularizer, dtype=dtype, **kwargs
-        )
-        self.token_dim = 128
-        self.dropout_rate = dropout_rate
-        self.embedding = tf.keras.layers.Embedding(2, 128, dtype=tf.float32)
-        self.count_ranks = tfm.nlp.layers.PositionEmbedding(512, dtype=dtype)
-        # self.pos_embeddings = tfm.nlp.layers.PositionEmbedding(513, dtype=dtype)
-        # # self.transfer_token = self.add_weight(
-        # #     "transfer_token",
-        # #     [1, 1, 128],
-        # #     dtype=tf.float32,
-        # #     initializer=tf.keras.initializers.GlorotNormal(),
-        # #     trainable=True,
-        # # )
-        # self.upscale_in_ff = tf.keras.layers.Dense(
-        #     128, use_bias=True, activation="relu", dtype=dtype
-        # )
-        # self.upscale_out_ff = tf.keras.layers.Dense(128, use_bias=True, dtype=dtype)
-
-        self.norm = tf.keras.layers.LayerNormalization(
-            epsilon=0.000001, dtype=tf.float32
-        )
-        # self.inter_dff = tf.keras.layers.Dense(
-        #     128, use_bias=True, activation="relu", dtype=dtype
-        # )
-        # self.outer_dff = tf.keras.layers.Dense(128, use_bias=True, dtype=dtype)
-        # self.dropout_inner = tf.keras.layers.Dropout(self.dropout_rate, dtype=dtype)
-        # self.dropout_outer = tf.keras.layers.Dropout(self.dropout_rate, dtype=dtype)
-
-    def call(self, inputs, count_mask=None, training=False):
-        # up project counts and mask
-        count_mask = tf.cast(count_mask, dtype=tf.float32)
-        counts = tf.cast(tf.reduce_sum(inputs, axis=1, keepdims=True), dtype=tf.float32)
-
-        shape = tf.shape(inputs)
-        inputs = tf.cast(inputs, dtype=tf.float32)
-
-        rel_abundance = inputs / counts
-
-        count_embeddings = tf.squeeze(inputs, axis=-1)
-        count_embeddings = self.embedding(float_mask(count_embeddings, dtype=tf.int32))
-        count_embeddings = tf.multiply(count_embeddings, rel_abundance)
-        count_embeddings = count_embeddings + self.count_ranks(count_embeddings)
-        # count_embeddings = self.norm(count_embeddings)
-        return count_embeddings
-        # # inputs = tf.cast(inputs, dtype=self.compute_dtype)
-        # batch_size = shape[0]
-        # n_dims = shape[1]
-        # # rel_abundance = self.upscale_in_ff(rel_abundance)
-        # # rel_abundance = self.upscale_out_ff(rel_abundance)
-        # # rel_abundance = self.dropout_inner(rel_abundance)
-
-        # count_embeddings = (
-        #     self.count_ranks(tf.ones(shape=[batch_size, n_dims, 128])) * rel_abundance
-        # )
-        # count_embeddings = count_embeddings + self.pos_embeddings(count_embeddings)
-        # count_embeddings = self.inter_dff(count_embeddings)
-        # count_embeddings = self.norm(count_embeddings)
-        # # count_embeddings = self.norm(count_embeddings, training=training)
-        # # count_embeddings = self.dropout_outer(count_embeddings)
-        # return count_embeddings
-
-    def get_config(self):
-        config = super(CountEncoder, self).get_config()
-        config.update({"dropout_rate": self.dropout_rate})
         return config

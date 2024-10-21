@@ -1,9 +1,5 @@
-import numpy as np
 import tensorflow as tf
-from biom import Table, load_table
-from biom.util import biom_open
-from scipy.sparse import csr_matrix
-from scipy.stats import rankdata
+from biom import load_table
 from unifrac import unweighted
 
 
@@ -29,26 +25,26 @@ def load_data(
         return data, row, col
 
     def _preprocess_table(table_path):
-        table = load_table(table_path)
-        table = table.remove_empty()
-        table_data = table.matrix_data.tocoo()
-        counts, (row, col) = table_data.data, table_data.coords
+        # table = load_table(table_path)
+        # table = table.remove_empty()
+        # table_data = table.matrix_data.tocoo()
+        # counts, (row, col) = table_data.data, table_data.coords
 
-        for i in range(table.shape[1]):
-            sample_mask = col == i
-            sample_counts = counts[sample_mask]
-            ranks = rankdata(sample_counts, method="ordinal")
-            max_rank = np.max(ranks)
-            rank_mask = ranks <= (max_rank - max_token_per_sample)
-            sample_counts[rank_mask] = 0
-            counts[sample_mask] = sample_counts
-        filtered_table_data = csr_matrix((counts, (row, col)), shape=table.shape)
-        new_table = Table(
-            filtered_table_data, table.ids(axis="observation"), table.ids()
-        )
-        with biom_open(temp_table_path, "w") as f:
-            new_table.to_hdf5(f, "aam")
-        return temp_table_path
+        # for i in range(table.shape[1]):
+        #     sample_mask = col == i
+        #     sample_counts = counts[sample_mask]
+        #     ranks = rankdata(sample_counts, method="ordinal")
+        #     max_rank = np.max(ranks)
+        #     rank_mask = ranks <= (max_rank - max_token_per_sample)
+        #     sample_counts[rank_mask] = 0
+        #     counts[sample_mask] = sample_counts
+        # filtered_table_data = csr_matrix((counts, (row, col)), shape=table.shape)
+        # new_table = Table(
+        #     filtered_table_data, table.ids(axis="observation"), table.ids()
+        # )
+        # with biom_open(temp_table_path, "w") as f:
+        #     new_table.to_hdf5(f, "aam")
+        return "/home/kalen/aam-research-exam/research-exam/healty-age-regression/temp_table.biom"
 
     table_path = _preprocess_table(table_path)
     data, row, col = _get_table_data(table_path)
@@ -93,13 +89,19 @@ def load_data(
                 return sample, tf.cast(tokens, dtype=tf.int32), unifrac_data
 
             def filter(samples, table_data, unifrac_data):
-                return table_data, tf.gather(unifrac_data, samples, axis=1)
+                return (
+                    (table_data, table_data[:, :, :1]),
+                    tf.gather(unifrac_data, samples, axis=1),
+                )
 
             ds = ds.map(process_table, num_parallel_calls=tf.data.AUTOTUNE)
             ds = ds.cache()
             if shuffle_samples and not val:
                 ds = ds.shuffle(shuffle_buf)
-            ds = ds.padded_batch(batch_size, drop_remainder=True)
+            ds = ds.padded_batch(
+                batch_size,
+                drop_remainder=True,
+            )
             ds = ds.map(filter, num_parallel_calls=tf.data.AUTOTUNE)
 
             return ds

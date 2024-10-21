@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import os
 
@@ -5,13 +7,16 @@ import numpy as np
 import tensorflow as tf
 
 from aam.callbacks import SaveModel
+from aam.models.utils import cos_decay_with_warmup
 
 
 class CVModel:
-    def __init__(self, model, train_dataset, val_dataset, output_dir, fold_label):
-        self.model = model
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+    def __init__(
+        self, model: tf.keras.Model, train_data, val_data, output_dir, fold_label
+    ):
+        self.model: tf.keras.Model = model
+        self.train_data = train_data
+        self.val_data = val_data
         self.output_dir = output_dir
         self.fold_label = fold_label
         self.time_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -32,11 +37,14 @@ class CVModel:
         patience=10,
         early_stop_warmup=50,
         callbacks=[],
+        lr=1e-4,
+        warmup_steps=10000,
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        optimizer = tf.keras.optimizers.Adam(0.0001)
-        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+        optimizer = tf.keras.optimizers.AdamW(
+            cos_decay_with_warmup(lr, warmup_steps), beta_2=0.95
+        )
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(
@@ -50,14 +58,15 @@ class CVModel:
         ]
         self.model.compile(optimizer=optimizer, loss=loss, run_eagerly=False)
         self.model.fit(
-            self.train_dataset,
-            validation_data=self.val_dataset,
+            self.train_data["dataset"],
+            validation_data=self.val_data["dataset"],
             callbacks=[*callbacks, *core_callbacks],
             epochs=epochs,
-            # verbose=0,
+            steps_per_epoch=self.train_data["steps_pre_epoch"],
+            validation_steps=self.val_data["steps_pre_epoch"],
         )
         self.model.set_weights(model_saver.best_weights)
-        self.metric_value = self.model.evaluate_metric(self.val_dataset, metric)
+        self.metric_value = self.model.evaluate_metric(self.val_data["dataset"], metric)
 
     def save(self, path, save_format="keras"):
         self.model.save(path, save_format=save_format)

@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def _pairwise_distances(embeddings, squared=False):
+def _pairwise_distances_unstable(embeddings, squared=False):
     """Compute the 2D matrix of distances between all the embeddings.
     Args:
         embeddings: tensor of shape (batch_size, embed_dim)
@@ -51,6 +51,27 @@ def _pairwise_distances(embeddings, squared=False):
     return distances
 
 
+def _pairwise_distances(embeddings, squared=False):
+    distances = tf.expand_dims(embeddings, axis=0) - tf.expand_dims(embeddings, axis=1)
+    distances = tf.multiply(distances, distances)
+    distances = tf.reduce_sum(distances, axis=-1)
+
+    if not squared:
+        # Because the gradient of sqrt is infinite when distances == 0.0
+        # (ex: on the diagonal)
+        # we need to add a small epsilon where distances == 0.0
+        mask = tf.cast(tf.equal(distances, 0.0), tf.float32)
+        distances = distances + mask * 1e-07
+
+        distances = tf.sqrt(distances)
+
+        # Correct the epsilon added: set the distances on the mask to be
+        # exactly 0.0
+        distances = distances * (1.0 - mask)
+
+    return distances
+
+
 class PairwiseLoss(tf.keras.losses.Loss):
     def __init__(self, reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
@@ -58,6 +79,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
     def call(self, y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred, squared=False)
         differences = tf.math.square(y_pred_dist - y_true)
+        differences = tf.linalg.band_part(differences, 0, -1)
         return differences
 
 
