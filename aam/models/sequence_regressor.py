@@ -6,6 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.models.taxonomy_encoder import TaxonomyEncoder
+from aam.models.transformers import TransformerEncoder
 from aam.models.unifrac_encoder import UniFracEncoder
 from aam.utils import float_mask, masked_loss
 
@@ -45,7 +46,7 @@ class SequenceRegressor(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean()
 
         self.embeddings_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
+        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         # layers used in model
         if isinstance(base_model, str):
@@ -97,7 +98,13 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
-        self.count_encoder = tfm.nlp.models.TransformerEncoder(
+        self._seq_alpha = self.add_weight(
+            name="seq_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
+        self.count_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
             intermediate_size=intermediate_size,
@@ -112,7 +119,7 @@ class SequenceRegressor(tf.keras.Model):
         self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
         self.count_tracker = tf.keras.metrics.Mean()
 
-        self.target_encoder = tfm.nlp.models.TransformerEncoder(
+        self.target_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
             intermediate_size=intermediate_size,
@@ -295,9 +302,7 @@ class SequenceRegressor(tf.keras.Model):
     ) -> tf.Tensor:
         count_embeddings = tensor + self.count_pos(tensor) * relative_abundances
         count_embeddings = self.count_encoder(
-            count_embeddings,
-            attention_mask=attention_mask > 0,
-            training=training,
+            count_embeddings, mask=attention_mask, training=training
         )
         count_pred = count_embeddings[:, 1:, :]
         count_pred = self.count_out(count_pred)
@@ -311,9 +316,7 @@ class SequenceRegressor(tf.keras.Model):
     ) -> tf.Tensor:
         target_embeddings = tensor + self.target_pos(tensor)
         target_embeddings = self.target_encoder(
-            target_embeddings,
-            attention_mask=attention_mask > 0,
-            training=training,
+            target_embeddings, mask=attention_mask, training=training
         )
         target_out = target_embeddings[:, 0, :]
         target_out = self.target_ff(target_out)
@@ -338,24 +341,27 @@ class SequenceRegressor(tf.keras.Model):
         rel_abundance = tf.pad(
             rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1
         )
-        count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
+        count_attention_mask = count_mask
 
         base_embeddings, base_pred, nuc_embeddings = self.base_model(
             (tokens, counts), training=training
         )
-        base_embeddings = self.embeddings_scale(base_embeddings)
-        base_embeddings = self.embeddings_norm(base_embeddings)
 
-        count_embeddings, count_pred = self._compute_count_embeddings(
-            base_embeddings,
+        scaled_base_embeddings = self.embeddings_scale(base_embeddings)
+        # scaled_base_embeddings = self.embeddings_norm(scaled_base_embeddings)
+        count_gated_embeddings, count_pred = self._compute_count_embeddings(
+            scaled_base_embeddings,
             rel_abundance,
             attention_mask=count_attention_mask,
             training=training,
         )
 
-        target_embeddings, target_out = self._compute_target_embeddings(
+        count_embeddings = base_embeddings + count_gated_embeddings * self._seq_alpha
+
+        target_gated_embedings, target_out = self._compute_target_embeddings(
             count_embeddings, attention_mask=count_attention_mask, training=training
         )
+        target_embeddings = count_embeddings + target_gated_embedings * self._seq_alpha
 
         return (
             target_embeddings,

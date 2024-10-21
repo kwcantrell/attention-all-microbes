@@ -37,7 +37,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         attention_layers,
         dropout_rate,
         intermediate_ff,
-        intermediate_activation,
+        intermediate_activation="relu",
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)

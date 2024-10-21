@@ -61,4 +61,4 @@ class TransformerLearningRateSchedule(
 
 
 def cos_decay_with_warmup():
-    return TransformerLearningRateSchedule(512)
+    return 0.0003  # TransformerLearningRateSchedule(512)

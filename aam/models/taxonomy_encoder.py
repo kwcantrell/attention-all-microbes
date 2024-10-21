@@ -6,6 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
+from aam.models.transformers import TransformerEncoder
 from aam.utils import float_mask, masked_loss
 
 
@@ -56,16 +57,20 @@ class TaxonomyEncoder(tf.keras.Model):
             name="base_encoder",
         )
 
+        self._tax_alpha = self.add_weight(
+            name="tax_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
         self.embeddings_scale = tf.keras.layers.Dense(
             embedding_dim,
             activation=self.intermediate_activation,
             name="embeddings_scale",
         )
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(
-            epsilon=0.000001, name="embeddings_norm"
-        )
+        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
-        self.tax_encoder = tfm.nlp.models.TransformerEncoder(
+        self.tax_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
             intermediate_size=intermediate_size,
@@ -182,6 +187,7 @@ class TaxonomyEncoder(tf.keras.Model):
     def _compute_sequece_embeddings(
         self,
         tensor: tf.Tensor,
+        mask: Optional[tf.Tensor] = None,
         training: bool = False,
     ) -> tf.Tensor:
         base_embeddings, nuc_embeddings = self.base_encoder(tensor, training=training)
@@ -197,9 +203,7 @@ class TaxonomyEncoder(tf.keras.Model):
     ) -> tf.Tensor:
         tax_embeddings = tensor + self.tax_pos(tensor)
         tax_embeddings = self.tax_encoder(
-            tax_embeddings,
-            attention_mask=attention_mask > 0,
-            training=training,
+            tax_embeddings, mask=attention_mask, training=training
         )
         tax_pred = tax_embeddings[:, 1:, :]
         tax_pred = self.tax_level_logits(tax_pred)
@@ -217,15 +221,17 @@ class TaxonomyEncoder(tf.keras.Model):
 
         # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-        count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
+        count_attention_mask = count_mask
 
         base_embeddings, nuc_embeddings = self._compute_sequece_embeddings(
-            tokens, training=training
+            tokens, mask=count_attention_mask, training=training
         )
 
-        tax_embeddings, tax_pred = self._compute_tax_embeddings(
+        tax_gated_embeddings, tax_pred = self._compute_tax_embeddings(
             base_embeddings, attention_mask=count_attention_mask, training=training
         )
+
+        tax_embeddings = base_embeddings + tax_gated_embeddings * self._tax_alpha
 
         return [tax_embeddings, tax_pred, nuc_embeddings]
 

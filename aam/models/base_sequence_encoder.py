@@ -6,6 +6,7 @@ import tensorflow_models as tfm
 from aam.layers import (
     ASVEncoder,
 )
+from aam.models.transformers import TransformerEncoder
 from aam.utils import float_mask, masked_loss
 
 
@@ -57,11 +58,11 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             6, name="nuc_logits", dtype=tf.float32, activation="softmax"
         )
 
-        self.asv_scale = tf.keras.layers.Dense(embedding_dim, activation="relu")
-        self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=0.000001)
+        self.asv_scale = tf.keras.layers.Dense(self.embedding_dim, activation="relu")
+        self.asv_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.asv_pos = tfm.nlp.layers.PositionEmbedding(self.token_limit + 5)
 
-        self.sample_encoder = tfm.nlp.models.TransformerEncoder(
+        self.sample_encoder = TransformerEncoder(
             num_layers=self.sample_attention_layers,
             num_attention_heads=self.sample_attention_heads,
             intermediate_size=self.sample_intermediate_size,
@@ -75,6 +76,12 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             dtype=tf.float32,
             initializer=tf.keras.initializers.GlorotNormal(),
             trainable=True,
+        )
+        self._base_alpha = self.add_weight(
+            name="base_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
         )
 
         self.linear_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
@@ -103,27 +110,22 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         # because keras converts all inputs
         # to float when calling build()
         asv_input = tf.cast(inputs, dtype=tf.int32)
-        embeddings = self.asv_encoder(
-            asv_input,
-            training=training,
-        )
+        embeddings = self.asv_encoder(asv_input, training=training)
         nuc_embeddings = embeddings[:, :, :-1, :]
         nucleotides = self.nuc_logits(nuc_embeddings)
 
         attention_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
-
         asv_embeddings = self.asv_scale(embeddings[:, :, -1, :])
-        sample_embeddings, attention_mask = self._add_sample_token(
+        asv_embeddings, attention_mask = self._add_sample_token(
             asv_embeddings, attention_mask
         )
-        sample_embeddings = self.asv_norm(sample_embeddings)
-        sample_embeddings = sample_embeddings + self.asv_pos(sample_embeddings)
-
-        attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
-        sample_embeddings = self.sample_encoder(
-            sample_embeddings, attention_mask=attention_mask, training=training
+        asv_embeddings = asv_embeddings + self.asv_pos(asv_embeddings)
+        asv_embeddings = self.asv_norm(asv_embeddings)
+        sample_gated_embeddings = self.sample_encoder(
+            asv_embeddings, mask=attention_mask, training=training
         )
 
+        sample_embeddings = asv_embeddings + sample_gated_embeddings * self._base_alpha
         return sample_embeddings, nucleotides
 
     def get_config(self):

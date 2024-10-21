@@ -7,6 +7,7 @@ import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
+from aam.models.transformers import TransformerEncoder
 from aam.utils import float_mask
 
 
@@ -53,16 +54,20 @@ class UniFracEncoder(tf.keras.Model):
             name="base_encoder",
         )
 
+        self._unifrac_alpha = self.add_weight(
+            name="unifrac_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
         self.embeddings_scale = tf.keras.layers.Dense(
             embedding_dim,
             activation=self.intermediate_activation,
             name="embeddings_scale",
         )
-        self.embeddings_norm = tf.keras.layers.LayerNormalization(
-            epsilon=0.000001, name="embeddings_norm"
-        )
+        self.embeddings_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
-        self.unifrac_encoder = tfm.nlp.models.TransformerEncoder(
+        self.unifrac_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
             intermediate_size=intermediate_size,
@@ -106,11 +111,8 @@ class UniFracEncoder(tf.keras.Model):
         nuc_tokens, counts = model_inputs
         embeddings, unifrac_embeddings, nuc_pred = outputs
         tax_loss = self._compute_unifrac_loss(y_true, unifrac_embeddings)
-
         nuc_loss = self._compute_nuc_loss(nuc_tokens, nuc_pred)
-
         loss = tax_loss + nuc_loss
-
         return [loss, tax_loss, nuc_loss]
 
     def predict_step(
@@ -174,11 +176,14 @@ class UniFracEncoder(tf.keras.Model):
     def _compute_sequece_embeddings(
         self,
         tensor: tf.Tensor,
+        mask: Optional[tf.Tensor] = None,
         training: bool = False,
     ) -> tf.Tensor:
-        base_embeddings, nuc_embeddings = self.base_encoder(tensor, training=training)
+        base_embeddings, nuc_embeddings = self.base_encoder(
+            tensor, mask=mask, training=training
+        )
         base_embeddings = self.embeddings_scale(base_embeddings)
-        base_embeddings = self.embeddings_norm(base_embeddings)
+        # base_embeddings = self.embeddings_norm(base_embeddings)
         return base_embeddings, nuc_embeddings
 
     def _compute_embeddings(
@@ -189,9 +194,7 @@ class UniFracEncoder(tf.keras.Model):
     ) -> tf.Tensor:
         embeddings = tensor + self.unifrac_pos(tensor)
         embeddings = self.unifrac_encoder(
-            embeddings,
-            attention_mask=attention_mask > 0,
-            training=training,
+            embeddings, mask=attention_mask, training=training
         )
         unifrac_embedding = embeddings[:, 0, :]
         unifrac_embedding = self.unifrac_ff(unifrac_embedding)
@@ -209,15 +212,17 @@ class UniFracEncoder(tf.keras.Model):
 
         # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-        count_attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
+        count_attention_mask = count_mask
 
         base_embeddings, nuc_embeddings = self._compute_sequece_embeddings(
-            tokens, training=training
+            tokens, count_mask, training=training
         )
 
-        embeddings, unifrac_embedding = self._compute_embeddings(
+        unifrac_gated_embeddings, unifrac_embedding = self._compute_embeddings(
             base_embeddings, attention_mask=count_attention_mask, training=training
         )
+
+        embeddings = base_embeddings + self._unifrac_alpha * unifrac_gated_embeddings
 
         return [embeddings, unifrac_embedding, nuc_embeddings]
 
