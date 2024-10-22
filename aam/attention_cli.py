@@ -602,7 +602,6 @@ def fit_sample_regressor(
         shift=train_data["shift"],
         scale=train_data["scale"],
         epochs=1,
-        num_tables=5,
     )
     best_mae, ensemble_mae = model_ensemble.plot_fn(
         _mean_absolute_error, test_data["dataset"], figure_path
