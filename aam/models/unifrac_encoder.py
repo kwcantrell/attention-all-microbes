@@ -21,6 +21,7 @@ class UniFracEncoder(tf.keras.Model):
         attention_layers: int = 4,
         intermediate_size: int = 1024,
         intermediate_activation: str = "gelu",
+        max_bp: int = 150,
         **kwargs,
     ):
         super(UniFracEncoder, self).__init__(**kwargs)
@@ -32,6 +33,7 @@ class UniFracEncoder(tf.keras.Model):
         self.attention_layers = attention_layers
         self.intermediate_size = intermediate_size
         self.intermediate_activation = intermediate_activation
+        self.max_bp = max_bp
 
         self.loss_tracker = tf.keras.metrics.Mean()
         self.unifrac_loss = PairwiseLoss()
@@ -40,7 +42,7 @@ class UniFracEncoder(tf.keras.Model):
         # layers used in model
         self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,
-            150,
+            self.max_bp,
             self.token_limit,
             sample_attention_heads=self.attention_heads,
             sample_attention_layers=self.attention_layers,
@@ -201,6 +203,7 @@ class UniFracEncoder(tf.keras.Model):
                 "attention_layers": self.attention_layers,
                 "intermediate_size": self.intermediate_size,
                 "intermediate_activation": self.intermediate_activation,
+                "max_bp": self.max_bp,
             }
         )
         return config

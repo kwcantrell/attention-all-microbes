@@ -64,6 +64,7 @@ class GeneratorDataset:
         epochs: int = 1000,
         gen_new_tables: bool = False,
         batch_size: int = 8,
+        max_bp: int = 150,
     ):
         table, metadata
         self.table = table
@@ -82,6 +83,7 @@ class GeneratorDataset:
         self.samples_per_minibatch = batch_size
 
         self.batch_size = batch_size
+        self.max_bp = max_bp
 
         self.preprocessed_table = self.table
         self.obs_ids = self.preprocessed_table.ids(axis="observation")
@@ -387,7 +389,7 @@ class GeneratorDataset:
     def get_data(self):
         generator = self._create_epoch_generator()
         output_sig = (
-            tf.TensorSpec(shape=[self.batch_size, None, 150], dtype=tf.int32),
+            tf.TensorSpec(shape=[self.batch_size, None, self.max_bp], dtype=tf.int32),
             tf.TensorSpec(shape=[self.batch_size, None, 1], dtype=tf.int32),
         )
 

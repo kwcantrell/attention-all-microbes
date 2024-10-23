@@ -29,6 +29,8 @@ class SequenceRegressor(tf.keras.Model):
         base_model: Union[str, TaxonomyEncoder, UniFracEncoder] = "taxonomy",
         freeze_base: bool = False,
         penalty: float = 1.0,
+        nuc_penalty: float = 1.0,
+        max_bp: int = 150,
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
@@ -45,6 +47,8 @@ class SequenceRegressor(tf.keras.Model):
         self.intermediate_activation = intermediate_activation
         self.freeze_base = freeze_base
         self.penalty = penalty
+        self.nuc_penalty = nuc_penalty
+        self.max_bp = max_bp
         self.loss_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
@@ -59,6 +63,7 @@ class SequenceRegressor(tf.keras.Model):
                     attention_layers=self.attention_layers,
                     intermediate_size=self.intermediate_size,
                     intermediate_activation=self.intermediate_activation,
+                    max_bp=self.max_bp,
                 )
             elif base_model == "unifrac":
                 self.base_model = UniFracEncoder(
@@ -69,6 +74,7 @@ class SequenceRegressor(tf.keras.Model):
                     attention_layers=self.attention_layers,
                     intermediate_size=self.intermediate_size,
                     intermediate_activation=self.intermediate_activation,
+                    max_bp=self.max_bp,
                 )
             else:
                 raise Exception("Invalid base model option.")
@@ -174,7 +180,9 @@ class SequenceRegressor(tf.keras.Model):
             base_loss = (
                 self.base_losses["base_loss"](base_target, base_pred) * self.penalty
             )
-            nuc_loss = self.base_losses["nuc_entropy"](nuc_tokens, nuc_pred)
+            nuc_loss = (
+                self.base_losses["nuc_entropy"](nuc_tokens, nuc_pred) * self.nuc_penalty
+            )
             loss = loss + nuc_loss + base_loss
         else:
             base_loss = 0
@@ -381,6 +389,8 @@ class SequenceRegressor(tf.keras.Model):
                 "intermediate_activation": self.intermediate_activation,
                 "freeze_base": self.freeze_base,
                 "penalty": self.penalty,
+                "nuc_penalty": self.nuc_penalty,
+                "max_bp": self.max_bp,
             }
         )
         return config

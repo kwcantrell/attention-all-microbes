@@ -196,7 +196,9 @@ class NucleotideAttention(tf.keras.layers.Layer):
         self.epsilon = 1e-6
         self.intermediate_ff = intermediate_ff
         self.intermediate_activation = intermediate_activation
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(151, seq_axis=2, name="nuc_pos")
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+            self.max_bp + 1, seq_axis=2, name="nuc_pos"
+        )
         self.attention_layers = []
         for i in range(self.num_layers):
             self.attention_layers.append(
