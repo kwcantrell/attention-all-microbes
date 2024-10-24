@@ -364,6 +364,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-report-back", default=5, show_default=True, type=int)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-penalty", default=1.0, show_default=True, type=float)
+@click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
@@ -377,6 +378,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
 @click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_regressor(
     i_table: str,
@@ -395,6 +397,7 @@ def fit_sample_regressor(
     p_report_back: int,
     p_asv_limit: int,
     p_penalty: float,
+    p_nuc_penalty: float,
     p_embedding_dim: int,
     p_attention_heads: int,
     p_attention_layers: int,
@@ -406,6 +409,7 @@ def fit_sample_regressor(
     p_gen_new_table: bool,
     p_lr,
     p_warmup_steps,
+    p_max_bp: int,
     output_dir: str,
 ):
     from aam.callbacks import MeanAbsoluteError
@@ -456,6 +460,7 @@ def fit_sample_regressor(
             scale=scale,
             epochs=epochs,
             gen_new_tables=gen_new_tables,
+            max_bp=p_max_bp,
             **common_kwargs,
         )
 
@@ -469,6 +474,7 @@ def fit_sample_regressor(
             scale=scale,
             epochs=epochs,
             gen_new_tables=gen_new_tables,
+            max_bp=p_max_bp,
             **common_kwargs,
         )
 
@@ -551,8 +557,10 @@ def fit_sample_regressor(
             freeze_base=p_no_freeze_base_weights,
             num_tax_levels=train_data["num_tokens"],
             penalty=p_penalty,
+            nuc_penalty=p_nuc_penalty,
+            max_bp=p_max_bp,
         )
-        token_shape = tf.TensorShape([None, None, 150])
+        token_shape = tf.TensorShape([None, None, p_max_bp])
         count_shape = tf.TensorShape([None, None, 1])
         model.build([token_shape, count_shape])
         model.summary()
