@@ -31,6 +31,7 @@ class SequenceRegressor(tf.keras.Model):
         penalty: float = 1.0,
         nuc_penalty: float = 1.0,
         max_bp: int = 150,
+        output_dim: int = 1,
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
@@ -49,6 +50,7 @@ class SequenceRegressor(tf.keras.Model):
         self.penalty = penalty
         self.nuc_penalty = nuc_penalty
         self.max_bp = max_bp
+        self.output_dim = output_dim
         self.loss_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
@@ -133,7 +135,7 @@ class SequenceRegressor(tf.keras.Model):
         )
         self.target_tracker = tf.keras.metrics.Mean()
 
-        self.target_ff = tf.keras.layers.Dense(1, use_bias=False, dtype=tf.float32)
+        self.target_ff = tf.keras.layers.Dense(self.output_dim, use_bias=False, dtype=tf.float32)
         self.metric_tracker = tf.keras.metrics.MeanAbsoluteError()
         self.metric_string = "mae"
         self.target_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
@@ -391,6 +393,7 @@ class SequenceRegressor(tf.keras.Model):
                 "penalty": self.penalty,
                 "nuc_penalty": self.nuc_penalty,
                 "max_bp": self.max_bp,
+                "output_dim": self.output_dim,
             }
         )
         return config
