@@ -604,17 +604,17 @@ def fit_sample_regressor(
         f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}"
     )
 
-    test_data = _get_fold(
-        test_indices,
-        shuffle=False,
-        shift=train_data["shift"],
-        scale=train_data["scale"],
-        epochs=1,
-    )
-    best_mae, ensemble_mae = model_ensemble.plot_fn(
-        _mean_absolute_error, test_data["dataset"], figure_path
-    )
-    print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
+#   test_data = _get_fold(
+#       test_indices,
+#       shuffle=False,
+#       shift=train_data["shift"],
+#       scale=train_data["scale"],
+#       epochs=1,
+#   )
+#   best_mae, ensemble_mae = model_ensemble.plot_fn(
+#       _mean_absolute_error, test_data["dataset"], figure_path
+#   )
+#   print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
 
 
 @cli.command()
