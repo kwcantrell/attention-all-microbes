@@ -66,6 +66,7 @@ class GeneratorDataset:
         max_bp: int = 150,
         is_16S: bool = True,
         is_categorical: Optional[bool] = None,
+        seed=None,
     ):
         table, metadata
         self.table = table
@@ -90,9 +91,12 @@ class GeneratorDataset:
 
         self.preprocessed_table = self.table
         self.obs_ids = self.preprocessed_table.ids(axis="observation")
+        self.seed = seed
 
         print("creating table...")
-        self.rarefy_table = self.preprocessed_table.subsample(self.rarefy_depth)
+        self.rarefy_table = self.preprocessed_table.subsample(
+            self.rarefy_depth, seed=self.seed
+        )
 
         print(f"Table shape: {self.rarefy_table.shape}")
         self.sample_indices = np.arange(len(self.rarefy_table.ids()))

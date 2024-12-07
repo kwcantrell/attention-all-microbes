@@ -1,9 +1,10 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from aam.models.attention_pooling import AttentionPooling
+# from aam.models.attention_pooling import AttentionPooling
+from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
-from aam.utils import float_mask, create_random_mask
+from aam.utils import create_random_mask, float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="activity_regularization")
@@ -80,7 +81,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
         )
-        self.attention_pool = AttentionPooling()
+        self.attention_pool = MultiHeadAttentionPooling()
         super(ASVEncoder, self).build(input_shape)
 
     def call(self, inputs, training=False):

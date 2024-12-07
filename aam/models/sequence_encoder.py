@@ -397,13 +397,9 @@ class SequenceEncoder(tf.keras.Model):
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
-        tokens, counts = inputs
-        tokens = tf.cast(tokens, dtype=tf.int32)
-        counts = tf.cast(counts, dtype=tf.int32)
+        tokens = inputs
 
-        asv_embeddings = self.base_encoder.asv_embeddings(tokens, training=training)
-
-        return asv_embeddings
+        return self.base_encoder.asv_embeddings(tokens, training=training)
 
     def asv_gradient(
         self, inputs: tuple[tf.Tensor, tf.Tensor], asv_embeddings

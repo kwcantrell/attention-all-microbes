@@ -6,7 +6,9 @@ import tensorflow_models as tfm
 from aam.layers import (
     ASVEncoder,
 )
-from aam.models.attention_pooling import AttentionPooling
+
+# from aam.models.attention_pooling import AttentionPooling
+from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
 from aam.utils import float_mask
 
@@ -88,22 +90,28 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             dropout_rate=self.dropout_rate,
         )
 
-        self.attention_pool = AttentionPooling()
+        # self.attention_pool = AttentionPooling()
+        self.attention_pool = MultiHeadAttentionPooling()
 
-    def _split_asvs(self, embeddings, training):
+    def _split_asvs(self, embeddings, mask, indicies, training):
         asv_embeddings = embeddings
         if self.is_16S:
             shape = tf.shape(embeddings)
             batch_dim = shape[0]
             seq_dim = shape[1]
+
             embeddings = tf.reshape(
                 embeddings, (batch_dim * seq_dim, self.max_bp, self.embedding_dim)
-            )
+            )[mask]
             asv_embeddings = self.attention_pool(embeddings, training=training)
+            asv_embeddings = tf.scatter_nd(
+                indices=indicies,
+                updates=asv_embeddings,
+                shape=[batch_dim * seq_dim, self.embedding_dim],
+            )
             asv_embeddings = tf.reshape(
                 asv_embeddings, shape=(batch_dim, seq_dim, self.embedding_dim)
             )
-            # asv_embeddings = asv_embeddings[:, :, 0, :]
         else:
             asv_embeddings = asv_embeddings[:, :, 0, :]
 
@@ -117,6 +125,12 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         # because keras converts all inputs
         # to float when calling build()
         asv_input = tf.cast(inputs, dtype=tf.int32)
+        # boolean mask used to select non-pad tokens
+        mask = tf.reduce_sum(asv_input, axis=-1) > 0  # shape [B, A]
+        mask = tf.reshape(mask, shape=[-1])  # shape [B * A]
+
+        # create indices for non-pad locations
+        indices = tf.where(mask)
 
         if training and random_mask is not None:
             asv_input = asv_input * tf.cast(random_mask, dtype=tf.int32)
@@ -124,7 +138,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         embeddings, random_mask, nuc_pred = self.asv_encoder(
             asv_input, training=training
         )
-        asv_embeddings = self._split_asvs(embeddings, training=training)
+        asv_embeddings = self._split_asvs(embeddings, mask, indices, training=training)
 
         return asv_embeddings, random_mask, nuc_pred
 
@@ -159,23 +173,16 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
     #     )
     #     return sample_embeddings
 
-    def get_asv_embeddings(
+    def asv_embeddings(
         self, inputs: tf.Tensor, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor]:
-        print("holyfucking shit")
         # need to cast inputs to int32 to avoid error
         # because keras converts all inputs
         # to float when calling build()
         asv_input = tf.cast(inputs, dtype=tf.int32)
-        asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
 
-        if self.is_16S:
-            embeddings = self.asv_encoder(asv_input, training=training)
-            embeddings = self.asv_scale(embeddings)
-        else:
-            embeddings = self.asv_embeddings(asv_input)
-        asv_embeddings, nucleotides = self._split_asvs(embeddings)
-        return asv_embeddings
+        embeddings, _, _ = self.asv_encoder(asv_input, training=training)
+        return self._split_asvs(embeddings, training=training)
 
     def asv_gradient(
         self, inputs: tf.Tensor, asv_embeddings
