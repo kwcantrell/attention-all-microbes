@@ -31,6 +31,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         is_16S: bool = True,
         vocab_size: int = 6,
         add_token: bool = True,
+        nucleotide_encoder=None,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -48,20 +49,24 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.is_16S = is_16S
         self.vocab_size = vocab_size
         self.add_token = add_token
+        self.nucleotide_encoder = nucleotide_encoder
 
         # layers used in model
         if self.is_16S:
-            self.asv_encoder = ASVEncoder(
-                max_bp,
-                nuc_attention_heads,
-                nuc_attention_layers,
-                dropout_rate,
-                nuc_intermediate_size,
-                intermediate_activation=self.intermediate_activation,
-                add_token=self.add_token,
-                embedding_dim=self.embedding_dim,
-                name="asv_encoder",
-            )
+            if self.nucleotide_encoder is not None:
+                self.asv_encoder = self.nucleotide_encoder
+            else:
+                self.asv_encoder = ASVEncoder(
+                    max_bp,
+                    nuc_attention_heads,
+                    nuc_attention_layers,
+                    dropout_rate,
+                    nuc_intermediate_size,
+                    intermediate_activation=self.intermediate_activation,
+                    add_token=self.add_token,
+                    embedding_dim=self.embedding_dim,
+                    name="asv_encoder",
+                )
         else:
             self.asv_embeddings = tf.keras.layers.Embedding(
                 self.vocab_size,
@@ -209,6 +214,12 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
     def get_config(self):
         config = super(BaseSequenceEncoder, self).get_config()
+        nucleotide_encoder = self.asv_encoder
+        if self.nucleotide_encoder is not None:
+            nucleotide_encoder = tf.keras.saving.serialize_keras_object(
+                nucleotide_encoder
+            )
+
         config.update(
             {
                 "embedding_dim": self.embedding_dim,
@@ -225,6 +236,17 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "is_16S": self.is_16S,
                 "vocab_size": self.vocab_size,
                 "add_token": self.add_token,
+                "nucleotide_encoder": nucleotide_encoder,
             }
         )
         return config
+
+    @classmethod
+    def from_config(cls, config):
+        nucleotide_encoder = config["nucleotide_encoder"]
+        if nucleotide_encoder is not None:
+            config["nucleotide_encoder"] = tf.keras.saving.deserialize_keras_object(
+                nucleotide_encoder
+            )
+        model = cls(**config)
+        return model

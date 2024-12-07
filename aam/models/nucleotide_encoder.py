@@ -9,7 +9,7 @@ from aam.layers import (
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceEncoder")
-class ASVNucleotideEncoder(tf.keras.Model):
+class NucleotideEncoder(tf.keras.Model):
     def __init__(
         self,
         embedding_dim: int,
@@ -19,7 +19,7 @@ class ASVNucleotideEncoder(tf.keras.Model):
         add_token: bool = True,
         **kwargs,
     ):
-        super(ASVNucleotideEncoder, self).__init__(**kwargs)
+        super(NucleotideEncoder, self).__init__(**kwargs)
 
         self.embedding_dim = embedding_dim
         self.max_bp = max_bp
@@ -89,9 +89,25 @@ class ASVNucleotideEncoder(tf.keras.Model):
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
-        tokens, _ = inputs
+        if isinstance(inputs, (list, tuple)):
+            tokens, _ = inputs
+        else:
+            tokens = inputs
         tokens = tf.cast(tokens, dtype=tf.int32)
 
         asv_embeddings, nuc_mask, nuc_pred = self.asv_encoder(tokens, training=training)
 
         return asv_embeddings, nuc_mask, nuc_pred
+
+    def get_config(self):
+        config = super(NucleotideEncoder, self).get_config()
+        config.update(
+            {
+                "embedding_dim": self.embedding_dim,
+                "max_bp": self.max_bp,
+                "dropout_rate": self.dropout_rate,
+                "intermediate_activation": self.intermediate_activation,
+                "add_token": self.add_token,
+            }
+        )
+        return config

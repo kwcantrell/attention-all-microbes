@@ -116,7 +116,7 @@ def fit_asv_encoder(
     from biom import load_table
 
     from aam.data_handlers import GeneratorDataset
-    from aam.models.asv_nucleotide_encoder import ASVNucleotideEncoder
+    from aam.models.nucleotide_encoder import NucleotideEncoder
     from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
@@ -126,7 +126,7 @@ def fit_asv_encoder(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    model: tf.keras.Model = ASVNucleotideEncoder(
+    model: tf.keras.Model = NucleotideEncoder(
         embedding_dim=p_embedding_dim,
         max_bp=p_max_bp,
         dropout_rate=p_dropout,
@@ -201,7 +201,7 @@ def fit_asv_encoder(
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     model_save_path = os.path.join(output_dir, "model.keras")
-    model_saver = SaveModel(model_save_path, 1, monitor="val_encoder_loss")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
     core_callbacks = [
         tf.keras.callbacks.TensorBoard(log_dir=log_dir),
         model_saver,
@@ -267,6 +267,7 @@ def fit_asv_encoder(
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
+@click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -299,6 +300,7 @@ def fit_unifrac_regressor(
     p_weight_decay: float,
     p_accumulation_steps,
     p_unifrac_metric: str,
+    i_nucleotide_encoder: str,
 ):
     from biom import load_table
 
@@ -321,6 +323,10 @@ def fit_unifrac_regressor(
         model = tf.keras.models.load_model(i_model, compile=False)
         model.accumulation_steps = p_accumulation_steps
     else:
+        if i_nucleotide_encoder is not None:
+            i_nucleotide_encoder = tf.keras.models.load_model(
+                i_nucleotide_encoder, compile=False
+            )
         model: tf.keras.Model = SequenceEncoder(
             output_dim,
             p_asv_limit,
@@ -336,6 +342,7 @@ def fit_unifrac_regressor(
             add_token=p_add_token,
             asv_dropout_rate=p_asv_dropout,
             accumulation_steps=p_accumulation_steps,
+            nucleotide_encoder=i_nucleotide_encoder,
         )
 
     optimizer = tf.keras.optimizers.AdamW(

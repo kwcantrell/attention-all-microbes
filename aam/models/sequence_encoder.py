@@ -34,6 +34,7 @@ class SequenceEncoder(tf.keras.Model):
         add_token: bool = True,
         asv_dropout_rate: float = 0.0,
         accumulation_steps: int = 1,
+        nucleotide_encoder=None,
         **kwargs,
     ):
         super(SequenceEncoder, self).__init__(**kwargs)
@@ -52,6 +53,7 @@ class SequenceEncoder(tf.keras.Model):
         self.add_token = add_token
         self.asv_dropout_rate = asv_dropout_rate
         self.accumulation_steps = accumulation_steps
+        self.nucleotide_encoder = nucleotide_encoder
 
         self._get_encoder_loss()
         self.loss_tracker = tf.keras.metrics.Mean()
@@ -76,6 +78,7 @@ class SequenceEncoder(tf.keras.Model):
             is_16S=self.is_16S,
             vocab_size=self.vocab_size,
             add_token=self.add_token,
+            nucleotide_encoder=nucleotide_encoder,
             name="base_encoder",
         )
 
@@ -431,8 +434,14 @@ class SequenceEncoder(tf.keras.Model):
 
         return unifrac_embeddings
 
+    def set_nucleotide_encoder(self, nucleotide_encoder):
+        self.base_encoder.asv_encoder = nucleotide_encoder
+
     def get_config(self):
         config = super(SequenceEncoder, self).get_config()
+        nucleotide_encoder = tf.keras.saving.serialize_keras_object(
+            self.base_encoder.asv_encoder
+        )
         config.update(
             {
                 "output_dim": self.output_dim,
@@ -450,6 +459,18 @@ class SequenceEncoder(tf.keras.Model):
                 "add_token": self.add_token,
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
+                "nucleotide_encoder": nucleotide_encoder,
             }
         )
         return config
+
+    @classmethod
+    def from_config(cls, config):
+        if hasattr(config, "nucleotide_encoder"):
+            nucleotide_encoder = config["nucleotide_encoder"]
+            if nucleotide_encoder is not None:
+                config["nucleotide_encoder"] = tf.keras.saving.deserialize_keras_object(
+                    nucleotide_encoder
+                )
+        model = cls(**config)
+        return model
