@@ -55,6 +55,171 @@ def validate_metadata(table, metadata, missing_samples_flag):
 
 @cli.command()
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=128, type=int)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-add-token", default=False, required=False, type=bool)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+def fit_asv_encoder(
+    i_table: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: bool,
+    p_batch_size: int,
+    p_epochs: int,
+    p_dropout: float,
+    p_embedding_dim: int,
+    p_intermediate_activation: str,
+    p_asv_limit: int,
+    p_gen_new_table: bool,
+    p_lr: float,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_add_token: bool,
+    p_is_categorical: bool,
+    p_rarefy_depth: int,
+    p_weight_decay: float,
+):
+    from biom import load_table
+
+    from aam.data_handlers import GeneratorDataset
+    from aam.models.asv_nucleotide_encoder import ASVNucleotideEncoder
+    from aam.models.utils import cos_decay_with_warmup
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    figure_path = os.path.join(output_dir, "figures")
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+
+    model: tf.keras.Model = ASVNucleotideEncoder(
+        embedding_dim=p_embedding_dim,
+        max_bp=p_max_bp,
+        dropout_rate=p_dropout,
+        intermediate_activation=p_intermediate_activation,
+        add_token=p_add_token,
+    )
+
+    optimizer = tf.keras.optimizers.AdamW(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+        weight_decay=p_weight_decay,
+    )
+    token_shape = tf.TensorShape([None, None, 150])
+    count_shape = tf.TensorShape([None, None, 1])
+    model.build([token_shape, count_shape])
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
+    model.summary()
+
+    table = load_table(i_table)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    indices = np.arange(len(ids), dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(len(ids) * 0.8)
+
+    train_indices = indices[:train_size]
+    train_ids = ids[train_indices]
+    train_table = table.filter(train_ids, inplace=False)
+
+    val_indices = indices[train_size:]
+    val_ids = ids[val_indices]
+    val_table = table.filter(val_ids, inplace=False)
+
+    common_kwargs = {
+        "metadata_column": m_metadata_column,
+        "max_token_per_sample": p_asv_limit,
+        "rarefy_depth": p_rarefy_depth,
+        "batch_size": p_batch_size,
+        "is_16S": True,
+        "is_categorical": p_is_categorical,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+        "metadata": df,
+    }
+    train_gen = GeneratorDataset(
+        table=train_table,
+        shuffle=True,
+        shift=0.0,
+        scale=1.0,
+        gen_new_tables=p_gen_new_table,
+        **common_kwargs,
+    )
+    train_data = train_gen.get_data()
+
+    val_gen = GeneratorDataset(
+        table=val_table,
+        shuffle=False,
+        shift=0.0,
+        scale=1.0,
+        gen_new_tables=False,
+        **common_kwargs,
+    )
+    val_data = val_gen.get_data()
+
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_encoder_loss")
+    core_callbacks = [
+        tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+        model_saver,
+    ]
+    model.fit(
+        train_data["dataset"],
+        validation_data=val_data["dataset"],
+        callbacks=[*core_callbacks],
+        epochs=p_epochs,
+        steps_per_epoch=train_data["steps_pre_epoch"],
+        validation_steps=val_data["steps_pre_epoch"],
+    )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
+
+
+@cli.command()
+@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-tree", required=True, type=click.Path(exists=True))
 @click.option(
     "--m-metadata-file",
