@@ -5,8 +5,10 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
-from aam.models.attention_pooling import AttentionPooling
+
+# from aam.models.attention_pooling import AttentionPooling
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
+from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
@@ -77,7 +79,8 @@ class SequenceEncoder(tf.keras.Model):
             name="base_encoder",
         )
 
-        self.attention_pooling = AttentionPooling()
+        # self.attention_pooling = AttentionPooling()
+        self.attention_pooling = MultiHeadAttentionPooling()
 
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
