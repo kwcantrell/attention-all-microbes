@@ -6,7 +6,7 @@ from aam.models.attention_pooling import AttentionPooling
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
     def __init__(self):
         super(MultiHeadAttentionPooling, self).__init__()
-        self.query = tf.keras.layers.Dense(8, use_bias=False)
+        self.query = tf.keras.layers.Dense(32, use_bias=False)
         self.dropout = tf.keras.layers.Dropout(0.1)
         self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.pool = AttentionPooling()
@@ -32,9 +32,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         attention_weights = tf.expand_dims(attention_weights, axis=-1)  # [B, H, T, 1]
 
         inputs = tf.expand_dims(inputs, axis=1)  # [B, 1, T, D]
-        pooled_output = self.norm(
-            tf.reduce_sum(inputs * attention_weights, axis=2)
-        )  # [B, H, D]
+        pooled_output = tf.reduce_sum(inputs * attention_weights, axis=2)  # [B, H, D]
 
         # Apply normalization
-        return self.pool(pooled_output)
+        return self.norm(tf.reduce_mean(pooled_output, axis=1))

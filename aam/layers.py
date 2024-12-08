@@ -63,7 +63,10 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
 
         # nuc postions start at 1 as 0 is used for mask token
-        self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
+        # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
+        self.nuc_pred = tf.keras.layers.Dense(
+            self.base_tokens * self.max_bp, use_bias=False, activation="softmax"
+        )
 
     def build(self, input_shape):
         self.emb_layer = tf.keras.layers.Embedding(

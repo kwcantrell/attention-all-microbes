@@ -263,6 +263,7 @@ class SequenceEncoder(tf.keras.Model):
         nuc_tokens, counts = model_inputs
         embeddings, encoder_embeddings, nuc_mask, nuc_pred = outputs
 
+        nuc_tokens = nuc_tokens + self.base_encoder.asv_encoder.nucleotide_position
         nuc_tokens = tf.reshape(nuc_tokens, shape=[-1])
         nuc_mask = tf.reshape(nuc_mask, shape=[-1])
         nuc_tokens = nuc_tokens[nuc_mask]

@@ -49,6 +49,15 @@ class CVModel:
             cos_decay_with_warmup(lr, warmup_steps, decay_steps),
             weight_decay=1e-2,
         )
+        optimizer.exclude_from_weight_decay(
+            var_names=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                "embeddings",
+            ]
+        )
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(

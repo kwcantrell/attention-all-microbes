@@ -136,7 +136,16 @@ def fit_asv_encoder(
 
     optimizer = tf.keras.optimizers.AdamW(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
-        weight_decay=p_weight_decay,
+        weight_decay=1e-2,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
     )
     token_shape = tf.TensorShape([None, None, 150])
     count_shape = tf.TensorShape([None, None, 1])
@@ -348,6 +357,15 @@ def fit_unifrac_regressor(
     optimizer = tf.keras.optimizers.AdamW(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
         weight_decay=p_weight_decay,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
     )
     token_shape = tf.TensorShape([None, None, 150])
     count_shape = tf.TensorShape([None, None, 1])
@@ -616,10 +634,17 @@ def fit_taxonomy_regressor(
             accumulation_steps=p_accumulation_steps,
         )
         optimizer = tf.keras.optimizers.AdamW(
-            cos_decay_with_warmup(p_lr, p_warmup_steps, decay_steps=p_decay_steps),
-            beta_2=0.98,
+            cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
             weight_decay=p_weight_decay,
-            # global_clipnorm=1.0,
+        )
+        optimizer.exclude_from_weight_decay(
+            var_names=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                "embeddings",
+            ]
         )
         token_shape = tf.TensorShape([None, None, 150])
         count_shape = tf.TensorShape([None, None, 1])
