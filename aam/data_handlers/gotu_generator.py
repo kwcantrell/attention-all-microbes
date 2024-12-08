@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from typing import Iterable
+
 import numpy as np
+import tensorflow as tf
+from biom import Table
 from bp import parse_newick
+from skbio import DistanceMatrix
 
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
@@ -10,6 +15,19 @@ class GOTUGenerator(UniFracGenerator):
     def __init__(self, **kwargs):
         super(GOTUGenerator, self).__init__(**kwargs)
         self.token_mapping = self.map_tokens()
+
+    def _create_encoder_target(self, table: Table) -> DistanceMatrix:
+        return super(GOTUGenerator, self)._create_encoder_target(table)
+
+    def _encoder_output(
+        self,
+        encoder_target: DistanceMatrix,
+        sample_ids: Iterable[str],
+        ob_ids: list[str],
+    ) -> np.ndarray[float]:
+        return super(GOTUGenerator, self)._encoder_output(
+            encoder_target, sample_ids, ob_ids
+        )
 
     def map_tokens(self) -> dict:
         """
@@ -57,7 +75,33 @@ class GOTUGenerator(UniFracGenerator):
 #         is_16S=False,
 #     )
 #     print("Finished creating generator")
-#     data = gotu_gen.get_data()
-#     for i, (x, y) in enumerate(data["dataset"]):
-#         print(y[1], np.log1p(y[1]), np.sqrt(y[1]))
+#     gotu_data = gotu_gen.get_data()
+#     gotu_dataset = gotu_data["dataset"]
+
+#     ug = UniFracGenerator(
+#         table="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/asv_ordered_table.biom",
+#         tree_path="/home/jokirkland/data/trees/2022.10.phylogeny.asv.nwk",
+#         metadata="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/metag_metadata.tsv",
+#         metadata_column="Age",
+#         shift=0.0,
+#         scale=100.0,
+#         gen_new_tables=True,
+#     )
+#     print("Finished creating 16S data")
+#     asv_data = ug.get_data()
+#     asv_dataset = asv_data["dataset"]
+#     for i, (x, y) in enumerate(asv_dataset):
+#         print("ASV_DATSET_VALUES")
+#         print(f"Printing X Data: {x}\nPrinting Y Data {y}")
+#         break
+
+#     for i, (x, y) in enumerate(gotu_dataset):
+#         print("GOTU_DATSET_VALUES")
+#         print(f"Printing X Data: {x}\nPrinting Y Data {y}")
+#         break
+#     full_dataset = tf.data.Dataset.zip((asv_dataset, gotu_dataset))
+
+#     for i, (x, y) in enumerate(full_dataset):
+#         print("FULL MERGED DATASET")
+#         print(f"Printing X Data: {x}\nPrinting Y Data {y}")
 #         break
