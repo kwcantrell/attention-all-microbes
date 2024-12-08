@@ -15,7 +15,7 @@ from aam.data_handlers.generator_dataset import GeneratorDataset
 
 class UniFracGenerator(GeneratorDataset):
     def __init__(self, tree_path: str, unifrac_metric="unifrac", **kwargs):
-        super().__init__(**kwargs)
+        super(UniFracGenerator, self).__init__(**kwargs)
         self.tree_path = tree_path
         self.unifrac_metric = unifrac_metric
 

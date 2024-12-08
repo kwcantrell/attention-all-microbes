@@ -253,7 +253,7 @@ class GeneratorDataset:
             if self.is_16S:
                 s_tokens = obs_encodings[s_obs_indices]
             else:
-                s_tokens = np.reshape(s_obs_indices, newshape=(-1, 1)) + 1
+                s_tokens = self.gotu_tokens(s_obs_indices)
 
             sorted_order = np.argsort(s_counts)
             sorted_order = sorted_order[::-1]
@@ -435,10 +435,19 @@ class GeneratorDataset:
 
     def get_data(self, include_seq_id=False, include_sample_ids=False):
         generator = self._create_epoch_generator(include_seq_id, include_sample_ids)
-        output_sig = (
-            tf.TensorSpec(shape=[self.batch_size, None, self.max_bp], dtype=tf.int32),
-            tf.TensorSpec(shape=[self.batch_size, None, 1], dtype=tf.int32),
-        )
+
+        if self.is_16S:
+            output_sig = (
+                tf.TensorSpec(
+                    shape=[self.batch_size, None, self.max_bp], dtype=tf.int32
+                ),
+                tf.TensorSpec(shape=[self.batch_size, None, 1], dtype=tf.int32),
+            )
+        else:
+            output_sig = (
+                tf.TensorSpec(shape=[self.batch_size, None, 1], dtype=tf.int32),
+                tf.TensorSpec(shape=[self.batch_size, None, 1], dtype=tf.int32),
+            )
 
         y_output_sig = None
         if self.y_data is not None:

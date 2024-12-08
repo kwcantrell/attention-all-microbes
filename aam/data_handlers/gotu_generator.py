@@ -1,19 +1,17 @@
 from __future__ import annotations
 
+import numpy as np
 from bp import parse_newick
-from biom import load_table, Table
+
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
+
 class GOTUGenerator(UniFracGenerator):
-    def __init__(self, gotu_table_fp: str, **kwargs):
-        super().__init__(**kwargs)
-        self.gotu_table_fp = gotu_table_fp
-        
-    def parse_gotu_table(self):
-        pass
-        
-           
-    def gotu_encoder(self) -> dict:
+    def __init__(self, **kwargs):
+        super(GOTUGenerator, self).__init__(**kwargs)
+        self.token_mapping = self.map_tokens()
+
+    def map_tokens(self) -> dict:
         """
         Encodes GOTUs based on a post-order traversal of a Newick tree and tokenizes
         the observation IDs of the BIOM table.
@@ -24,7 +22,9 @@ class GOTUGenerator(UniFracGenerator):
         Returns:
             dict: A dictionary mapping observation IDs to their token values.
         """
+        print("Loading Tree")
         bp_tree = parse_newick(open(self.tree_path).read())
+        print("Tree Loaded, generating token ID's")
         name_list = []
         token_mapping = {}
         token_id = 0
@@ -40,5 +40,24 @@ class GOTUGenerator(UniFracGenerator):
 
         return token_mapping
 
-    
-if __name__ == "__main__":
+    def gotu_tokens(self, indicies: np.ndarray) -> np.ndarray:
+        obs_ids = self.obs_ids[indicies]
+        return np.array([self.token_mapping[id] for id in obs_ids]).reshape((-1, 1))
+
+
+# if __name__ == "__main__":
+#     gotu_gen = GOTUGenerator(
+#         table="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/gotu_ordered_table_filtered.biom",
+#         tree_path="/home/jokirkland/data/trees/2022.10.phylogeny.asv.nwk",
+#         metadata="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/metag_metadata.tsv",
+#         metadata_column="Age",
+#         shift=0.0,
+#         scale=100.0,
+#         gen_new_tables=True,
+#         is_16S=False,
+#     )
+#     print("Finished creating generator")
+#     data = gotu_gen.get_data()
+#     for i, (x, y) in enumerate(data["dataset"]):
+#         print(y[1], np.log1p(y[1]), np.sqrt(y[1]))
+#         break
