@@ -35,6 +35,7 @@ class SequenceEncoder(tf.keras.Model):
         asv_dropout_rate: float = 0.0,
         accumulation_steps: int = 1,
         nucleotide_encoder=None,
+        pairwise_loss_type="mse",
         **kwargs,
     ):
         super(SequenceEncoder, self).__init__(**kwargs)
@@ -54,6 +55,7 @@ class SequenceEncoder(tf.keras.Model):
         self.asv_dropout_rate = asv_dropout_rate
         self.accumulation_steps = accumulation_steps
         self.nucleotide_encoder = nucleotide_encoder
+        self.pairwise_loss_type = pairwise_loss_type
 
         self._get_encoder_loss()
         self.loss_tracker = tf.keras.metrics.Mean()
@@ -137,12 +139,12 @@ class SequenceEncoder(tf.keras.Model):
 
     def _get_encoder_loss(self):
         if self.encoder_type == "combined":
-            self._unifrac_loss = PairwiseLoss()
+            self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
             self._tax_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
             self.encoder_loss = self._compute_combined_loss
             self.extract_encoder_pred = self._combined_embeddigns
         elif self.encoder_type == "unifrac":
-            self._unifrac_loss = PairwiseLoss()
+            self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
             self.encoder_loss = self._compute_unifrac_loss
             self.extract_encoder_pred = self._unifrac_embeddings
         elif self.encoder_type == "faith_pd":
@@ -470,8 +472,6 @@ class SequenceEncoder(tf.keras.Model):
         if hasattr(config, "nucleotide_encoder"):
             nucleotide_encoder = config["nucleotide_encoder"]
             if nucleotide_encoder is not None:
-                config["nucleotide_encoder"] = tf.keras.saving.deserialize_keras_object(
-                    nucleotide_encoder
-                )
+                config["nucleotide_encoder"] = None
         model = cls(**config)
         return model

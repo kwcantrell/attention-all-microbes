@@ -73,12 +73,19 @@ def _pairwise_distances(embeddings, squared=False):
 
 
 class PairwiseLoss(tf.keras.losses.Loss):
-    def __init__(self, reduction="none", **kwargs):
+    def __init__(self, loss_type="mse", reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
+        self.loss_type = loss_type
 
     def call(self, y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred, squared=False)
-        differences = tf.math.square(y_pred_dist - y_true)
+
+        if self.loss_type == "mse":
+            differences = tf.math.square(y_pred_dist - y_true)
+        elif self.loss_type == "msle":
+            differences = tf.math.square(
+                tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true)
+            )
         return differences
 
 

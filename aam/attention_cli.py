@@ -136,7 +136,7 @@ def fit_asv_encoder(
 
     optimizer = tf.keras.optimizers.AdamW(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
-        weight_decay=1e-2,
+        weight_decay=p_weight_decay,
     )
     optimizer.exclude_from_weight_decay(
         var_names=[
@@ -277,6 +277,7 @@ def fit_asv_encoder(
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
+@click.option("--p-loss-type", default="mse", required=False, type=str)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -310,6 +311,7 @@ def fit_unifrac_regressor(
     p_accumulation_steps,
     p_unifrac_metric: str,
     i_nucleotide_encoder: str,
+    p_loss_type: str,
 ):
     from biom import load_table
 
@@ -352,6 +354,7 @@ def fit_unifrac_regressor(
             asv_dropout_rate=p_asv_dropout,
             accumulation_steps=p_accumulation_steps,
             nucleotide_encoder=i_nucleotide_encoder,
+            pairwise_loss_type=p_loss_type,
         )
 
     optimizer = tf.keras.optimizers.AdamW(
