@@ -128,7 +128,9 @@ class SequenceEncoder(tf.keras.Model):
             self.encoder_ff = tf.keras.Sequential(
                 [
                     tf.keras.layers.Dense(self.embedding_dim * 4, activation="relu"),
+                    tf.keras.layers.Dropout(0.1),
                     tf.keras.layers.Dense(self.embedding_dim * 4, activation="relu"),
+                    tf.keras.layers.Dropout(0.1),
                     tf.keras.layers.Dense(self.output_dim, activation="softmax"),
                 ]
             )
