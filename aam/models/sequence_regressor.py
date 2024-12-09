@@ -125,8 +125,13 @@ class SequenceRegressor(tf.keras.Model):
         self.count_out = tf.keras.layers.Dense(
             1, activation="sigmoid", dtype=tf.float32
         )
+        self._rezero_a = self.add_weight(
+            name="rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
         self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
-        # self.count_loss = tf.keras.losses.LogCosh(reduction="none")
         self.count_tracker = tf.keras.metrics.Mean()
 
         self.target_encoder = TransformerEncoder(
@@ -514,7 +519,8 @@ class SequenceRegressor(tf.keras.Model):
             counts = masked_input
 
         # convert random_mask to boolean mask
-        random_mask = random_mask > 0
+        # random_mask = random_mask > 0
+        random_mask = counts > 0
         return counts, random_mask
 
     def _compute_count_embeddings(
@@ -543,10 +549,10 @@ class SequenceRegressor(tf.keras.Model):
         attention_mask: Optional[tf.Tensor] = None,
         training: bool = False,
     ) -> tf.Tensor:
-        # target_embeddings = self.target_encoder(
-        #     tensor, mask=attention_mask, training=training
-        # )
-        target_embeddings = tensor
+        target_embeddings = self.target_encoder(
+            tensor, mask=attention_mask, training=training
+        )
+        # target_embeddings = tensor
         target_out = self.attention_pooling(target_embeddings, mask=attention_mask)
         target_out = self.target_ff(target_out)
         return target_embeddings, target_out
@@ -578,8 +584,10 @@ class SequenceRegressor(tf.keras.Model):
             count_mask=count_mask,
             training=training,
         )
-        # count_embeddings = base_embeddings + count_gated_embeddings
-        count_embeddings = count_gated_embeddings
+
+        # add percentage to base
+        count_embeddings = base_embeddings + self._rezero_a * count_gated_embeddings
+        # count_embeddings = count_gated_embeddings
 
         target_embeddings, target_out = self._compute_target_embeddings(
             count_embeddings, attention_mask=count_attention_mask, training=training

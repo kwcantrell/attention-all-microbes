@@ -319,6 +319,8 @@ def fit_unifrac_regressor(
     from aam.models import SequenceEncoder
     from aam.models.utils import cos_decay_with_warmup
 
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -370,6 +372,7 @@ def fit_unifrac_regressor(
             "embeddings",
         ]
     )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     token_shape = tf.TensorShape([None, None, 150])
     count_shape = tf.TensorShape([None, None, 1])
     model.build([token_shape, count_shape])
@@ -946,7 +949,7 @@ def fit_sample_regressor(
         )
         val_data = _get_fold(
             val_ind,
-            shuffle=True,
+            shuffle=False,
             shift=train_data["shift"],
             scale=train_data["scale"],
             epochs=1,

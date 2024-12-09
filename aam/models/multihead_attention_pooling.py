@@ -8,7 +8,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         super(MultiHeadAttentionPooling, self).__init__()
         self.query = tf.keras.layers.Dense(32, use_bias=False)
         self.dropout = tf.keras.layers.Dropout(0.1)
-        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         self.pool = AttentionPooling()
 
     def call(self, inputs, mask=None, training=False):
@@ -17,13 +17,20 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
 
         # Scale the scores for numerical stability
         attention_scores = attention_scores / tf.sqrt(
-            tf.cast(tf.shape(inputs)[-1], tf.float32)
+            tf.cast(tf.shape(inputs)[-1], self.compute_dtype)
         )
 
         # Apply mask (if provided)
         if mask is not None:
-            mask = tf.cast(mask, dtype=tf.float32)  # [B, T, 1]
-            attention_scores += (1.0 - mask) * -1e9  # Mask padding tokens
+            # negative number (dtypes.float16.min) is divided by 2, in order to
+            # avoid overflows when summing negative inputs.
+            if self.compute_dtype == tf.float16:
+                large_neg_num = tf.float16.min / 2.0
+            else:
+                large_neg_num = -1e9
+
+            mask = tf.cast(mask, dtype=self.compute_dtype)  # [B, T, 1]
+            attention_scores += (1.0 - mask) * large_neg_num  # Mask padding tokens
 
         # Compute attention weights
         attention_scores = tf.transpose(attention_scores, perm=[0, 2, 1])  # [B, H, T]
@@ -35,4 +42,10 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         pooled_output = tf.reduce_sum(inputs * attention_weights, axis=2)  # [B, H, D]
 
         # Apply normalization
-        return self.norm(tf.reduce_mean(pooled_output, axis=1))
+        output_tensor = self.norm(tf.reduce_mean(pooled_output, axis=1))
+
+        if self.compute_dtype == "float16":
+            # output_tensor will always be float32
+            # so we need to cast it back to float16
+            output_tensor = tf.cast(output_tensor, dtype=tf.float16)
+        return output_tensor
