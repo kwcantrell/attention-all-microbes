@@ -636,26 +636,26 @@ def fit_taxonomy_regressor(
             asv_dropout_rate=p_asv_dropout,
             accumulation_steps=p_accumulation_steps,
         )
-        optimizer = tf.keras.optimizers.AdamW(
-            cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
-            weight_decay=p_weight_decay,
-        )
-        optimizer.exclude_from_weight_decay(
-            var_names=[
-                "bias",
-                "rezero_alpha",
-                "layer_norm",
-                "LayerNorm",
-                "embeddings",
-            ]
-        )
-        token_shape = tf.TensorShape([None, None, 150])
-        count_shape = tf.TensorShape([None, None, 1])
-        model.build([token_shape, count_shape])
-        model.compile(
-            optimizer=optimizer,
-            run_eagerly=False,
-        )
+    optimizer = tf.keras.optimizers.AdamW(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+        weight_decay=p_weight_decay,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
+    )
+    token_shape = tf.TensorShape([None, None, 150])
+    count_shape = tf.TensorShape([None, None, 1])
+    model.build([token_shape, count_shape])
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
     model.summary()
     model.fit(
         train_data["dataset"],

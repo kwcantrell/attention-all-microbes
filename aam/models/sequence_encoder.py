@@ -122,8 +122,16 @@ class SequenceEncoder(tf.keras.Model):
                     tf.keras.layers.Dense(tax_out, dtype=tf.float32),
                 ]
             )
-        else:
+        elif self.encoder_type == "unifrac":
             self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
+        else:
+            self.encoder_ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(self.embedding_dim * 4, activation="relu"),
+                    tf.keras.layers.Dense(self.embedding_dim * 4, activation="relu"),
+                    tf.keras.layers.Dense(self.output_dim, activation="softmax"),
+                ]
+            )
 
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
@@ -188,10 +196,8 @@ class SequenceEncoder(tf.keras.Model):
         encoder_pred = self.encoder_ff(encoder_pred)
         return encoder_pred
 
-    def _taxonomy_embeddings(self, tensor, mask):
+    def _taxonomy_embeddings(self, tensor, mask=None, training=False):
         tax_pred = tensor
-        if self.add_token:
-            tax_pred = tax_pred[:, 1:, :]
         tax_pred = self.encoder_ff(tax_pred)
         return tax_pred
 
@@ -216,7 +222,6 @@ class SequenceEncoder(tf.keras.Model):
             out_dim = self.output_dim
         y_true = tf.reshape(tax_tokens, [-1])
         y_pred = tf.reshape(tax_pred, [-1, out_dim])
-        y_pred = tf.keras.activations.softmax(y_pred, axis=-1)
 
         mask = float_mask(y_true) > 0
         y_true = tf.one_hot(y_true, depth=out_dim)
@@ -272,6 +277,7 @@ class SequenceEncoder(tf.keras.Model):
         nuc_tokens = tf.one_hot(nuc_tokens, tf.shape(nuc_pred)[-1])
         nuc_loss = self.nuc_loss(nuc_tokens, nuc_pred)
         nuc_loss = tf.reduce_mean(nuc_loss)
+
         encoder_loss = self._compute_encoder_loss(y_true, encoder_embeddings)
         loss = nuc_loss + encoder_loss
         return loss, nuc_loss, encoder_loss
