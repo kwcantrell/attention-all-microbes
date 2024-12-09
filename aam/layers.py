@@ -88,7 +88,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.attention_pool = MultiHeadAttentionPooling()
         super(ASVEncoder, self).build(input_shape)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, include_bert_random_mask=True, training=False):
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs_shape = tf.shape(inputs)
         batch_size = inputs_shape[0]
@@ -109,7 +109,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         )
 
-        if training:
+        if include_bert_random_mask and training:
             # of the masked tokens, select 20% to either keep or change to
             # random token
             random_non_mask = (

@@ -351,7 +351,10 @@ class SequenceEncoder(tf.keras.Model):
         }
 
     def call(
-        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
+        self,
+        inputs: tuple[tf.Tensor, tf.Tensor],
+        include_bert_random_mask=True,
+        training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         tokens, counts = inputs
 
@@ -359,7 +362,7 @@ class SequenceEncoder(tf.keras.Model):
         count_mask = float_mask(counts, dtype=self.compute_dtype)
 
         sample_embeddings, nuc_mask, nuc_pred = self.base_encoder(
-            tokens, training=training
+            tokens, include_bert_random_mask=include_bert_random_mask, training=training
         )
 
         encoder_gated_embeddings = self.encoder(
