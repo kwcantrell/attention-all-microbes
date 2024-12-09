@@ -124,7 +124,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         return asv_embeddings
 
     def call(
-        self, inputs: tf.Tensor, training: bool = False
+        self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor]:
         # boolean mask used to select non-pad tokens
         mask = tf.reduce_sum(inputs, axis=-1) > 0  # shape [B, A]
@@ -133,7 +133,9 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         # create indices for non-pad locations
         indices = tf.where(mask)
 
-        embeddings, random_mask, nuc_pred = self.asv_encoder(inputs, training=training)
+        embeddings, random_mask, nuc_pred = self.asv_encoder(
+            inputs, include_bert_random_mask=include_bert_random_mask, training=training
+        )
         asv_embeddings = self._split_asvs(embeddings, mask, indices, training=training)
 
         return asv_embeddings, random_mask, nuc_pred
