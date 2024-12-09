@@ -124,25 +124,16 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         return asv_embeddings
 
     def call(
-        self, inputs: tf.Tensor, random_mask: bool = None, training: bool = False
+        self, inputs: tf.Tensor, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor]:
-        # need to cast inputs to int32 to avoid error
-        # because keras converts all inputs
-        # to float when calling build()
-        asv_input = tf.cast(inputs, dtype=tf.int32)
         # boolean mask used to select non-pad tokens
-        mask = tf.reduce_sum(asv_input, axis=-1) > 0  # shape [B, A]
+        mask = tf.reduce_sum(inputs, axis=-1) > 0  # shape [B, A]
         mask = tf.reshape(mask, shape=[-1])  # shape [B * A]
 
         # create indices for non-pad locations
         indices = tf.where(mask)
 
-        if training and random_mask is not None:
-            asv_input = asv_input * tf.cast(random_mask, dtype=tf.int32)
-
-        embeddings, random_mask, nuc_pred = self.asv_encoder(
-            asv_input, training=training
-        )
+        embeddings, random_mask, nuc_pred = self.asv_encoder(inputs, training=training)
         asv_embeddings = self._split_asvs(embeddings, mask, indices, training=training)
 
         return asv_embeddings, random_mask, nuc_pred

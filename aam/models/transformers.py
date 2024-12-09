@@ -46,7 +46,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     name=("layer_%d" % i),
                 )
             )
-        self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.output_normalization = tf.keras.layers.LayerNormalization(
+            epsilon=1e-6, dtype=tf.float32
+        )
         super(TransformerEncoder, self).build(input_shape)
 
     def get_config(self):
@@ -86,4 +88,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 [encoder_inputs, attention_mask], training=training
             )
         output_tensor = self.output_normalization(encoder_inputs)
+
+        if self.compute_dtype == "float16":
+            # output_tensor will always be float32
+            # so we need to cast it back to float16
+            output_tensor = tf.cast(output_tensor, dtype=tf.float16)
         return output_tensor

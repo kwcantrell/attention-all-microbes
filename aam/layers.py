@@ -65,8 +65,9 @@ class ASVEncoder(tf.keras.layers.Layer):
         # nuc postions start at 1 as 0 is used for mask token
         # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
         self.nuc_pred = tf.keras.layers.Dense(
-            self.base_tokens * self.max_bp, use_bias=False, activation="softmax"
+            self.base_tokens * self.max_bp, use_bias=False
         )
+        self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
 
     def build(self, input_shape):
         self.emb_layer = tf.keras.layers.Embedding(
@@ -88,6 +89,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         super(ASVEncoder, self).build(input_shape)
 
     def call(self, inputs, training=False):
+        inputs = tf.cast(inputs, dtype=tf.int32)
         inputs_shape = tf.shape(inputs)
         batch_size = inputs_shape[0]
         seq_size = inputs_shape[1]
@@ -173,7 +175,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         masked_nuc = tf.reshape(random_mask, shape=[-1])
         nuc_embeddings = tf.reshape(output, shape=[-1, self.embedding_dim])
         masked_nuc = nuc_embeddings[masked_nuc]
-        nuc_pred = self.nuc_pred(masked_nuc)
+        nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
 
         return output, random_mask, nuc_pred
 

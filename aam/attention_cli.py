@@ -319,6 +319,8 @@ def fit_unifrac_regressor(
     from aam.models import SequenceEncoder
     from aam.models.utils import cos_decay_with_warmup
 
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -370,6 +372,7 @@ def fit_unifrac_regressor(
             "embeddings",
         ]
     )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     token_shape = tf.TensorShape([None, None, 150])
     count_shape = tf.TensorShape([None, None, 1])
     model.build([token_shape, count_shape])
@@ -611,9 +614,9 @@ def fit_taxonomy_regressor(
     model_saver = SaveModel(model_save_path, 1, monitor="val_encoder_loss")
     core_callbacks = [
         tf.keras.callbacks.TensorBoard(log_dir=log_dir),
-        tf.keras.callbacks.EarlyStopping(
-            "val_loss", patience=p_patience, start_from_epoch=p_early_stop_warmup
-        ),
+        # tf.keras.callbacks.EarlyStopping(
+        #     "val_loss", patience=p_patience, start_from_epoch=p_early_stop_warmup
+        # ),
         model_saver,
     ]
 
@@ -636,26 +639,26 @@ def fit_taxonomy_regressor(
             asv_dropout_rate=p_asv_dropout,
             accumulation_steps=p_accumulation_steps,
         )
-        optimizer = tf.keras.optimizers.AdamW(
-            cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
-            weight_decay=p_weight_decay,
-        )
-        optimizer.exclude_from_weight_decay(
-            var_names=[
-                "bias",
-                "rezero_alpha",
-                "layer_norm",
-                "LayerNorm",
-                "embeddings",
-            ]
-        )
-        token_shape = tf.TensorShape([None, None, 150])
-        count_shape = tf.TensorShape([None, None, 1])
-        model.build([token_shape, count_shape])
-        model.compile(
-            optimizer=optimizer,
-            run_eagerly=False,
-        )
+    optimizer = tf.keras.optimizers.AdamW(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+        weight_decay=p_weight_decay,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
+    )
+    token_shape = tf.TensorShape([None, None, 150])
+    count_shape = tf.TensorShape([None, None, 1])
+    model.build([token_shape, count_shape])
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
     model.summary()
     model.fit(
         train_data["dataset"],
@@ -946,7 +949,7 @@ def fit_sample_regressor(
         )
         val_data = _get_fold(
             val_ind,
-            shuffle=True,
+            shuffle=False,
             shift=train_data["shift"],
             scale=train_data["scale"],
             epochs=1,
