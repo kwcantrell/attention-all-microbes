@@ -200,7 +200,7 @@ class SequenceEncoder(tf.keras.Model):
 
     def _taxonomy_embeddings(self, tensor, mask=None, training=False):
         tax_pred = tensor
-        tax_pred = self.encoder_ff(tax_pred)
+        tax_pred = self.encoder_ff(tax_pred, training=training)
         return tax_pred
 
     def _compute_combined_loss(self, y_true, preds):
