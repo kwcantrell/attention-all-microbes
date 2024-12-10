@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 
-class GOTUDecoder(tf.keras.layers.Layer):
+class TransformerDecoder(tf.keras.layers.Layer):
     def __init__(
         self,
         num_layers=6,
@@ -20,13 +20,11 @@ class GOTUDecoder(tf.keras.layers.Layer):
         norm_epsilon=1e-6,
         use_layer_norm=True,
         share_rezero=True,
-        gotu_count=None,
         **kwargs,
     ):
-        super(GOTUDecoder, self).__init__(**kwargs)
+        super(TransformerDecoder, self).__init__(**kwargs)
         self.num_layers = num_layers
         self.num_attention_heads = num_attention_heads
-        self.gotu_count = gotu_count
         self._intermediate_size = intermediate_size
         self._activation = activation
         self._dropout_rate = dropout_rate
@@ -34,7 +32,6 @@ class GOTUDecoder(tf.keras.layers.Layer):
         self._use_bias = use_bias
         self._norm_first = norm_first
         self._norm_epsilon = norm_epsilon
-
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
@@ -49,12 +46,11 @@ class GOTUDecoder(tf.keras.layers.Layer):
                     inner_activation=self._activation,
                     dropout_rate=self._dropout_rate,
                     attention_dropout_rate=self._dropout_rate,
-                    use_layer_norm=True,
                     share_rezero=True,
                     name=("layer_%d" % i),
-                )   
+                )
             )
-            
+
             self.decoder_layers.append(
                 tfm.nlp.layers.ReZeroTransformer(
                     num_attention_heads=self.num_attention_heads,
@@ -62,13 +58,14 @@ class GOTUDecoder(tf.keras.layers.Layer):
                     inner_activation=self._activation,
                     dropout_rate=self._dropout_rate,
                     attention_dropout_rate=self._dropout_rate,
-                    use_layer_norm=True,
                     share_rezero=True,
                     name=("layer_%d" % i),
-                )   
+                )
             )
-        self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        super(GOTUDecoder, self).build(input_shape)
+        self.output_normalization = tf.keras.layers.LayerNormalization(
+            epsilon=1e-6, dtype=tf.float32
+        )
+        super(TransformerDecoder, self).build(input_shape)
 
     def get_config(self):
         config = {
@@ -82,29 +79,52 @@ class GOTUDecoder(tf.keras.layers.Layer):
             "norm_first": self._norm_first,
             "norm_epsilon": self._norm_epsilon,
         }
-        base_config = super(GOTUDecoder, self).get_config()
+        base_config = super(TransformerDecoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    def call(self, asv_inputs, gotu_inputs, mask=None, training=False):
+    def call(
+        self, asv_inputs, gotu_inputs, asv_mask=None, gotu_mask=None, training=False
+    ):
         """Return the output of the encoder.
 
         Args:
           encoder_inputs: A tensor with shape `(batch_size, input_length,
             hidden_size)`.
-          attention_mask: A mask for the encoder self-attention layer with shape
-            `(batch_size, input_length, input_length)`.
+          asv_mask: A mask for the encoder self-attention layer with shape
+            `(batch_size, asv_input_length, 1)`.
+          gotu_mask: A mask for the encoder self-attention layer with shape
+            `(batch_size, gotu_input_length, 1)`.
 
         Returns:
-          Output of encoder which is a `float32` tensor with shape
+          Output of encoder which is a `float32` or `float16` tensor with shape
             `(batch_size, input_length, hidden_size)`.
         """
-        attention_mask = mask
-        if attention_mask is not None:
-            attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
+
         encoder_inputs = gotu_inputs
+        gotu_shape = tf.shape(encoder_inputs)
+        batch_dim = gotu_shape[0]
+        g_seq_len = gotu_shape[1]
+        causal_mask = tf.linalg.band_part(
+            tf.ones([batch_dim, g_seq_len, g_seq_len], dtype=self.compute_dtype), -1, 0
+        )
+        if gotu_mask:
+            gotu_mask = tf.matmul(gotu_mask, gotu_mask, transpose_b=True)
+            causal_mask = causal_mask * gotu_mask
         for layer_idx in range(self.num_layers):
             encoder_inputs = self.encoder_layers[layer_idx](
-                [gotu_inputs, attention_mask, asv_inputs], training=training
+                [gotu_inputs, causal_mask], training=training
             )
-        output_tensor = self.output_normalization(encoder_inputs)
+
+        decoder_inputs = encoder_inputs
+        if asv_mask and gotu_mask:
+            attention_mask = tf.matmul(gotu_mask, asv_mask, transpose_b=True)
+        for layer_idx in range(self.num_layers):
+            decoder_inputs = self.decoder_layers[layer_idx](
+                [decoder_inputs, asv_inputs, attention_mask], training=training
+            )
+        output_tensor = self.output_normalization(decoder_inputs)
+        if self.compute_dtype == "float16":
+            # output_tensor will always be float32
+            # so we need to cast it back to float16
+            output_tensor = tf.cast(output_tensor, dtype=tf.float16)
         return output_tensor
