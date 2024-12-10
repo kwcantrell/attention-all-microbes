@@ -105,7 +105,6 @@ class SequenceRegressor(tf.keras.Model):
             }
         else:
             self.uni_tracker = tf.keras.metrics.Mean()
-            # self.faith_tracker = tf.keras.metrics.Mean()
             self.tax_tracker = tf.keras.metrics.Mean()
 
         if self.freeze_base:
@@ -519,8 +518,8 @@ class SequenceRegressor(tf.keras.Model):
             counts = masked_input
 
         # convert random_mask to boolean mask
-        # random_mask = random_mask > 0
-        random_mask = counts > 0
+        random_mask = random_mask > 0
+        # random_mask = counts > 0
         return counts, random_mask
 
     def _compute_count_embeddings(
