@@ -61,16 +61,18 @@ class GOTUGenerator(UniFracGenerator):
         print("Loading Tree")
         bp_tree = parse_newick(open(self.tree_path).read())
         print("Tree Loaded, generating token ID's")
-        name_list = []
-        token_mapping = {}
-        token_id = 0
+        token_mapping = {
+            "PAD": 0,
+            "START": 1,
+            "END": 2,
+        }
+        token_id = 3
         for i in range(1, ((bp_tree.__len__()) * 2)):
             if not bp_tree.isleaf(i):
                 continue
             if bp_tree.name(i) is not None:
                 node_name = bp_tree.name(i)
                 if len(node_name) == 10:
-                    name_list.append(node_name)
                     token_mapping[node_name] = token_id
                     token_id += 1
 
