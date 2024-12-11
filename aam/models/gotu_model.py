@@ -29,6 +29,7 @@ class GOTUModel(tf.keras.layers.Layer):
         gotu_count=None,
         max_gotu=1024,
         base_model=None,
+        freeze_base_weights=False,
         bert_training=False,
         **kwargs,
     ):
@@ -53,6 +54,7 @@ class GOTUModel(tf.keras.layers.Layer):
         self.gotu_count = gotu_count
         self.max_gotu = max_gotu
         self.base_model = base_model
+        self.freeze_base_weights = freeze_base_weights
         self.bert_training = bert_training
 
         self.encoder_tracker = tf.keras.metrics.Mean()
@@ -72,26 +74,30 @@ class GOTUModel(tf.keras.layers.Layer):
         self.gotu_pos_emb = tfm.nlp.layers.PositionEmbedding(
             self.max_gotu, seq_axis=1, initializer="zeros"
         )
-
-        self.asv_embedding_layer = SequenceEncoder(
-            output_dim=self.output_dim,
-            token_limit=self.token_limit,
-            encoder_type=self.encoder_type,
-            dropout_rate=self.dropout_rate,
-            embedding_dim=self.embedding_dim,
-            attention_heads=self.attention_heads,
-            attention_layers=self.attention_layers,
-            intermediate_size=self.intermediate_size,
-            intermediate_activation=self.intermediate_activation,
-            max_bp=self.max_bp,
-            is_16S=self.is_16S,
-            vocab_size=self.vocab_size,
-            add_token=self.add_token,
-            asv_dropout_rate=self.asv_dropout_rate,
-            accumulation_steps=self.accumulation_steps,
-            nucleotide_encoder=self.nucleotide_encoder,
-            pairwise_loss_type=self.pairwise_loss_type,
-        )
+        if self.base_model is not None:
+            self.asv_embedding_layer = self.base_model
+            if freeze_base_weights is True:
+                self.asv_embedding_layer.trainable = False
+        else:
+            self.asv_embedding_layer = SequenceEncoder(
+                output_dim=self.output_dim,
+                token_limit=self.token_limit,
+                encoder_type=self.encoder_type,
+                dropout_rate=self.dropout_rate,
+                embedding_dim=self.embedding_dim,
+                attention_heads=self.attention_heads,
+                attention_layers=self.attention_layers,
+                intermediate_size=self.intermediate_size,
+                intermediate_activation=self.intermediate_activation,
+                max_bp=self.max_bp,
+                is_16S=self.is_16S,
+                vocab_size=self.vocab_size,
+                add_token=self.add_token,
+                asv_dropout_rate=self.asv_dropout_rate,
+                accumulation_steps=self.accumulation_steps,
+                nucleotide_encoder=self.nucleotide_encoder,
+                pairwise_loss_type=self.pairwise_loss_type,
+            )
         self.gotu_decoder = TransformerDecoder(
             num_attention_heads=self.attention_heads,
             num_layers=self.attention_layers,
@@ -105,6 +111,9 @@ class GOTUModel(tf.keras.layers.Layer):
 
     def get_config(self):
         config = super(SequenceEncoder, self).get_config()
+        base_model = None
+        if self.base_model is not None:
+            base_model = tf.keras.saving.serialize_keras_object(self.asv_embedding_layer)
         config.update(
             {
                 "output_dim": self.output_dim,
@@ -124,12 +133,21 @@ class GOTUModel(tf.keras.layers.Layer):
                 "accumulation_steps": self.accumulation_steps,
                 "gotu_count": self.gotu_count,
                 "max_gotu": self.max_gotu,
-                "base_model": self.base_model,
+                "base_model": base_model,
+                "freeze_base_weights": self.freeze_base_weights,
                 "bert_training": self.bert_training,
             }
         )
         return config
 
+    @classmethod
+    def from_config(cls, config):
+        base_model = config['base_model']
+        if base_model is not None:
+            config["base_model"] = tf.keras.saving.deserialize_keras_object(base_model)
+        model = cls(**config)
+        return model
+        
     def _compute_unifrac_loss(
         self,
         y_true: tf.Tensor,
