@@ -10,6 +10,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         self.dropout = tf.keras.layers.Dropout(0.1)
         self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         self.pool = AttentionPooling()
+        self.output_norm = False
 
     def call(self, inputs, mask=None, training=False):
         # Compute attention scores
@@ -41,11 +42,13 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         inputs = tf.expand_dims(inputs, axis=1)  # [B, 1, T, D]
         pooled_output = tf.reduce_sum(inputs * attention_weights, axis=2)  # [B, H, D]
 
-        # Apply normalization
-        output_tensor = self.norm(tf.reduce_mean(pooled_output, axis=1))
+        output_tensor = tf.reduce_mean(pooled_output, axis=1)
+        if self.output_norm:
+            # Apply normalization
+            output_tensor = self.norm(output_tensor)
 
-        if self.compute_dtype == "float16":
-            # output_tensor will always be float32
-            # so we need to cast it back to float16
-            output_tensor = tf.cast(output_tensor, dtype=tf.float16)
+            if self.compute_dtype == "float16":
+                # output_tensor will always be float32
+                # so we need to cast it back to float16
+                output_tensor = tf.cast(output_tensor, dtype=tf.float16)
         return output_tensor
