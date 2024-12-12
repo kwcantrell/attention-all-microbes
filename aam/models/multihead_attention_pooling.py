@@ -4,7 +4,7 @@ from aam.models.attention_pooling import AttentionPooling
 
 
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, output_norm=True):
+    def __init__(self, output_norm=False):
         super(MultiHeadAttentionPooling, self).__init__()
         self.query = tf.keras.layers.Dense(32, use_bias=False)
         self.dropout = tf.keras.layers.Dropout(0.1)
