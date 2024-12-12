@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Union
-
 import tensorflow as tf
 import tensorflow_models as tfm
 
@@ -18,7 +16,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         use_bias=False,
         norm_first=True,
         norm_epsilon=1e-6,
-        use_layer_norm=True,
+        use_layer_norm=False,
         share_rezero=True,
         **kwargs,
     ):
@@ -32,6 +30,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         self._use_bias = use_bias
         self._norm_first = norm_first
         self._norm_epsilon = norm_epsilon
+        self.use_layer_norm = use_layer_norm
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
@@ -62,9 +61,10 @@ class TransformerDecoder(tf.keras.layers.Layer):
                     name=("layer_%d" % i),
                 )
             )
-        self.output_normalization = tf.keras.layers.LayerNormalization(
-            epsilon=1e-6, dtype=tf.float32
-        )
+        if self.use_layer_norm:
+            self.output_normalization = tf.keras.layers.LayerNormalization(
+                epsilon=1e-6, dtype=tf.float32
+            )
         super(TransformerDecoder, self).build(input_shape)
 
     def get_config(self):
@@ -78,6 +78,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
             "use_bias": self._use_bias,
             "norm_first": self._norm_first,
             "norm_epsilon": self._norm_epsilon,
+            "use_layer_norm": self.use_layer_norm,
         }
         base_config = super(TransformerDecoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -107,22 +108,26 @@ class TransformerDecoder(tf.keras.layers.Layer):
         causal_mask = tf.linalg.band_part(
             tf.ones([batch_dim, g_seq_len, g_seq_len], dtype=self.compute_dtype), -1, 0
         )
-        if gotu_mask:
-            gotu_mask = tf.matmul(gotu_mask, gotu_mask, transpose_b=True)
-            causal_mask = causal_mask * gotu_mask
+        if gotu_mask is not None:
+            causal_mask = causal_mask * tf.matmul(
+                gotu_mask, gotu_mask, transpose_b=True
+            )
         for layer_idx in range(self.num_layers):
             encoder_inputs = self.encoder_layers[layer_idx](
-                [gotu_inputs, causal_mask], training=training
+                [encoder_inputs, causal_mask], training=training
             )
 
         decoder_inputs = encoder_inputs
-        if asv_mask and gotu_mask:
+        attention_mask = None
+        if asv_mask is not None and gotu_mask is not None:
             attention_mask = tf.matmul(gotu_mask, asv_mask, transpose_b=True)
         for layer_idx in range(self.num_layers):
             decoder_inputs = self.decoder_layers[layer_idx](
                 [decoder_inputs, asv_inputs, attention_mask], training=training
             )
-        output_tensor = self.output_normalization(decoder_inputs)
+        output_tensor = decoder_inputs
+        if self.use_layer_norm:
+            output_tensor = self.output_normalization(output_tensor)
         if self.compute_dtype == "float16":
             # output_tensor will always be float32
             # so we need to cast it back to float16

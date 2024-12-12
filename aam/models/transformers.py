@@ -16,7 +16,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         norm_epsilon=1e-6,
         use_layer_norm=True,
         share_rezero=True,
-        output_norm=False,
+        output_norm=True,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -48,9 +48,10 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     name=("layer_%d" % i),
                 )
             )
-        self.output_normalization = tf.keras.layers.LayerNormalization(
-            epsilon=1e-6, dtype=tf.float32
-        )
+        if self.output_norm:
+            self.output_normalization = tf.keras.layers.LayerNormalization(
+                epsilon=1e-6, dtype=tf.float32
+            )
         super(TransformerEncoder, self).build(input_shape)
 
     def get_config(self):

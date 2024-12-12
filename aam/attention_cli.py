@@ -1338,8 +1338,6 @@ def fit_sample_classifier(
     )
 
 
-
-
 @cli.command()
 @click.option(
     "--i-asv-table",
@@ -1399,25 +1397,25 @@ def fit_sample_classifier(
 @click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
-@click.option("--p-attention-layers", default=4, show_default=True, type=int)
-@click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
+@click.option("--p-attention-layers", default=8, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
 @click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
-@click.option("--p-lr", default=1e-4, show_default=True, type=float)
-@click.option("--p-warmup-steps", default=4000, show_default=True, type=int)
-@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-lr", default=3e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=0, show_default=True, type=int)
+@click.option("--p-decay-steps", default=1000000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 @click.option("--p-output-dim", default=128, required=False, type=int)
 @click.option("--p-add-token", default=False, required=False, type=bool)
 @click.option("--p-is-categorical", default=False, required=False, type=bool)
 @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
-@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
@@ -1465,9 +1463,9 @@ def fit_gotu(
     p_scale_loss: bool,
 ):
     from aam.data_handlers import GOTUGenerator
-    from aam.models import GOTUModel
+    from aam.models import GOTUModel, SequenceEncoder
     from aam.models.utils import cos_decay_with_warmup
-    
+
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
     if not os.path.exists(output_dir):
@@ -1477,7 +1475,6 @@ def fit_gotu(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    
     asv_table = load_table(i_asv_table)
     gotu_table = load_table(i_gotu_table)
 
@@ -1487,15 +1484,14 @@ def fit_gotu(
     asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
     gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
     num_ids = len(gotu_ids)
-    gotu_count = len(gotu_table.ids(axis='observation'))
-
+    gotu_count = len(gotu_table.ids(axis="observation"))
 
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
         "rarefy_depth": p_rarefy_depth,
         "batch_size": p_batch_size,
-        "is_16S": True,
+        "is_16S": False,
         "is_categorical": p_is_categorical,
     }
 
@@ -1511,6 +1507,7 @@ def fit_gotu(
             gen_new_tables=gen_new_tables,
             **common_kwargs,
         )
+
     def val_generator(
         asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
     ):
@@ -1524,7 +1521,6 @@ def fit_gotu(
             **common_kwargs,
         )
 
-    
     indices = np.arange(len(asv_ids), dtype=np.int32)
 
     np.random.shuffle(indices)
@@ -1539,38 +1535,56 @@ def fit_gotu(
     val_asv_indices = indices[train_size:]
     val_asv_ids = asv_ids[val_asv_indices]
     val_asv_table = asv_table.filter(val_asv_ids, inplace=False)
-    
+
     val_gotu_indices = indices[train_size:]
     val_gotu_ids = gotu_ids[val_gotu_indices]
     val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
-    
+
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
         "rarefy_depth": p_rarefy_depth,
         "batch_size": p_batch_size,
-        "is_16S": True,
+        "is_16S": False,
         "is_categorical": p_is_categorical,
         "max_bp": p_max_bp,
         "epochs": p_epochs,
         "tree_path": p_tree,
         "metadata": df_all,
     }
-    
+
     train_gen = train_generator(
         train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True
     )
-    
+
     val_gen = val_generator(
         val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False
     )
-    
+
     train_data = train_gen.get_data()
     val_data = val_gen.get_data()
     base_model = None
+    asv_tokens = [None, None, p_max_bp]
+    asv_counts = [None, None, 1]
+    gotu_tokens = [None, None, 1]
+    gotu_counts = [None, None, 1]
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         base_model.accumulation_steps = p_accumulation_steps
+    else:
+        base_model = SequenceEncoder(
+            p_output_dim,
+            p_asv_limit,
+            "unifrac",
+            dropout_rate=p_dropout,
+            embedding_dim=p_embedding_dim,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
+            name="sequence_encoder",
+        )
+        base_model.build([asv_tokens, asv_counts])
     model = GOTUModel(
         p_output_dim,
         p_asv_limit,
@@ -1580,14 +1594,12 @@ def fit_gotu(
         attention_layers=p_attention_layers,
         intermediate_size=p_intermediate_size,
         intermediate_activation=p_intermediate_activation,
-        base_model=base_model,
+        asv_embedding_layer=base_model,
         gotu_count=gotu_count,
         freeze_base_weights=p_no_freeze_base_weights,
+        name="gotu_model",
     )
-    asv_tokens = tf.TensorShape([None, None, p_max_bp])
-    asv_counts = tf.TensorShape([None, None, 1])
-    gotu_tokens = tf.TensorShape([None, None, 1])
-    gotu_counts = tf.TensorShape([None, None, 1])
+
     optimizer = tf.keras.optimizers.AdamW(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
         weight_decay=p_weight_decay,
@@ -1602,16 +1614,13 @@ def fit_gotu(
         ]
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-    
-    
-    model.build([asv_tokens, asv_counts, gotu_tokens, gotu_counts])
+
+    model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
     )
     model.summary()
-
-   
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -1638,6 +1647,7 @@ def fit_gotu(
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")
+
 
 def main():
     gpus = tf.config.list_physical_devices("GPU")

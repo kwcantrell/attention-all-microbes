@@ -131,6 +131,13 @@ class SequenceEncoder(tf.keras.Model):
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
 
+        asv_tokens, asv_counts = [[None, self.max_bp], [None, 1]]
+        self.inputs = [
+            tf.keras.Input(asv_tokens),
+            tf.keras.Input(asv_counts),
+        ]
+        self.outputs = self.call(self.inputs)
+
     @property
     def accumulation_steps(self):
         return self._accumulation_steps
@@ -442,9 +449,6 @@ class SequenceEncoder(tf.keras.Model):
 
     def get_config(self):
         config = super(SequenceEncoder, self).get_config()
-        nucleotide_encoder = tf.keras.saving.serialize_keras_object(
-            self.base_encoder.asv_encoder
-        )
         config.update(
             {
                 "output_dim": self.output_dim,
@@ -462,16 +466,7 @@ class SequenceEncoder(tf.keras.Model):
                 "add_token": self.add_token,
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
-                "nucleotide_encoder": nucleotide_encoder,
+                "nucleotide_encoder": self.nucleotide_encoder,
             }
         )
         return config
-
-    @classmethod
-    def from_config(cls, config):
-        if hasattr(config, "nucleotide_encoder"):
-            nucleotide_encoder = config["nucleotide_encoder"]
-            if nucleotide_encoder is not None:
-                config["nucleotide_encoder"] = None
-        model = cls(**config)
-        return model
