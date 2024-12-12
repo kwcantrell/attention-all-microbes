@@ -1414,7 +1414,8 @@ def fit_sample_classifier(
 @click.option("--p-output-dim", default=128, required=False, type=int)
 @click.option("--p-add-token", default=False, required=False, type=bool)
 @click.option("--p-is-categorical", default=False, required=False, type=bool)
-@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-gotu-rarefy-depth", default=100000, required=False, type=int)
+@click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
@@ -1456,7 +1457,8 @@ def fit_gotu(
     p_output_dim: int,
     p_add_token: bool,
     p_is_categorical: bool,
-    p_rarefy_depth: int,
+    p_gotu_rarefy_depth: int,
+    p_asv_rarefy_depth: int,
     p_weight_decay: float,
     p_accumulation_steps: int,
     p_unifrac_metric: str,
@@ -1489,10 +1491,15 @@ def fit_gotu(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
-        "rarefy_depth": p_rarefy_depth,
+        "rarefy_depth": p_gotu_rarefy_depth,
+        "asv_rarefy_depth": p_asv_rarefy_depth,
         "batch_size": p_batch_size,
         "is_16S": False,
         "is_categorical": p_is_categorical,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+        "tree_path": p_tree,
+        "metadata": df_all,
     }
 
     def train_generator(
@@ -1539,19 +1546,6 @@ def fit_gotu(
     val_gotu_indices = indices[train_size:]
     val_gotu_ids = gotu_ids[val_gotu_indices]
     val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
-
-    common_kwargs = {
-        "metadata_column": m_metadata_column,
-        "max_token_per_sample": p_asv_limit,
-        "rarefy_depth": p_rarefy_depth,
-        "batch_size": p_batch_size,
-        "is_16S": False,
-        "is_categorical": p_is_categorical,
-        "max_bp": p_max_bp,
-        "epochs": p_epochs,
-        "tree_path": p_tree,
-        "metadata": df_all,
-    }
 
     train_gen = train_generator(
         train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True
