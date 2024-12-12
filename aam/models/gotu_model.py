@@ -6,7 +6,7 @@ from aam.models.sequence_encoder import SequenceEncoder
 from aam.models.transformer_decoder import TransformerDecoder
 
 
-class GOTUModel(tf.keras.layers.Layer):
+class GOTUModel(tf.keras.Model):
     def __init__(
         self,
         output_dim: int,
