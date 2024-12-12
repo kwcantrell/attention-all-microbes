@@ -1584,8 +1584,10 @@ def fit_gotu(
         gotu_count=gotu_count,
         freeze_base_weights=p_no_freeze_base_weights,
     )
-    asv_shape = tf.TensorShape(([None, None, p_max_bp], [None, None, 1]))
-    gotu_shape = tf.TensorShape(([None, None, 1], [None, None, 1]))
+    asv_tokens = tf.TensorShape([None, None, p_max_bp])
+    asv_counts = tf.TensorShape([None, None, 1])
+    gotu_tokens = tf.TensorShape([None, None, 1])
+    gotu_counts = tf.TensorShape([None, None, 1])
     optimizer = tf.keras.optimizers.AdamW(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
         weight_decay=p_weight_decay,
@@ -1602,7 +1604,7 @@ def fit_gotu(
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     
     
-    model.build((asv_shape, gotu_shape))
+    model.build([asv_tokens, asv_counts, gotu_tokens, gotu_counts])
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
