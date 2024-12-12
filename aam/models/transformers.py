@@ -16,7 +16,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         norm_epsilon=1e-6,
         use_layer_norm=True,
         share_rezero=True,
-        output_norm=False,
+        output_norm=True,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -43,7 +43,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     inner_activation=self._activation,
                     dropout_rate=self._dropout_rate,
                     attention_dropout_rate=self._dropout_rate,
-                    # use_layer_norm=True,
                     share_rezero=True,
                     name=("layer_%d" % i),
                 )
@@ -95,8 +94,8 @@ class TransformerEncoder(tf.keras.layers.Layer):
         if self.output_norm:
             output_tensor = self.output_normalization(output_tensor)
 
-            if self.compute_dtype == "float16":
-                # output_tensor will always be float32
-                # so we need to cast it back to float16
-                output_tensor = tf.cast(output_tensor, dtype=tf.float16)
+        if self.compute_dtype == "float16":
+            # ReZeroTransformer always outputs a float32 tensor
+            # so we need to cast it back to float16
+            output_tensor = tf.cast(output_tensor, dtype=tf.float16)
         return output_tensor

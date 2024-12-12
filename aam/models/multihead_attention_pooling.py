@@ -4,13 +4,13 @@ from aam.models.attention_pooling import AttentionPooling
 
 
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self):
+    def __init__(self, output_norm=True):
         super(MultiHeadAttentionPooling, self).__init__()
         self.query = tf.keras.layers.Dense(32, use_bias=False)
         self.dropout = tf.keras.layers.Dropout(0.1)
         self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         self.pool = AttentionPooling()
-        self.output_norm = False
+        self.output_norm = output_norm
 
     def call(self, inputs, mask=None, training=False):
         # Compute attention scores

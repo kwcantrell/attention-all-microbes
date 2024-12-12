@@ -58,6 +58,7 @@ class CVModel:
                 "embeddings",
             ]
         )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(

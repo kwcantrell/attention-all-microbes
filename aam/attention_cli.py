@@ -795,6 +795,7 @@ def fit_sample_regressor(
     from aam.data_handlers import CombinedGenerator, TaxonomyGenerator, UniFracGenerator
     from aam.models import SequenceRegressor
 
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
     # p_is_16S = False
     is_16S = not p_gotu
     # p_is_categorical = True
