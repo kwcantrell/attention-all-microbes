@@ -1602,7 +1602,7 @@ def fit_gotu(
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     
     
-    model.build([asv_shape, gotu_shape])
+    model.build((asv_shape, gotu_shape))
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
