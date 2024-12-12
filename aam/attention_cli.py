@@ -1338,277 +1338,17 @@ def fit_sample_classifier(
     )
 
 
+
+
 @cli.command()
 @click.option(
-    "--i-table",
+    "--i-asv-table",
     required=True,
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-model-path", required=True, type=click.Path(exists=True))
 @click.option(
-    "--m-metadata-file",
-    required=True,
-    help="Metadata description",
-    type=click.Path(exists=True),
-)
-@click.option(
-    "--m-metadata-column",
-    required=True,
-    type=str,
-    help="Numeric metadata column to use as prediction target.",
-)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=MISSING_SAMP_DESC,
-)
-@click.option("--p-asv-limit", default=512, show_default=True, type=int)
-@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option(
-    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
-)
-@click.option("--output-dir", required=True, type=click.Path(exists=False))
-def predict_sample_regressor(
-    i_table: str,
-    i_model_path: str,
-    m_metadata_file: str,
-    m_metadata_column: str,
-    p_missing_samples: str,
-    p_asv_limit: int,
-    p_batch_size: int,
-    p_mixed_precision: bool,
-    output_dir: str,
-):
-    from aam.transfer_data_utils import (
-        load_data,
-        shuffle,
-        validate_metadata,
-    )
-
-    if p_mixed_precision:
-        print("\nUsing mixed precision\n")
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
-
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
-    ids, table, df = validate_metadata(table, df, p_missing_samples)
-    table, df = shuffle(table, df)
-
-    data = load_data(
-        table,
-        False,
-        df,
-        m_metadata_column,
-        shuffle_samples=shuffle,
-        batch_size=p_batch_size,
-        max_token_per_sample=p_asv_limit,
-    )
-
-    model = tf.keras.models.load_model(i_model_path)
-
-    y_pred, y_true = model.predict(data["dataset"])
-    _mean_absolute_error(y_pred, y_true, os.path.join(output_dir, "mae.png"))
-
-
-@cli.command()
-@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-@click.option("--i-base-model-path", required=True, type=click.Path(exists=True))
-@click.option(
-    "--p-freeze-base-weights / --p-no-freeze-base-weights",
-    default=True,
-    required=False,
-)
-@click.option(
-    "--m-metadata-file",
-    required=True,
-    help="Metadata description",
-    type=click.Path(exists=True),
-)
-@click.option("--m-metadata-column", required=True, type=str)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=MISSING_SAMP_DESC,
-)
-@click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-mask-percent", default=25, show_default=True, type=int)
-@click.option("--p-penalty", default=1, type=float)
-@click.option("--p-cv", default=5, type=int, help=CV_DESC)
-@click.option(
-    "--p-test-size",
-    default=0.2,
-    show_default=True,
-    type=click.FloatRange(0, 1),
-    help=TEST_SIZE_DESC,
-)
-@click.option(
-    "--p-stratify / --p-no-stratify", default=False, show_default=True, help=STRAT_DESC
-)
-@click.option("--p-patience", default=10, show_default=True, type=int)
-@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-report-back", default=5, show_default=True, type=int)
-@click.option("--p-asv-limit", default=512, show_default=True, type=int)
-@click.option(
-    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
-)
-@click.option("--output-dir", required=True, type=click.Path(exists=False))
-def train_gotu(
-    i_table: str,
-    gotu_table: str,
-    i_base_model_path: str,
-    p_freeze_base_weights: bool,
-    m_metadata_file: str,
-    m_metadata_column: str,
-    p_missing_samples: str,
-    p_epochs: int,
-    p_mask_percent: int,
-    p_penalty: float,
-    p_cv: int,
-    p_test_size: float,
-    p_stratify: bool,
-    p_patience: int,
-    p_early_stop_warmup: int,
-    p_batch_size: int,
-    p_dropout: float,
-    p_report_back: int,
-    p_asv_limit: int,
-    p_mixed_precision: bool,
-    output_dir: str,
-):
-    from aam.transfer_data_utils import (
-        load_data,
-        shuffle,
-        validate_metadata,
-    )
-    from aam.transfer_nuc_model import TransferLearnNucleotideModel
-
-    if p_mixed_precision:
-        print("\nUsing mixed precision\n")
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
-
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    figure_path = os.path.join(output_dir, "figures")
-    if not os.path.exists(figure_path):
-        os.makedirs(figure_path)
-
-    model_path = os.path.join(output_dir, "cv-models")
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
-
-    table = load_table(i_table)
-    gotu_table = load_table(gotu_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
-    print(df)
-    ids, table, df = validate_metadata(table, df, p_missing_samples)
-    table, df = shuffle(table, df)
-    num_ids = len(ids)
-    categories = df[m_metadata_column].astype("category").cat.categories
-    print("int", categories)
-    fold_indices = list(range(num_ids))
-    if p_test_size > 0:
-        test_size = int(num_ids * p_test_size)
-        train_size = num_ids - test_size
-        test_indices = fold_indices[train_size:]
-        fold_indices = fold_indices[:train_size]
-    print(len(test_indices), len(fold_indices))
-
-    def _get_fold(indices, shuffle):
-        fold_ids = ids[indices]
-        table_fold = table.filter(fold_ids, axis="sample", inplace=False)
-        df_fold = df[df.index.isin(fold_ids)]
-        data = load_data(
-            table_fold,
-            True,
-            df_fold,
-            m_metadata_column,
-            shuffle_samples=shuffle,
-            batch_size=p_batch_size,
-            max_token_per_sample=p_asv_limit,
-        )
-        return data
-
-    models = []
-    if p_stratify:
-        kfolds = StratifiedKFold(p_cv)
-    else:
-        kfolds = KFold(p_cv)
-
-    cv_sample_ids = ids[fold_indices]
-    sample_classes = df[df.index.isin(cv_sample_ids)][m_metadata_column]
-
-    for i, (train_ind, val_ind) in enumerate(
-        kfolds.split(fold_indices, sample_classes)
-    ):
-        train_data = _get_fold(train_ind, shuffle=True)
-        val_data = _get_fold(val_ind, shuffle=False)
-
-        base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
-        model = TransferLearnNucleotideModel(
-            base_model,
-            p_freeze_base_weights,
-            mask_percent=p_mask_percent,
-            shift=train_data["shift"],
-            scale=train_data["scale"],
-            penalty=p_penalty,
-            num_classes=train_data["num_classes"],
-            dropout=p_dropout,
-        )
-        loss = ImbalancedCategoricalCrossEntropy(train_data["cat_counts"])
-        fold_label = i + 1
-        model_cv = CVModel(
-            model,
-            train_data,
-            val_data,
-            output_dir,
-            fold_label,
-        )
-        model_cv.fit_fold(
-            loss,
-            p_epochs,
-            os.path.join(model_path, f"model_f{fold_label}.keras"),
-            metric="target_loss",
-            patience=p_patience,
-            early_stop_warmup=p_early_stop_warmup,
-            callbacks=[
-                ConfusionMatrx(
-                    dataset=val_data["dataset"],
-                    output_dir=os.path.join(
-                        figure_path, f"model-f{fold_label}-val.png"
-                    ),
-                    report_back=p_report_back,
-                    labels=categories,
-                )
-            ],
-        )
-        models.append(model_cv)
-
-    best_model_path = os.path.join(output_dir, "best-model.keras")
-    model_ensemble = EnsembleModel(models)
-    model_ensemble.save_best_model(best_model_path)
-    model_ensemble.val_maes()
-
-    test_data = _get_fold(test_indices, shuffle=False)
-    model_ensemble.plot_fn(
-        _confusion_matrix,
-        test_data["dataset"],
-        figure_path,
-        labels=train_data["cat_labels"],
-    )
-
-
-@cli.command()
-@click.option(
-    "--i-table",
+    "--i-gotu-table",
     required=True,
     help=TABLE_DESC,
     type=click.Path(exists=True),
@@ -1673,9 +1413,8 @@ def train_gotu(
 @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
-@click.option("--p-output-dim", default=1, required=False, type=int)
+@click.option("--p-output-dim", default=128, required=False, type=int)
 @click.option("--p-add-token", default=False, required=False, type=bool)
-@click.option("--p-gotu", default=False, required=False, type=bool)
 @click.option("--p-is-categorical", default=False, required=False, type=bool)
 @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
@@ -1738,16 +1477,17 @@ def fit_gotu(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-
+    
     asv_table = load_table(i_asv_table)
     gotu_table = load_table(i_gotu_table)
 
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
         [m_metadata_column]
     ]
-    asv_ids, asv_table, df = validate_metadata(asv_table, df, p_missing_samples)
-    gotu_ids, gotu_table, df = validate_metadata(gotu_table, df, p_missing_samples)
+    asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
+    gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
     num_ids = len(gotu_ids)
+    gotu_count = len(gotu_table.ids(axis='observation'))
 
 
     common_kwargs = {
@@ -1759,38 +1499,81 @@ def fit_gotu(
         "is_categorical": p_is_categorical,
     }
 
-    def gotu_gen_func(
+    def train_generator(
         asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
     ):
         return GOTUGenerator(
             table=gotu_table,
             asv_table=asv_table,
-            metadata=df,
-            taxonomy=p_taxonomy,
-            tax_level=p_taxonomy_level,
             shuffle=shuffle,
             shift=shift,
             scale=scale,
-            epochs=epochs,
             gen_new_tables=gen_new_tables,
-            max_bp=p_max_bp,
+            **common_kwargs,
+        )
+    def val_generator(
+        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    ):
+        return GOTUGenerator(
+            table=gotu_table,
+            asv_table=asv_table,
+            shuffle=shuffle,
+            shift=shift,
+            scale=scale,
+            gen_new_tables=gen_new_tables,
             **common_kwargs,
         )
 
-    gotu_gen = gotu_gen_func(
-        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    
+    indices = np.arange(len(asv_ids), dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(len(asv_ids) * 0.8)
+
+    train_indices = indices[:train_size]
+    train_asv_ids = asv_ids[train_indices]
+    train_gotu_ids = gotu_ids[train_indices]
+    train_asv_table = asv_table.filter(train_asv_ids, inplace=False)
+    train_gotu_table = gotu_table.filter(train_gotu_ids, inplace=False)
+
+    val_asv_indices = indices[train_size:]
+    val_asv_ids = asv_ids[val_asv_indices]
+    val_asv_table = asv_table.filter(val_asv_ids, inplace=False)
+    
+    val_gotu_indices = indices[train_size:]
+    val_gotu_ids = gotu_ids[val_gotu_indices]
+    val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
+    
+    common_kwargs = {
+        "metadata_column": m_metadata_column,
+        "max_token_per_sample": p_asv_limit,
+        "rarefy_depth": p_rarefy_depth,
+        "batch_size": p_batch_size,
+        "is_16S": True,
+        "is_categorical": p_is_categorical,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+        "tree_path": p_tree,
+        "metadata": df_all,
+    }
+    
+    train_gen = train_generator(
+        train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True
     )
     
-    data = gotu_gen.get_data()
+    val_gen = val_generator(
+        val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False
+    )
+    
+    train_data = train_gen.get_data()
+    val_data = val_gen.get_data()
+    base_model = None
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         base_model.accumulation_steps = p_accumulation_steps
-   
     model = GOTUModel(
-        token_limit=p_asv_limit,
-        base_output_dim=base_output_dim,
-        shift=train_data["shift"],
-        scale=train_data["scale"],
+        p_output_dim,
+        p_asv_limit,
         dropout_rate=p_dropout,
         embedding_dim=p_embedding_dim,
         attention_heads=p_attention_heads,
@@ -1798,18 +1581,61 @@ def fit_gotu(
         intermediate_size=p_intermediate_size,
         intermediate_activation=p_intermediate_activation,
         base_model=base_model,
-        freeze_base=p_no_freeze_base_weights,
-        penalty=p_penalty,
-        nuc_penalty=p_nuc_penalty,
+        gotu_count=gotu_count,
+        freeze_base_weights=p_no_freeze_base_weights,
     )
     asv_shape = tf.TensorShape(([None, None, p_max_bp], [None, None, 1]))
-    gotu_shape = tf.TensorShape((([None, None, 1], [None, None, 1])))
+    gotu_shape = tf.TensorShape(([None, None, 1], [None, None, 1]))
+    optimizer = tf.keras.optimizers.AdamW(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+        weight_decay=p_weight_decay,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
+    )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    
     
     model.build([asv_shape, gotu_shape])
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
     model.summary()
 
    
 
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+    core_callbacks = [
+        tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+        # tf.keras.callbacks.EarlyStopping(
+        #     "val_encoder_loss",
+        #     patience=p_patience,
+        #     start_from_epoch=p_early_stop_warmup,
+        # ),
+        model_saver,
+    ]
+    model.fit(
+        train_data["dataset"],
+        validation_data=val_data["dataset"],
+        callbacks=[*core_callbacks],
+        epochs=p_epochs,
+        steps_per_epoch=train_data["steps_pre_epoch"],
+        validation_steps=val_data["steps_pre_epoch"],
+    )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
 
 def main():
     gpus = tf.config.list_physical_devices("GPU")

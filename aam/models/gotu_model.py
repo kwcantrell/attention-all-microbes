@@ -11,7 +11,7 @@ class GOTUModel(tf.keras.layers.Layer):
         self,
         output_dim: int,
         token_limit: int,
-        encoder_type: str,
+        encoder_type: str = "unifrac",
         dropout_rate: float = 0.0,
         embedding_dim: int = 128,
         attention_heads: int = 4,
