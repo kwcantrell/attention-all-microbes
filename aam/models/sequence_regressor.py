@@ -270,9 +270,6 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        if not self.gradient_accumulator.built:
-            self.gradient_accumulator.build(self.optimizer, self)
-
         inputs, y = data
 
         with tf.GradientTape() as tape:

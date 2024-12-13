@@ -5,6 +5,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
     def __init__(self):
         super(MultiHeadAttentionPooling, self).__init__()
         self.num_heads = 4
+        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
     def build(self, input_shape):
         hidden_dim = input_shape[-1]
@@ -21,4 +22,4 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         attention = self.attention(
             inputs, inputs, attention_mask=mask, training=training
         )
-        return tf.reduce_mean(attention, axis=1)
+        return self.norm(tf.reduce_mean(attention, axis=1))
