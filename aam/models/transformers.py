@@ -16,7 +16,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         norm_epsilon=1e-6,
         use_layer_norm=True,
         share_rezero=True,
-        output_norm=True,
+        output_norm=False,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)

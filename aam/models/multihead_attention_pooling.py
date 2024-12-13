@@ -4,9 +4,9 @@ import tensorflow as tf
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
     def __init__(self):
         super(MultiHeadAttentionPooling, self).__init__()
-        self.query = tf.keras.layers.Dense(32, use_bias=False)
+        self.query = tf.keras.layers.Dense(32, use_bias=True)
         self.dropout = tf.keras.layers.Dropout(0.1)
-        self.output_norm = True
+        self.output_norm = False
         if self.output_norm:
             self.norm = tf.keras.layers.LayerNormalization(
                 epsilon=1e-6, dtype=tf.float32
