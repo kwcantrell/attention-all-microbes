@@ -58,6 +58,7 @@ class CVModel:
                 "embeddings",
             ]
         )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(
@@ -68,7 +69,7 @@ class CVModel:
             # ),
             model_saver,
         ]
-        self.model.compile(optimizer=optimizer, loss=loss)
+        self.model.compile(optimizer=optimizer, loss=loss, run_eagerly=False)
         # Set up the summary writer
         self.model.fit(
             self.train_data["dataset"],

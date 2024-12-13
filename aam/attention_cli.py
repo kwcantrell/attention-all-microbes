@@ -798,6 +798,8 @@ def fit_sample_regressor(
     from aam.data_handlers import CombinedGenerator, TaxonomyGenerator, UniFracGenerator
     from aam.models import SequenceRegressor
 
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
     # p_is_16S = False
     is_16S = not p_gotu
     # p_is_categorical = True
@@ -996,9 +998,11 @@ def fit_sample_regressor(
             accumulation_steps=p_accumulation_steps,
             scale_losses=p_scale_loss,
         )
-        token_shape = tf.TensorShape([None, None, p_max_bp])
-        count_shape = tf.TensorShape([None, None, 1])
-        model.build([token_shape, count_shape])
+        for x, y in train_data["dataset"].take(1):
+            model(x)
+        # token_shape = tf.TensorShape([None, None, p_max_bp])
+        # count_shape = tf.TensorShape([None, None, 1])
+        # model.build([token_shape, count_shape])
         model.summary()
 
         fold_label = i + 1

@@ -96,38 +96,7 @@ class SequenceEncoder(tf.keras.Model):
             name="encoder",
         )
 
-        if self.encoder_type == "combined":
-            uni_out, faith_out, tax_out = self.output_dim
-            self.uni_ff = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Dense(self.embedding_dim, activation="gelu"),
-                    tf.keras.layers.Dense(uni_out),
-                ]
-            )
-            self.faith_ff = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Dense(self.embedding_dim, activation="gelu"),
-                    tf.keras.layers.Dense(faith_out),
-                ]
-            )
-            self.tax_ff = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Dense(self.embedding_dim, activation="gelu"),
-                    tf.keras.layers.Dense(tax_out),
-                ]
-            )
-        elif self.encoder_type == "unifrac":
-            self.encoder_ff = tf.keras.layers.Dense(self.output_dim)
-        else:
-            self.encoder_ff = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Dense(self.embedding_dim * 4, activation="relu"),
-                    tf.keras.layers.Dropout(0.1),
-                    tf.keras.layers.Dense(self.embedding_dim * 4, activation="relu"),
-                    tf.keras.layers.Dropout(0.1),
-                    tf.keras.layers.Dense(self.output_dim, activation="softmax"),
-                ]
-            )
+        self.encoder_ff = tf.keras.layers.Dense(self.output_dim)
 
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
@@ -151,94 +120,14 @@ class SequenceEncoder(tf.keras.Model):
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
 
     def _get_encoder_loss(self):
-        if self.encoder_type == "combined":
-            self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
-            self._tax_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-            self.encoder_loss = self._compute_combined_loss
-            self.extract_encoder_pred = self._combined_embeddigns
-        elif self.encoder_type == "unifrac":
-            self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
-            self.encoder_loss = self._compute_unifrac_loss
-            self.extract_encoder_pred = self._unifrac_embeddings
-        elif self.encoder_type == "faith_pd":
-            self._unifrac_loss = tf.keras.losses.MeanSquaredError(reduction="none")
-            self.encoder_loss = self._compute_unifrac_loss
-            self.extract_encoder_pred = self._unifrac_embeddings
-        elif self.encoder_type == "taxonomy":
-            self._tax_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-            self.encoder_loss = self._compute_tax_loss
-            self.extract_encoder_pred = self._taxonomy_embeddings
-        else:
-            raise Exception(f"invalid encoder encoder_type: {self.encoder_type}")
-
-    def _combined_embeddigns(self, tensor, mask):
-        if self.add_token:
-            unifrac_pred = tensor[:, 0, :]
-        else:
-            mask = tf.cast(mask, dtype=tf.float32)
-            unifrac_pred = tf.reduce_sum(tensor * mask, axis=1)
-            unifrac_pred /= tf.reduce_sum(mask, axis=1)
-
-        if self.add_token:
-            faith_pred = tensor[:, 0, :]
-        else:
-            mask = tf.cast(mask, dtype=tf.float32)
-            faith_pred = tf.reduce_sum(tensor * mask, axis=1)
-            faith_pred /= tf.reduce_sum(mask, axis=1)
-
-        tax_pred = tensor
-        if self.add_token:
-            tax_pred = tax_pred[:, 1:, :]
-
-        return [
-            self.uni_ff(unifrac_pred),
-            self.faith_ff(faith_pred),
-            self.tax_ff(tax_pred),
-        ]
+        self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
+        self.encoder_loss = self._compute_unifrac_loss
+        self.extract_encoder_pred = self._unifrac_embeddings
 
     def _unifrac_embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
         encoder_pred = tf.cast(self.encoder_ff(encoder_pred), dtype=tf.float32)
         return encoder_pred
-
-    def _taxonomy_embeddings(self, tensor, mask=None, training=False):
-        tax_pred = tensor
-        tax_pred = self.encoder_ff(tax_pred, training=training)
-        return tax_pred
-
-    def _compute_combined_loss(self, y_true, preds):
-        uni_true, faith_true, tax_true = y_true
-        uni_pred, faith_pred, tax_pred = preds
-
-        uni_loss = self._compute_unifrac_loss(uni_true, uni_pred)
-        faith_loss = tf.reduce_mean(tf.square(faith_true - faith_pred))
-        tax_loss = self._compute_tax_loss(tax_true, tax_pred)
-
-        return [uni_loss, faith_loss, tax_loss]
-
-    def _compute_tax_loss(
-        self,
-        tax_tokens: tf.Tensor,
-        tax_pred: tf.Tensor,
-    ) -> tf.Tensor:
-        if isinstance(self.output_dim, (list, tuple)):
-            out_dim = self.output_dim[-1]
-        else:
-            out_dim = self.output_dim
-        y_true = tf.reshape(tax_tokens, [-1])
-        y_pred = tf.reshape(tax_pred, [-1, out_dim])
-
-        mask = float_mask(y_true) > 0
-        y_true = tf.one_hot(y_true, depth=out_dim)
-
-        # smooth labels
-        y_true = y_true * 0.9 + 0.1
-
-        y_true = y_true[mask]
-        y_pred = y_pred[mask]
-
-        loss = tf.reduce_mean(self._tax_loss(y_true, y_pred))
-        return loss
 
     def _compute_unifrac_loss(
         self,
