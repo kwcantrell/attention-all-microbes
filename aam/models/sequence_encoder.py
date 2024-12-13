@@ -76,7 +76,7 @@ class SequenceEncoder(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             nuc_attention_heads=4,
             nuc_attention_layers=4,
-            nuc_intermediate_size=256,
+            nuc_intermediate_size=512,
             intermediate_activation=self.intermediate_activation,
             is_16S=self.is_16S,
             vocab_size=self.vocab_size,
