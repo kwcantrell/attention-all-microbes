@@ -75,7 +75,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
 
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.max_bp + 1, seq_axis=2, initializer="zeros"
+            self.max_bp + 1, seq_axis=1, initializer="zeros"
         )
 
         self.asv_attention = TransformerEncoder(
@@ -91,15 +91,10 @@ class ASVEncoder(tf.keras.layers.Layer):
     def call(self, inputs, include_bert_random_mask=True, training=False):
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs_shape = tf.shape(inputs)
-        batch_size = inputs_shape[0]
-        seq_size = inputs_shape[1]
 
         # boolean mask used to select non-pad tokens
         mask = tf.reduce_sum(inputs, axis=-1) > 0  # shape [B, A]
         mask = tf.reshape(mask, shape=[-1])  # shape [B * A]
-
-        # create indices for non-pad locations
-        indices = tf.where(mask)
 
         # mask for non-pad tokens (used during the creation of random_mask)
         valid_mask = tf.cast(inputs > 0, dtype=tf.int32)
@@ -156,20 +151,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_input = self.emb_layer(asv_input)
         asv_input = asv_input + self.pos_emb(asv_input)
 
-        # flatten tensor of shape [B, A, N, E] to [B * A, N, E]
-        reshape = [batch_size * seq_size, self.max_bp, self.embedding_dim]
-
-        # select non-pad tokens
-        reshaped_asv_input = tf.reshape(asv_input, shape=reshape)[mask]
-
-        output = self.asv_attention(reshaped_asv_input, training=training)
-
-        # place nucleotide embedding back in their original shape
-        output = tf.scatter_nd(indices=indices, updates=output, shape=reshape)
-        output = tf.reshape(
-            output,
-            shape=[batch_size, seq_size, self.max_bp, self.embedding_dim],
-        )
+        output = self.asv_attention(asv_input, training=training)
 
         # extract the masked nucleotides
         masked_nuc = tf.reshape(random_mask, shape=[-1])
@@ -296,7 +278,7 @@ class NucleotideAttention(tf.keras.layers.Layer):
     def build(self, input_shape):
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
             self.max_bp + 1,
-            seq_axis=2,
+            seq_axis=1,
             # initializer=tf.keras.initializers.RandomNormal(
             #     mean=0, stddev=self.embedding_dim**0.5
             # ),

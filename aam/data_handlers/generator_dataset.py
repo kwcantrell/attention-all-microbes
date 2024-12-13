@@ -94,20 +94,28 @@ class GeneratorDataset:
         self.seed = seed
 
         print("creating table...")
-        self.rarefy_table = self.preprocessed_table.subsample(
-            self.rarefy_depth, seed=self.seed
+        self.rarefy_table, self.sample_mask = self.create_rarefied_table(
+            self.preprocessed_table
         )
 
         print(f"Table shape: {self.rarefy_table.shape}")
         self.sample_indices = np.arange(len(self.rarefy_table.ids()))
-
         self.size = len(self.sample_indices)
+        self.sample_indices = self.sample_indices[self.sample_mask]
         self.steps_per_epoch = self.size // self.batch_size
         self.table_data = self._create_table_data(self.rarefy_table)
         self.y_data = self._create_y_data(self.rarefy_table)
         self.encoder_target = None
         self.encoder_dtype = None
         self.encoder_output_type = None
+
+    def create_rarefied_table(self, table):
+        rarefied_table = table.subsample(self.rarefy_depth, seed=self.seed)
+        sample_mask = (
+            rarefied_table.pa(inplace=False).sum(axis="sample")
+            <= self.max_token_per_sample
+        )
+        return rarefied_table, sample_mask
 
     def _validate_dataframe(self, df: pd.DataFrame):
         if isinstance(df, str):
@@ -245,33 +253,29 @@ class GeneratorDataset:
             raise Exception(
                 f"\tsample_indices exceed max {len(sample_ids)}. samples {samples}..."
             )
+        s_ids = [sample_ids[s] for s in samples]
 
-        def _s_info(s):
-            s_mask = row == s
-            s_counts = counts[s_mask]
-            s_obs_indices = col[s_mask]
-            if self.is_16S:
-                s_tokens = obs_encodings[s_obs_indices]
-            else:
-                s_tokens = self.gotu_tokens(s_obs_indices)
+        samples = samples.reshape((-1, 1))
+        row = row.reshape((1, -1))
+        batch_mask = samples == row
+        batch_counts = np.sum(batch_mask.astype(np.int32), axis=-1)
+        batch_mask = np.logical_or.reduce(batch_mask, axis=0)
 
-            sorted_order = np.argsort(s_counts)
-            sorted_order = sorted_order[::-1]
-            s_counts = s_counts[sorted_order].reshape(-1, 1)
-            s_tokens = s_tokens[sorted_order]
-            return s_counts, s_tokens, s_obs_indices
+        s_counts = counts[batch_mask]
 
-        s_data = [_s_info(s) for s in samples]
-        s_counts = [c for c, _, _ in s_data]
-        s_tokens = [t for _, t, _ in s_data]
-        s_obj_ids = [obs_ids[o] for _, _, o in s_data]
-        s_max_token = max([len(t) for t in s_tokens])
+        s_obj_ids = col[batch_mask]
+        if self.is_16S:
+            # asv_unique_obj, asv_obj_indices = np.unique(asv_s_obs, return_inverse=True)
+            # asv_s_tokens = asv_obs_encodings[asv_unique_obj]
+            unique_obj, obj_indices = np.unique(s_obj_ids, return_inverse=True)
+            s_tokens = obs_encodings[unique_obj]
+        else:
+            s_tokens = self.gotu_tokens(s_obj_ids)
+        s_max_token = np.max(batch_counts)
 
         if s_max_token > self.max_token_per_sample:
             print(f"\tskipping group due to exceeding token limit {s_max_token}...")
             return None, None, None, None, None, None
-
-        s_ids = [sample_ids[s] for s in samples]
 
         if y_data is None:
             y_data = self.y_data
@@ -281,7 +285,16 @@ class GeneratorDataset:
             encoder_target = self.encoder_target
         encoder_output = self._encoder_output(encoder_target, s_ids, s_obj_ids)
 
-        return s_counts, s_tokens, y_output, encoder_output, s_obj_ids, s_ids
+        return (
+            batch_counts,
+            s_counts.reshape((-1, 1)),
+            s_tokens,
+            obj_indices,
+            y_output,
+            encoder_output,
+            s_obj_ids,
+            s_ids,
+        )
 
     def _epoch_complete(self, processed):
         if processed < self.steps_per_epoch:
@@ -297,27 +310,29 @@ class GeneratorDataset:
         return sample_indices[start:end]
 
     def _epoch_samples(
-        self, epoch, old_table_data, old_y_data, old_encoder_target, old_indices
+        self,
+        epoch,
+        table_data,
+        y_data,
+        encoder_target,
+        sample_mask,
+        sample_indices,
     ):
         if self.gen_new_tables and epoch > 0:
             print(f"epcoh {epoch}: generating new table...")
-            rarefy_table = self.preprocessed_table.subsample(self.rarefy_depth)
+            rarefy_table, sample_mask = self.create_rarefied_table(
+                self.preprocessed_table
+            )
             table_data = self._create_table_data(rarefy_table)
             y_data = self._create_y_data(rarefy_table)
             encoder_target = self._create_encoder_target(rarefy_table)
-            sample_indices = np.arange(len(rarefy_table.ids()))
-        else:
-            table_data = old_table_data
-            y_data = old_y_data
-            encoder_target = old_encoder_target
-            sample_indices = old_indices
+            sample_indices = np.arange(len(rarefy_table.ids()))[sample_mask]
 
         if self.shuffle:
             print("shuffling...")
-            sample_indices = np.arange(len(sample_indices))
             np.random.shuffle(sample_indices)
 
-        return table_data, y_data, encoder_target, sample_indices
+        return table_data, y_data, encoder_target, sample_mask, sample_indices
 
     def _create_epoch_generator(self, include_seq_id, include_sample_ids):
         def generator():
@@ -325,14 +340,20 @@ class GeneratorDataset:
             table_data = self.table_data
             y_data = self.y_data
             encoder_target = self.encoder_target
+            sample_mask = self.sample_mask
             sample_indices = self.sample_indices
             for epoch in range(self.epochs):
                 print(f"Finished epcoh: {epoch} processed {processed}")
                 processed = 0
                 minibatch = 0
-                table_data, y_data, encoder_target, sample_indices = (
+                table_data, y_data, encoder_target, sample_mask, sample_indices = (
                     self._epoch_samples(
-                        epoch, table_data, y_data, encoder_target, sample_indices
+                        epoch,
+                        table_data,
+                        y_data,
+                        encoder_target,
+                        sample_mask,
+                        sample_indices,
                     )
                 )
 
@@ -343,29 +364,24 @@ class GeneratorDataset:
                     )
 
                 while not self._epoch_complete(processed):
-                    counts, tokens, y_output, encoder_out, ob_ids, s_ids = sample_data(
-                        minibatch
-                    )
+                    (
+                        batch_counts,
+                        counts,
+                        tokens,
+                        indices,
+                        y_output,
+                        encoder_out,
+                        ob_ids,
+                        s_ids,
+                    ) = sample_data(minibatch)
 
                     if counts is not None:
-                        max_len = max([len(c) for c in counts])
-                        padded_counts = np.array(
-                            [np.pad(c, [[0, max_len - len(c)], [0, 0]]) for c in counts]
-                        )
-                        padded_tokens = np.array(
-                            [np.pad(t, [[0, max_len - len(t)], [0, 0]]) for t in tokens]
-                        )
-                        padded_ob_ids = np.array(
-                            [
-                                np.pad(o, [[0, max_len - len(o)]], constant_values="")
-                                for o in ob_ids
-                            ]
-                        )
-
                         processed += 1
                         table_output = (
-                            padded_tokens.astype(np.int32),
-                            padded_counts.astype(np.int32),
+                            batch_counts.astype(np.int32),
+                            tokens.astype(np.int32),
+                            indices.astype(np.int32),
+                            counts.astype(np.int32),
                         )
 
                         output = None
@@ -394,7 +410,7 @@ class GeneratorDataset:
                         if include_seq_id:
                             output = (
                                 *output,
-                                padded_ob_ids,
+                                ob_ids,
                             )
                         if include_sample_ids:
                             output = (*output, s_ids)
@@ -438,10 +454,10 @@ class GeneratorDataset:
 
         if self.is_16S:
             output_sig = (
-                tf.TensorSpec(
-                    shape=[self.batch_size, None, self.max_bp], dtype=tf.int32
-                ),
-                tf.TensorSpec(shape=[self.batch_size, None, 1], dtype=tf.int32),
+                tf.TensorSpec(shape=[self.batch_size], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, self.max_bp], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
             )
         else:
             output_sig = (

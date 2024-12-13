@@ -10,6 +10,7 @@ from aam.losses import PairwiseLoss
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
 from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
+from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import float_mask
@@ -131,12 +132,14 @@ class SequenceEncoder(tf.keras.Model):
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
 
-        asv_tokens, asv_counts = [[None, self.max_bp], [None, 1]]
-        self.inputs = [
-            tf.keras.Input(asv_tokens),
-            tf.keras.Input(asv_counts),
-        ]
-        self.outputs = self.call(self.inputs)
+        asv_tokens, asv_indicies, asv_counts = [[None, self.max_bp], [None], [None, 1]]
+        # self.inputs = [
+        #     tf.keras.Input(shape=[], batch_size=None),
+        #     tf.keras.Input(asv_tokens),
+        #     tf.keras.Input(asv_indicies),
+        #     tf.keras.Input(asv_counts),
+        # ]
+        # self.outputs = self.call(self.inputs)
 
     @property
     def accumulation_steps(self):
@@ -269,7 +272,7 @@ class SequenceEncoder(tf.keras.Model):
         y_true: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
         outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        nuc_tokens, counts = model_inputs
+        batch_counts, nuc_tokens, indicies, counts = model_inputs
         embeddings, encoder_embeddings, nuc_mask, nuc_pred = outputs
 
         nuc_tokens = nuc_tokens + self.base_encoder.asv_encoder.nucleotide_position
@@ -359,19 +362,23 @@ class SequenceEncoder(tf.keras.Model):
 
     def call(
         self,
-        inputs: tuple[tf.Tensor, tf.Tensor],
+        inputs,
         include_bert_random_mask=True,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        tokens, counts = inputs
-
-        # account for <SAMPLE> token
-        count_mask = float_mask(counts, dtype=self.compute_dtype)
+        batch_counts, tokens, indicies, counts = inputs
 
         sample_embeddings, nuc_mask, nuc_pred = self.base_encoder(
             tokens, include_bert_random_mask=include_bert_random_mask, training=training
         )
 
+        sample_embeddings = tf.gather(
+            sample_embeddings, tf.cast(indicies, dtype=tf.int32)
+        )
+        sample_embeddings = to_batch(sample_embeddings, batch_counts)
+        counts = to_batch(counts, batch_counts)
+        sample_embeddings, counts = sort_using_counts(sample_embeddings, counts)
+        count_mask = float_mask(counts, dtype=self.compute_dtype)
         encoder_gated_embeddings = self.encoder(
             sample_embeddings, mask=count_mask, training=training
         )

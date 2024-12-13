@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tensorflow as tf
-import tensorflow_models as tfm
 
 from aam.layers import (
     ASVEncoder,
@@ -83,10 +82,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 dropout_rate=self.dropout_rate,
             )
 
-        self.asv_pos = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit + 5, initializer="zeros"
-        )
-
         self.sample_encoder = TransformerEncoder(
             num_layers=self.sample_attention_layers,
             num_attention_heads=self.sample_attention_heads,
@@ -95,48 +90,26 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             dropout_rate=self.dropout_rate,
         )
 
-        # self.attention_pool = AttentionPooling()
         self.attention_pool = MultiHeadAttentionPooling()
 
-    def _split_asvs(self, embeddings, mask, indicies, training):
+    def _split_asvs(self, embeddings, training):
         asv_embeddings = embeddings
         if self.is_16S:
-            shape = tf.shape(embeddings)
-            batch_dim = shape[0]
-            seq_dim = shape[1]
-
-            embeddings = tf.reshape(
-                embeddings, (batch_dim * seq_dim, self.max_bp, self.embedding_dim)
-            )[mask]
             asv_embeddings = self.attention_pool(embeddings, training=training)
-            asv_embeddings = tf.scatter_nd(
-                indices=indicies,
-                updates=asv_embeddings,
-                shape=[batch_dim * seq_dim, self.embedding_dim],
-            )
-            asv_embeddings = tf.reshape(
-                asv_embeddings, shape=(batch_dim, seq_dim, self.embedding_dim)
-            )
         else:
             asv_embeddings = asv_embeddings[:, :, 0, :]
 
-        asv_embeddings = asv_embeddings + self.asv_pos(asv_embeddings)
         return asv_embeddings
 
     def call(
         self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor]:
-        # boolean mask used to select non-pad tokens
-        mask = tf.reduce_sum(inputs, axis=-1) > 0  # shape [B, A]
-        mask = tf.reshape(mask, shape=[-1])  # shape [B * A]
-
-        # create indices for non-pad locations
-        indices = tf.where(mask)
-
+        tokens = inputs
         embeddings, random_mask, nuc_pred = self.asv_encoder(
-            inputs, include_bert_random_mask=include_bert_random_mask, training=training
+            tokens, include_bert_random_mask=include_bert_random_mask, training=training
         )
-        asv_embeddings = self._split_asvs(embeddings, mask, indices, training=training)
+
+        asv_embeddings = self._split_asvs(embeddings, training=training)
 
         return asv_embeddings, random_mask, nuc_pred
 

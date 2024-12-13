@@ -373,14 +373,7 @@ def fit_unifrac_regressor(
         ]
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-    token_shape = tf.TensorShape([None, None, 150])
-    count_shape = tf.TensorShape([None, None, 1])
-    model.build([token_shape, count_shape])
-    model.compile(
-        optimizer=optimizer,
-        run_eagerly=False,
-    )
-    model.summary()
+    #
 
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
@@ -433,6 +426,16 @@ def fit_unifrac_regressor(
     )
     val_data = val_gen.get_data()
 
+    # token_shape = tf.TensorShape([None, None, 150])
+    # count_shape = tf.TensorShape([None, None, 1])
+    # model.build([token_shape, count_shape])
+    for x, y in train_data["dataset"].take(1):
+        model(x)
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
+    model.summary()
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
@@ -1578,7 +1581,7 @@ def fit_gotu(
             intermediate_activation=p_intermediate_activation,
             name="sequence_encoder",
         )
-        base_model.build([asv_tokens, asv_counts])
+        # base_model.build([None, asv_tokens, [None], asv_counts])
     model = GOTUModel(
         p_output_dim,
         p_asv_limit,
@@ -1609,7 +1612,20 @@ def fit_gotu(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
+    for (
+        asv_batch_counts,
+        asv_tokens,
+        asv_indices,
+        asv_counts,
+        gotu_batch_counts,
+        gotu_tokens,
+        gotu_counts,
+        asv_unifrac,
+    ) in train_data["dataset"].take(1):
+        asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
+        gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
+        model((asv_inputs, gotu_inputs))
+    # model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,

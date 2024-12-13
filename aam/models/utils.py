@@ -67,6 +67,39 @@ def cos_decay_with_warmup(lr, warmup_steps=5000, decay_steps=1000):
     return lr_schedule
 
 
+def to_batch(tensor, batch_counts):
+    batch_size = tf.shape(batch_counts)[0]
+    tensor_shape = tf.shape(tensor)[1:]
+
+    batch_indices = tf.expand_dims(tf.range(batch_size, dtype=tf.int32), axis=-1)
+
+    batch_counts = tf.cast(batch_counts, dtype=tf.int32)
+    max_count = tf.reduce_max(batch_counts)
+    batch_indices = tf.broadcast_to(batch_indices, shape=[batch_size, max_count])
+    seq_indices = tf.tile(
+        tf.expand_dims(tf.range(max_count, dtype=tf.int32), axis=0),
+        multiples=[batch_size, 1],
+    )
+
+    batch_mask = seq_indices < tf.expand_dims(batch_counts, axis=-1)
+    batch_indices = tf.stack([batch_indices, seq_indices], axis=-1)
+
+    batch_mask = tf.reshape(batch_mask, shape=[-1])
+    batch_indices = tf.reshape(batch_indices, shape=[-1, 2])[batch_mask]
+
+    output_shape = tf.concat([[batch_size], [max_count], tensor_shape], axis=0)
+    return tf.scatter_nd(batch_indices, updates=tensor, shape=output_shape)
+
+
+def sort_using_counts(tensor, counts):
+    sorted_indices = tf.argsort(
+        tf.squeeze(counts, axis=-1), axis=1, direction="DESCENDING"
+    )
+    sorted_tensor = tf.gather(tensor, sorted_indices, axis=1, batch_dims=1)
+    sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=1)
+    return sorted_tensor, sorted_counts
+
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import numpy as np
