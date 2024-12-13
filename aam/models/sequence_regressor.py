@@ -172,11 +172,12 @@ class SequenceRegressor(tf.keras.Model):
     def _compute_count_loss(
         self, counts: tf.Tensor, count_pred: tf.Tensor, count_mask
     ) -> tf.Tensor:
+        count_mask = counts > 0
         count_mask = tf.reshape(count_mask, shape=[-1])
         relative_counts = tf.reshape(self._relative_abundance(counts), shape=[-1])[
             count_mask
         ]
-        count_pred = tf.reshape(count_pred, shape=[-1])
+        count_pred = tf.reshape(count_pred, shape=[-1])[count_mask]
 
         loss = tf.square(tf.math.log(relative_counts) - tf.math.log(count_pred))
         loss = tf.reduce_mean(loss)
@@ -348,7 +349,7 @@ class SequenceRegressor(tf.keras.Model):
             * valid_mask
         )
 
-        if training:
+        if False:
             # of the masked tokens, select 20% to either keep or change to
             # random token
             random_non_mask = (
@@ -412,8 +413,8 @@ class SequenceRegressor(tf.keras.Model):
         count_pred = tf.squeeze(count_pred, axis=-1)
         count_pred = tf.nn.softmax(count_pred, axis=-1)
 
-        count_mask = tf.reshape(count_mask, shape=[-1])
-        count_pred = tf.reshape(count_pred, shape=[-1])[count_mask]
+        # count_mask = tf.reshape(count_mask, shape=[-1])
+        # count_pred = tf.reshape(count_pred, shape=[-1])[count_mask]
 
         return count_embeddings, count_pred
 
