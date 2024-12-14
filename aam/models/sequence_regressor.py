@@ -11,7 +11,7 @@ from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 # from aam.models.unifrac_encoder import UniFracEncoder
 from aam.models.sequence_encoder import SequenceEncoder
 from aam.models.transformers import TransformerEncoder
-from aam.models.utils import to_batch
+from aam.models.utils import to_batch, sort_using_counts
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import create_random_mask, float_mask
@@ -198,6 +198,7 @@ class SequenceRegressor(tf.keras.Model):
 
         (
             target_embeddings,
+            counts,
             count_pred,
             count_mask,
             y_pred,
@@ -208,7 +209,6 @@ class SequenceRegressor(tf.keras.Model):
         target_loss = self._compute_target_loss(y_target, y_pred)
 
         counts = tf.cast(counts, dtype=tf.float32)
-        counts = to_batch(counts, batch_counts)
         count_loss = self._compute_count_loss(counts, count_pred, count_mask)
         _, nuc_loss, encoder_loss = self.base_model._compute_loss(
             model_inputs, base_target, (base_target, base_pred, nuc_mask, nuc_pred)
@@ -228,6 +228,7 @@ class SequenceRegressor(tf.keras.Model):
 
         (
             target_embeddings,
+            counts,
             count_pred,
             count_mask,
             y_pred,
@@ -312,7 +313,7 @@ class SequenceRegressor(tf.keras.Model):
     ):
         inputs, y = data
 
-        outputs = self(inputs, training=True)
+        outputs = self(inputs, training=False)
         target_loss, count_mse, nuc_loss, encoder_loss = self._compute_loss(
             inputs, y, outputs
         )
@@ -413,9 +414,6 @@ class SequenceRegressor(tf.keras.Model):
         count_pred = tf.squeeze(count_pred, axis=-1)
         count_pred = tf.nn.softmax(count_pred, axis=-1)
 
-        # count_mask = tf.reshape(count_mask, shape=[-1])
-        # count_pred = tf.reshape(count_pred, shape=[-1])[count_mask]
-
         return count_embeddings, count_pred
 
     def _compute_target_embeddings(
@@ -424,10 +422,10 @@ class SequenceRegressor(tf.keras.Model):
         attention_mask: Optional[tf.Tensor] = None,
         training: bool = False,
     ) -> tf.Tensor:
-        # target_embeddings = self.target_encoder(
-        #     tensor, mask=attention_mask, training=training
-        # )
-        target_embeddings = tensor
+        target_embeddings = self.target_encoder(
+            tensor, mask=attention_mask, training=training
+        )
+        # target_embeddings = tensor
         target_out = self.attention_pooling(target_embeddings, mask=attention_mask)
         target_out = self.target_ff(target_out)
         return target_embeddings, target_out
@@ -438,18 +436,15 @@ class SequenceRegressor(tf.keras.Model):
         tuple[tf.Tensor, tf.Tensor, tf.Tensor],
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
-        # keras cast all input to float so we need to manually cast to expected type
-        batch_counts, _, _, counts = inputs
-        counts = tf.cast(counts, dtype=self.compute_dtype)
+        # count_attention_mask = count_mask
+        base_embeddings, counts, base_pred, nuc_mask, nuc_pred = self.base_model(
+            inputs, return_counts=True, training=(training and self.base_model.trainable)
+        )
 
-        counts = to_batch(counts, batch_counts)
+        counts = tf.cast(counts, dtype=self.compute_dtype)
         count_mask = float_mask(counts, dtype=self.compute_dtype)
         rel_abundance = self._relative_abundance(counts)
-
         count_attention_mask = count_mask
-        base_embeddings, base_pred, nuc_mask, nuc_pred = self.base_model(
-            inputs, training=(training and self.base_model.trainable)
-        )
 
         # base_embeddings will always be float32
         base_embeddings = tf.cast(base_embeddings, dtype=self.compute_dtype)
@@ -472,6 +467,7 @@ class SequenceRegressor(tf.keras.Model):
 
         return (
             target_embeddings,
+            counts,
             count_pred,
             count_mask,
             target_out,

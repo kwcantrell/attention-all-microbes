@@ -969,7 +969,7 @@ def fit_sample_regressor(
             train_ind,
             shuffle=True,
             # shift=0.0,
-            scale="standscale",
+            scale="minmax",
             gen_new_tables=p_gen_new_table,
         )
         val_data = _get_fold(

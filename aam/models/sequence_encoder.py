@@ -253,6 +253,7 @@ class SequenceEncoder(tf.keras.Model):
         self,
         inputs,
         include_bert_random_mask=True,
+        return_counts=False,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, tokens, indicies, counts = inputs
@@ -277,7 +278,10 @@ class SequenceEncoder(tf.keras.Model):
             encoder_gated_embeddings, count_mask, training=training
         )
         encoder_embeddings = encoder_gated_embeddings
-        return encoder_embeddings, encoder_pred, nuc_mask, nuc_pred
+        if not return_counts:
+            return encoder_embeddings, encoder_pred, nuc_mask, nuc_pred
+        else:
+            return encoder_embeddings, counts, encoder_pred, nuc_mask, nuc_pred
 
     def base_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor]
@@ -311,8 +315,10 @@ class SequenceEncoder(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
         tokens = inputs
-
-        return self.base_encoder.asv_embeddings(tokens, training=training)
+        sample_embeddings, nuc_mask, nuc_pred = self.base_encoder(
+            tokens, training=False
+        )
+        return sample_embeddings
 
     def asv_gradient(
         self, inputs: tuple[tf.Tensor, tf.Tensor], asv_embeddings
