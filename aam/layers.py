@@ -152,7 +152,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_input = asv_input + self.pos_emb(asv_input)
 
         output = self.asv_attention(asv_input, training=training)
-
         # extract the masked nucleotides
         masked_nuc = tf.reshape(random_mask, shape=[-1])
         nuc_embeddings = tf.reshape(output, shape=[-1, self.embedding_dim])

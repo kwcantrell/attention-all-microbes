@@ -163,9 +163,9 @@ class SequenceEncoder(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, nuc_tokens, indicies, counts = model_inputs
         embeddings, encoder_embeddings, nuc_mask, nuc_pred = outputs
-
         nuc_tokens = nuc_tokens + self.base_encoder.asv_encoder.nucleotide_position
         nuc_tokens = tf.reshape(nuc_tokens, shape=[-1])
+
         nuc_mask = tf.reshape(nuc_mask, shape=[-1])
         nuc_tokens = nuc_tokens[nuc_mask]
         nuc_tokens = tf.one_hot(nuc_tokens, tf.shape(nuc_pred)[-1])
@@ -184,7 +184,7 @@ class SequenceEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, encoder_embeddings, nuc_mask, nuc_pred = self(
+        embeddings, encoder_embeddings, nuc_mask, nuc_pred = self.call(
             inputs, training=False
         )
 
@@ -260,14 +260,15 @@ class SequenceEncoder(tf.keras.Model):
         sample_embeddings, nuc_mask, nuc_pred = self.base_encoder(
             tokens, include_bert_random_mask=include_bert_random_mask, training=training
         )
-
         sample_embeddings = tf.gather(
             sample_embeddings, tf.cast(indicies, dtype=tf.int32)
         )
         sample_embeddings = to_batch(sample_embeddings, batch_counts)
+
         counts = to_batch(counts, batch_counts)
         sample_embeddings, counts = sort_using_counts(sample_embeddings, counts)
         count_mask = float_mask(counts, dtype=self.compute_dtype)
+
         encoder_gated_embeddings = self.encoder(
             sample_embeddings, mask=count_mask, training=training
         )

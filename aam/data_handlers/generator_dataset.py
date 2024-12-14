@@ -66,6 +66,7 @@ class GeneratorDataset:
         max_bp: int = 150,
         is_16S: bool = True,
         is_categorical: Optional[bool] = None,
+        repeat=1,
         seed=None,
     ):
         table, metadata
@@ -88,6 +89,7 @@ class GeneratorDataset:
         self.batch_size = batch_size
         self.max_bp = max_bp
         self.is_16S = is_16S
+        self.repeat = repeat
 
         self.preprocessed_table = self.table
         self.obs_ids = self.preprocessed_table.ids(axis="observation")
@@ -102,7 +104,7 @@ class GeneratorDataset:
         self.sample_indices = np.arange(len(self.rarefy_table.ids()))
         self.size = len(self.sample_indices)
         self.sample_indices = self.sample_indices[self.sample_mask]
-        self.steps_per_epoch = self.size // self.batch_size
+        self.steps_per_epoch = (self.size // self.batch_size) * self.repeat
         self.table_data = self._create_table_data(self.rarefy_table)
         self.y_data = self._create_y_data(self.rarefy_table)
         self.encoder_target = None

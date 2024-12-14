@@ -313,11 +313,11 @@ def fit_unifrac_regressor(
     i_nucleotide_encoder: str,
     p_loss_type: str,
 ):
+    import tensorflow_addons as tfa
     from biom import load_table
 
     from aam.data_handlers import UniFracGenerator
     from aam.models import SequenceEncoder
-    from aam.models.utils import cos_decay_with_warmup
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
@@ -359,18 +359,37 @@ def fit_unifrac_regressor(
             pairwise_loss_type=p_loss_type,
         )
 
-    optimizer = tf.keras.optimizers.AdamW(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    # optimizer = tf.keras.optimizers.AdamW(
+    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    #     weight_decay=p_weight_decay,
+    # )
+    # optimizer.exclude_from_weight_decay(
+    #     var_names=[
+    #         "bias",
+    #         "rezero_alpha",
+    #         "layer_norm",
+    #         "LayerNorm",
+    #         "embeddings",
+    #     ]
+    # )
+
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=0.001,
         weight_decay=p_weight_decay,
-    )
-    optimizer.exclude_from_weight_decay(
-        var_names=[
+        exclude_from_weight_decay=[
             "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
             "embeddings",
-        ]
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     #
@@ -405,6 +424,7 @@ def fit_unifrac_regressor(
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
+        "repeat": 10,
     }
     train_gen = UniFracGenerator(
         table=train_table,
