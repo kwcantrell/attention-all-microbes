@@ -61,7 +61,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.nucleotide_position = tf.range(
             0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
         )
-
+        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
+        
         # nuc postions start at 1 as 0 is used for mask token
         # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
         self.nuc_pred = tf.keras.layers.Dense(
@@ -103,7 +104,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         random_mask = (
             create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         )
-
+        masked_inputs = inputs
         if include_bert_random_mask and training:
             # of the masked tokens, select 20% to either keep or change to
             # random token
@@ -125,40 +126,49 @@ class ASVEncoder(tf.keras.layers.Layer):
             random_change = (1 - random_keep) * valid_mask * random_non_mask
 
             # step 1: change all random_mask positions to <MASK> token
-            masked_input = inputs * (1 - random_mask)
+            masked_input = masked_inputs * (1 - random_mask)
 
             # step 2: change 10% of <MASK> tokens back to original token
             masked_input = (
-                masked_input + inputs * random_keep * random_mask * valid_mask
+                masked_input + masked_inputs * random_keep * random_mask * valid_mask
             )
 
             # step 3: change 10% of <MASK> tokens to random token
             random_tokens = tf.random.uniform(
-                tf.shape(inputs), minval=1, maxval=4, dtype=tf.int32
+                tf.shape(masked_inputs), minval=1, maxval=4, dtype=tf.int32
             )
 
             # step 4: create masked input
             masked_input = (
                 masked_input + random_tokens * random_change * random_mask * valid_mask
             )
-            inputs = masked_input
+            masked_inputs = masked_input
 
         # convert random_mask to boolean mask
         random_mask = random_mask > 0
 
         # get nucleotides embeddigns
-        asv_input = inputs + self.nucleotide_position
-        asv_input = self.emb_layer(asv_input)
+        asv_tokens = masked_inputs + self.nucleotide_position
+        asv_input = self.emb_layer(asv_tokens)
         asv_input = asv_input + self.pos_emb(asv_input)
 
         output = self.asv_attention(asv_input, training=training)
+        
         # extract the masked nucleotides
+        unmasked_tokens = inputs + self.nucleotide_position
         masked_nuc = tf.reshape(random_mask, shape=[-1])
         nuc_embeddings = tf.reshape(output, shape=[-1, self.embedding_dim])
+        unmasked_tokens = tf.reshape(unmasked_tokens, shape=[-1])[masked_nuc]
         masked_nuc = nuc_embeddings[masked_nuc]
         nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
-
-        return output, random_mask, nuc_pred
+        self._compute_nuc_loss(unmasked_tokens, nuc_pred)
+        return output
+    
+    def _compute_nuc_loss(self, tokens, pred):
+        tokens = tf.one_hot(tokens, tf.shape(pred)[-1])
+        nuc_loss = self.nuc_loss(tokens, pred)
+        nuc_loss = tf.reduce_mean(nuc_loss)
+        self.add_loss(tf.reduce_mean(nuc_loss))
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()

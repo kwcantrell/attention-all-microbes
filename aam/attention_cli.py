@@ -390,6 +390,7 @@ def fit_unifrac_regressor(
             "LayerNorm",
             "embeddings",
         ],
+        clipnorm=1.0
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     #
@@ -424,7 +425,7 @@ def fit_unifrac_regressor(
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
-        "repeat": 10,
+        "repeat": 3,
     }
     train_gen = UniFracGenerator(
         table=train_table,

@@ -134,15 +134,9 @@ class SequenceEncoder(tf.keras.Model):
         y_true: tf.Tensor,
         unifrac_embeddings: tf.Tensor,
     ) -> tf.Tensor:
-        batch_size = tf.shape(y_true)[0]
-        pairs = tf.linalg.band_part(
-            tf.ones((batch_size, batch_size), dtype=tf.float32), 0, -1
-        )
-        pairs = tf.reduce_sum(pairs)
-
         loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        loss = tf.reduce_sum(loss / pairs)
-        return loss / 2
+        loss = tf.reduce_max(loss)
+        return tf.reduce_mean(loss)
 
     def _compute_encoder_loss(
         self,
@@ -162,15 +156,9 @@ class SequenceEncoder(tf.keras.Model):
         outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, nuc_tokens, indicies, counts = model_inputs
-        embeddings, encoder_embeddings, nuc_mask, nuc_pred = outputs
-        nuc_tokens = nuc_tokens + self.base_encoder.asv_encoder.nucleotide_position
-        nuc_tokens = tf.reshape(nuc_tokens, shape=[-1])
+        embeddings, encoder_embeddings = outputs
 
-        nuc_mask = tf.reshape(nuc_mask, shape=[-1])
-        nuc_tokens = nuc_tokens[nuc_mask]
-        nuc_tokens = tf.one_hot(nuc_tokens, tf.shape(nuc_pred)[-1])
-        nuc_loss = self.nuc_loss(nuc_tokens, nuc_pred)
-        nuc_loss = tf.reduce_mean(nuc_loss)
+        nuc_loss = tf.reduce_sum(self.base_encoder.losses)
 
         encoder_loss = self._compute_encoder_loss(y_true, encoder_embeddings)
         loss = nuc_loss + encoder_loss
@@ -184,7 +172,7 @@ class SequenceEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, encoder_embeddings, nuc_mask, nuc_pred = self.call(
+        embeddings, encoder_embeddings = self.call(
             inputs, training=False
         )
 
@@ -258,7 +246,7 @@ class SequenceEncoder(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, tokens, indicies, counts = inputs
 
-        sample_embeddings, nuc_mask, nuc_pred = self.base_encoder(
+        sample_embeddings = self.base_encoder(
             tokens, include_bert_random_mask=include_bert_random_mask, training=training
         )
         sample_embeddings = tf.gather(
@@ -279,9 +267,9 @@ class SequenceEncoder(tf.keras.Model):
         )
         encoder_embeddings = encoder_gated_embeddings
         if not return_counts:
-            return encoder_embeddings, encoder_pred, nuc_mask, nuc_pred
+            return encoder_embeddings, encoder_pred
         else:
-            return encoder_embeddings, counts, encoder_pred, nuc_mask, nuc_pred
+            return encoder_embeddings, counts, encoder_pred
 
     def base_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor]

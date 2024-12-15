@@ -105,13 +105,13 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor]:
         tokens = inputs
-        embeddings, random_mask, nuc_pred = self.asv_encoder(
+        embeddings = self.asv_encoder(
             tokens, include_bert_random_mask=include_bert_random_mask, training=training
         )
 
         asv_embeddings = self._split_asvs(embeddings, training=training)
 
-        return asv_embeddings, random_mask, nuc_pred
+        return asv_embeddings
 
     # def base_embeddings(
     #     self, inputs: tf.Tensor, training: bool = False

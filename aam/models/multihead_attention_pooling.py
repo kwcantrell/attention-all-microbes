@@ -22,4 +22,5 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         attention = self.attention(
             inputs, inputs, attention_mask=mask, training=training
         )
-        return tf.reduce_mean(attention, axis=1)
+        output =  self.norm(attention)
+        return tf.reduce_mean(output, axis=1)
