@@ -1,8 +1,6 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
-# from aam.models.attention_pooling import AttentionPooling
-from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
 from aam.utils import create_random_mask, float_mask
 
@@ -43,6 +41,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         intermediate_activation="gelu",
         add_token=True,
         embedding_dim=128,
+        normalize_outputs=True,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -56,13 +55,14 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.add_token = add_token
         self.base_tokens = 6
         self.num_tokens = self.base_tokens * self.max_bp + 2
+        self.normalize_outputs = normalize_outputs
 
         self.asv_token = self.num_tokens - 1
         self.nucleotide_position = tf.range(
             0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
         )
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        
+
         # nuc postions start at 1 as 0 is used for mask token
         # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
         self.nuc_pred = tf.keras.layers.Dense(
@@ -85,8 +85,8 @@ class ASVEncoder(tf.keras.layers.Layer):
             dropout_rate=self.dropout_rate,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
+            normalize_outputs=self.normalize_outputs,
         )
-        self.attention_pool = MultiHeadAttentionPooling()
         super(ASVEncoder, self).build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
@@ -153,7 +153,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_input = asv_input + self.pos_emb(asv_input)
 
         output = self.asv_attention(asv_input, training=training)
-        
+
         # extract the masked nucleotides
         unmasked_tokens = inputs + self.nucleotide_position
         masked_nuc = tf.reshape(random_mask, shape=[-1])
@@ -163,7 +163,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
         self._compute_nuc_loss(unmasked_tokens, nuc_pred)
         return output
-    
+
     def _compute_nuc_loss(self, tokens, pred):
         tokens = tf.one_hot(tokens, tf.shape(pred)[-1])
         nuc_loss = self.nuc_loss(tokens, pred)
@@ -182,6 +182,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "intermediate_activation": self.intermediate_activation,
                 "add_token": self.add_token,
                 "embedding_dim": self.embedding_dim,
+                "normalize_outputs": self.normalize_outputs,
             }
         )
         return config

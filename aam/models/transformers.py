@@ -16,7 +16,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         norm_epsilon=1e-6,
         use_layer_norm=True,
         share_rezero=True,
-        output_norm=True,
+        normalize_outputs=True,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -29,7 +29,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._use_bias = use_bias
         self._norm_first = norm_first
         self._norm_epsilon = norm_epsilon
-        self.output_norm = output_norm
+        self.normalize_outputs = normalize_outputs
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
@@ -48,7 +48,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     name=("layer_%d" % i),
                 )
             )
-        if self.output_norm:
+        if self.normalize_outputs:
             self.output_normalization = tf.keras.layers.LayerNormalization(
                 epsilon=1e-6, dtype=tf.float32
             )
@@ -65,7 +65,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "use_bias": self._use_bias,
             "norm_first": self._norm_first,
             "norm_epsilon": self._norm_epsilon,
-            "output_norm": self.output_norm,
+            "normalize_outputs": self.normalize_outputs,
         }
         base_config = super(TransformerEncoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -93,7 +93,8 @@ class TransformerEncoder(tf.keras.layers.Layer):
             )
 
         output_tensor = encoder_inputs
-        if self.output_norm:
+        if self.normalize_outputs:
+            print("normalizing outputs...")
             output_tensor = self.output_normalization(output_tensor)
 
             if self.compute_dtype == "float16":

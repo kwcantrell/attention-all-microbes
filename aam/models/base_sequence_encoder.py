@@ -31,6 +31,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         vocab_size: int = 6,
         add_token: bool = True,
         nucleotide_encoder=None,
+        normalize_outputs=True,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -49,6 +50,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.vocab_size = vocab_size
         self.add_token = add_token
         self.nucleotide_encoder = nucleotide_encoder
+        self.normalize_outputs = normalize_outputs
 
         # layers used in model
         if self.is_16S:
@@ -64,6 +66,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 intermediate_activation=self.intermediate_activation,
                 add_token=self.add_token,
                 embedding_dim=self.embedding_dim,
+                normalize_outputs=self.normalize_outputs,
                 name="asv_encoder",
             )
         else:
@@ -80,6 +83,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 intermediate_size=self.sample_intermediate_size,
                 activation=self.intermediate_activation,
                 dropout_rate=self.dropout_rate,
+                normalize_outputs=self.normalize_outputs,
             )
 
         self.sample_encoder = TransformerEncoder(
@@ -88,9 +92,10 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             intermediate_size=self.sample_intermediate_size,
             activation=self.intermediate_activation,
             dropout_rate=self.dropout_rate,
+            normalize_outputs=self.normalize_outputs,
         )
 
-        self.attention_pool = MultiHeadAttentionPooling()
+        self.attention_pool = MultiHeadAttentionPooling(self.normalize_outputs)
 
     def _split_asvs(self, embeddings, training):
         asv_embeddings = embeddings
@@ -203,6 +208,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "vocab_size": self.vocab_size,
                 "add_token": self.add_token,
                 "nucleotide_encoder": nucleotide_encoder,
+                "normalize_outputs": self.normalize_outputs,
             }
         )
         return config

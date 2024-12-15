@@ -37,6 +37,7 @@ class SequenceEncoder(tf.keras.Model):
         accumulation_steps: int = 1,
         nucleotide_encoder=None,
         pairwise_loss_type="mse",
+        normalize_outputs=True,
         **kwargs,
     ):
         super(SequenceEncoder, self).__init__(**kwargs)
@@ -57,6 +58,7 @@ class SequenceEncoder(tf.keras.Model):
         self.accumulation_steps = accumulation_steps
         self.nucleotide_encoder = nucleotide_encoder
         self.pairwise_loss_type = pairwise_loss_type
+        self.normalize_outputs = normalize_outputs
 
         self._get_encoder_loss()
         self.loss_tracker = tf.keras.metrics.Mean()
@@ -82,10 +84,11 @@ class SequenceEncoder(tf.keras.Model):
             vocab_size=self.vocab_size,
             add_token=self.add_token,
             nucleotide_encoder=nucleotide_encoder,
+            normalize_outputs=self.normalize_outputs,
             name="base_encoder",
         )
 
-        self.attention_pooling = MultiHeadAttentionPooling()
+        self.attention_pooling = MultiHeadAttentionPooling(self.normalize_outputs)
 
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -93,15 +96,16 @@ class SequenceEncoder(tf.keras.Model):
             intermediate_size=intermediate_size,
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
+            normalize_outputs=self.normalize_outputs,
             name="encoder",
         )
 
-        self.encoder_ff = tf.keras.layers.Dense(self.output_dim)
+        self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
 
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
 
-        asv_tokens, asv_indicies, asv_counts = [[None, self.max_bp], [None], [None, 1]]
+        # asv_tokens, asv_indicies, asv_counts = [[None, self.max_bp], [None], [None, 1]]
         # self.inputs = [
         #     tf.keras.Input(shape=[], batch_size=None),
         #     tf.keras.Input(asv_tokens),
@@ -126,7 +130,7 @@ class SequenceEncoder(tf.keras.Model):
 
     def _unifrac_embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
-        encoder_pred = tf.cast(self.encoder_ff(encoder_pred), dtype=tf.float32)
+        encoder_pred = self.encoder_ff(encoder_pred)
         return encoder_pred
 
     def _compute_unifrac_loss(
@@ -135,7 +139,7 @@ class SequenceEncoder(tf.keras.Model):
         unifrac_embeddings: tf.Tensor,
     ) -> tf.Tensor:
         loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        loss = tf.reduce_max(loss)
+        loss = tf.reduce_max(loss, axis=-1)
         return tf.reduce_mean(loss)
 
     def _compute_encoder_loss(
@@ -172,9 +176,7 @@ class SequenceEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, encoder_embeddings = self.call(
-            inputs, training=False
-        )
+        embeddings, encoder_embeddings = self.call(inputs, training=False)
 
         return encoder_embeddings, y
 
@@ -207,6 +209,7 @@ class SequenceEncoder(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.encoder_tracker.update_state(encoder_loss)
         self.nuc_tracker.update_state(nuc_loss)
+
         return {
             "loss": self.loss_tracker.result(),
             "encoder_loss": self.encoder_tracker.result(),
@@ -358,6 +361,7 @@ class SequenceEncoder(tf.keras.Model):
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
                 "nucleotide_encoder": self.nucleotide_encoder,
+                "normalize_outputs": self.normalize_outputs,
             }
         )
         return config

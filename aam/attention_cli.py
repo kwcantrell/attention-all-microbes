@@ -278,6 +278,7 @@ def fit_asv_encoder(
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
+@click.option("--p-normalize_outputs", default=True, type=bool)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -312,14 +313,17 @@ def fit_unifrac_regressor(
     p_unifrac_metric: str,
     i_nucleotide_encoder: str,
     p_loss_type: str,
+    p_normalize_outputs,
 ):
     import tensorflow_addons as tfa
     from biom import load_table
 
+    from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import UniFracGenerator
     from aam.models import SequenceEncoder
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -357,6 +361,7 @@ def fit_unifrac_regressor(
             accumulation_steps=p_accumulation_steps,
             nucleotide_encoder=i_nucleotide_encoder,
             pairwise_loss_type=p_loss_type,
+            normalize_outputs=p_normalize_outputs,
         )
 
     # optimizer = tf.keras.optimizers.AdamW(
@@ -372,9 +377,12 @@ def fit_unifrac_regressor(
     #         "embeddings",
     #     ]
     # )
+    lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    )
 
     optimizer = tfa.optimizers.LAMB(
-        learning_rate=0.001,
+        learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
             "bias",
@@ -390,7 +398,6 @@ def fit_unifrac_regressor(
             "LayerNorm",
             "embeddings",
         ],
-        clipnorm=1.0
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     #
@@ -471,6 +478,7 @@ def fit_unifrac_regressor(
         #     start_from_epoch=p_early_stop_warmup,
         # ),
         model_saver,
+        lr_scheduler,
     ]
     model.fit(
         train_data["dataset"],
