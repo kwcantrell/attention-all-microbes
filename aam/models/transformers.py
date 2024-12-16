@@ -94,7 +94,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
         output_tensor = encoder_inputs
         if self.normalize_outputs:
-            print("normalizing outputs...")
+            print("Encoder normalizing outputs...")
             output_tensor = self.output_normalization(output_tensor)
 
             if self.compute_dtype == "float16":

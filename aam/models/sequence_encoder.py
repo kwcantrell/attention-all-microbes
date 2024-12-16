@@ -138,9 +138,16 @@ class SequenceEncoder(tf.keras.Model):
         y_true: tf.Tensor,
         unifrac_embeddings: tf.Tensor,
     ) -> tf.Tensor:
+        # loss = self._unifrac_loss(y_true, unifrac_embeddings)
+        # loss = tf.reduce_max(loss, axis=-1)
+        # return tf.reduce_mean(loss)
+        batch_size = tf.shape(y_true)[0]
+        pairs = tf.ones((batch_size, batch_size), dtype=tf.float32)
+        pairs = tf.reduce_sum(pairs) - tf.cast(batch_size, dtype=tf.float32)
+
         loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        loss = tf.reduce_max(loss, axis=-1)
-        return tf.reduce_mean(loss)
+        loss = tf.reduce_sum(loss / pairs)
+        return loss
 
     def _compute_encoder_loss(
         self,

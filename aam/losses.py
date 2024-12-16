@@ -61,7 +61,7 @@ def _pairwise_distances(embeddings, squared=False):
         # (ex: on the diagonal)
         # we need to add a small epsilon where distances == 0.0
         mask = tf.cast(tf.equal(distances, 0.0), tf.float32)
-        distances = distances + mask * 1e-12
+        distances = distances + mask * 1e-07
 
         distances = tf.sqrt(distances)
 
