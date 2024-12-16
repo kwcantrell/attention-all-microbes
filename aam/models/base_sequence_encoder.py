@@ -98,13 +98,12 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.attention_pool = MultiHeadAttentionPooling(self.normalize_outputs)
 
     def _split_asvs(self, embeddings, training):
-        asv_embeddings = embeddings
         if self.is_16S:
-            asv_embeddings = self.attention_pool(embeddings, training=training)
+            embeddings = self.attention_pool(embeddings, training=training)
         else:
-            asv_embeddings = asv_embeddings[:, :, 0, :]
-
-        return asv_embeddings
+            embeddings = embeddings[:, :, 0, :]
+        
+        return embeddings
 
     def call(
         self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False

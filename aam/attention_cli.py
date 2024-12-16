@@ -385,16 +385,18 @@ def fit_unifrac_regressor(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
+            "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
-            "embeddings",
+            # "embeddings",
         ],
         exclude_from_layer_adaptation=[
+            "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
-            "embeddings",
+            # "embeddings",
         ],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
@@ -430,7 +432,7 @@ def fit_unifrac_regressor(
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
-        "repeat": 2,
+        "repeat": 1,
     }
     train_gen = UniFracGenerator(
         table=train_table,

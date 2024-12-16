@@ -14,6 +14,7 @@ from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import float_mask
+import tensorflow_models as tfm
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceEncoder")
@@ -97,6 +98,12 @@ class SequenceEncoder(tf.keras.Model):
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
             name="encoder",
+        )
+
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+            self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(
+                mean=0.0, stddev=0.02
+            )
         )
 
         self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
@@ -263,6 +270,7 @@ class SequenceEncoder(tf.keras.Model):
 
         counts = to_batch(counts, batch_counts)
         sample_embeddings, counts = sort_using_counts(sample_embeddings, counts)
+        sample_embeddings = sample_embeddings + self.pos_emb(sample_embeddings)
         count_mask = float_mask(counts, dtype=self.compute_dtype)
 
         encoder_gated_embeddings = self.encoder(
