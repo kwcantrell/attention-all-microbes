@@ -89,7 +89,6 @@ class SequenceEncoder(tf.keras.Model):
         )
 
         self.attention_pooling = MultiHeadAttentionPooling(self.normalize_outputs)
-
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
@@ -142,12 +141,14 @@ class SequenceEncoder(tf.keras.Model):
         # loss = tf.reduce_max(loss, axis=-1)
         # return tf.reduce_mean(loss)
         batch_size = tf.shape(y_true)[0]
-        pairs = tf.ones((batch_size, batch_size), dtype=tf.float32)
+        pairs = tf.linalg.band_part(
+            tf.ones((batch_size, batch_size), dtype=tf.float32), 0, -1
+        )
         pairs = tf.reduce_sum(pairs) - tf.cast(batch_size, dtype=tf.float32)
 
         loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        loss = tf.reduce_sum(loss / pairs)
-        return loss
+        loss = tf.reduce_sum(loss / 2)
+        return loss / pairs
 
     def _compute_encoder_loss(
         self,
