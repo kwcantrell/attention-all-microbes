@@ -85,8 +85,11 @@ class ASVEncoder(tf.keras.layers.Layer):
             dropout_rate=self.dropout_rate,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
-            normalize_outputs=self.normalize_outputs,
+            normalize_outputs=False,
         )
+        self.asv_norm = tf.keras.layers.BatchNormalization(axis=1, epsilon=1e-6)
+        if self.normalize_outputs:
+            self.norm_out = tf.keras.layers.BatchNormalization(axis=1, epsilon=1e-6)
         super(ASVEncoder, self).build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
@@ -151,8 +154,13 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_tokens = masked_inputs + self.nucleotide_position
         asv_input = self.emb_layer(asv_tokens)
         asv_input = asv_input + self.pos_emb(asv_input)
+        asv_input = self.asv_norm(asv_input, training=training)
 
         output = self.asv_attention(asv_input, training=training)
+
+        if self.normalize_outputs:
+            print("ASV Normaling outputs...")
+            output = self.norm_out(output, training=training)
 
         # extract the masked nucleotides
         unmasked_tokens = inputs + self.nucleotide_position

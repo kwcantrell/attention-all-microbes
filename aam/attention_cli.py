@@ -278,7 +278,7 @@ def fit_asv_encoder(
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
-@click.option("--p-normalize_outputs", default=True, type=bool)
+@click.option("--p-normalize-outputs", default=True, type=bool)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
