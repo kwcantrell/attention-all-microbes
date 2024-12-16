@@ -102,7 +102,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         random_mask = (
-            create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
+            create_random_mask(inputs_shape, percent=0.02, dtype=tf.int32) * valid_mask
         )
         masked_inputs = inputs
         if include_bert_random_mask and training:

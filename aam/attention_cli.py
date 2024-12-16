@@ -432,7 +432,7 @@ def fit_unifrac_regressor(
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
-        "repeat": 3,
+        "repeat": 2,
     }
     train_gen = UniFracGenerator(
         table=train_table,
