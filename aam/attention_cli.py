@@ -385,14 +385,12 @@ def fit_unifrac_regressor(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
-            "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
             "embeddings",
         ],
         exclude_from_layer_adaptation=[
-            "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",

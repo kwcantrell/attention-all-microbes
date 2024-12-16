@@ -66,7 +66,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         # nuc postions start at 1 as 0 is used for mask token
         # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
         self.nuc_pred = tf.keras.layers.Dense(
-            self.base_tokens * self.max_bp, use_bias=True
+            self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32
         )
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
 

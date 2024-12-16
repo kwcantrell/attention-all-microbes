@@ -137,18 +137,14 @@ class SequenceEncoder(tf.keras.Model):
         y_true: tf.Tensor,
         unifrac_embeddings: tf.Tensor,
     ) -> tf.Tensor:
-        # loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        # loss = tf.reduce_max(loss, axis=-1)
-        # return tf.reduce_mean(loss)
-        batch_size = tf.shape(y_true)[0]
-        pairs = tf.linalg.band_part(
-            tf.ones((batch_size, batch_size), dtype=tf.float32), 0, -1
-        )
-        pairs = tf.reduce_sum(pairs) - tf.cast(batch_size, dtype=tf.float32)
-
         loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        loss = tf.reduce_sum(loss / 2)
-        return loss / pairs
+
+        # extract just the upper triangle of distance matrix
+        mask = tf.linalg.band_part(y_true > 0, 0, -1)
+        mask = tf.reshape(mask, shape=[-1])
+        loss = tf.reshape(loss, shape=[-1])[mask]
+        loss = tf.reduce_mean(loss)
+        return loss
 
     def _compute_encoder_loss(
         self,
