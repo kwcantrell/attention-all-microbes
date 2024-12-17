@@ -183,9 +183,9 @@ class UnifracDenoiser(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, encoder_embeddings = self.call(inputs, training=False)
+        embeddings, denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
 
-        return encoder_embeddings, y
+        return unifrac_embeddings, y
 
     def train_step(
         self,
@@ -262,6 +262,14 @@ class UnifracDenoiser(tf.keras.Model):
         denoised_pred = self._embeddings(denoised_sample_embeddings, count_mask, training=training)
         print("UniFracDenoiser exit...")
         return denoised_sample_embeddings, denoised_pred, unifrac_pred
+
+    def asv_embeddings(
+        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        # keras cast all input to float so we need to manually cast to expected type
+        tokens = inputs
+        sample_embeddings = self.unifrac_encoder.base_encoder(tokens, training=False)
+        return sample_embeddings
 
     def get_config(self):
         config = super(UnifracDenoiser, self).get_config()

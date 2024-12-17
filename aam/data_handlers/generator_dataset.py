@@ -67,6 +67,7 @@ class GeneratorDataset:
         is_16S: bool = True,
         is_categorical: Optional[bool] = None,
         repeat=1,
+        gen_new_table_frequency=3,
         seed=None,
     ):
         if table is not None:
@@ -93,6 +94,7 @@ class GeneratorDataset:
         self.is_16S = is_16S
         self.repeat = repeat
         self.seed = seed
+        self.gen_new_table_frequency = gen_new_table_frequency
 
         if table is not None:
             self.preprocessed_table = self.table
@@ -291,7 +293,7 @@ class GeneratorDataset:
         return sample_indices[start:end]
 
     def _epoch_samples(self, epoch, table_data, y_data, encoder_target, sample_mask, sample_indices):
-        if self.gen_new_tables and epoch > 0:
+        if self.gen_new_tables and epoch > 0 and epoch % self.gen_new_table_frequency == 0:
             print(f"epcoh {epoch}: generating new table...")
             rarefy_table, sample_mask = self.create_rarefied_table(self.preprocessed_table)
             table_data = self._create_table_data(rarefy_table)
