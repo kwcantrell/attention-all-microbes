@@ -23,11 +23,19 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         return config
 
     def call(self, inputs, mask=None, training=False):
+        attention_mask = mask
+        if mask is not None:
+            attention_mask = tf.cast(attention_mask, dtype=self.compute_dtype)
+            attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
+        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=training)
+
         if mask is not None:
             mask = tf.cast(mask, dtype=self.compute_dtype)
-            mask = tf.matmul(mask, mask, transpose_b=True)
-        attention = self.attention(inputs, inputs, attention_mask=mask, training=training)
-        output = tf.reduce_mean(attention, axis=1)
+            seq_len = tf.reduce_sum(mask, axis=1)
+            output = tf.reduce_sum(attention_output * mask) / seq_len
+        else:
+            output = tf.reduce_mean(attention_output, axis=1)
+
         if self.normalize_output:
             print("Pooler Normalizing outputs...")
             output = self.norm(output)
