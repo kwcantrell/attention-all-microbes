@@ -649,7 +649,7 @@ def fit_denoised_unifrac_regressor(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
-        "sample_depths": [1000, 5000, 10000],
+        "sample_depths": [1000, 5000],
         "batch_size": p_batch_size,
         "is_16S": True,
         "is_categorical": p_is_categorical,
