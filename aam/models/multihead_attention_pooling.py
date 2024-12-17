@@ -32,7 +32,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         if mask is not None:
             mask = tf.cast(mask, dtype=self.compute_dtype)
             seq_len = tf.reduce_sum(mask, axis=1)
-            output = tf.reduce_sum(attention_output * mask) / seq_len
+            output = tf.reduce_sum(attention_output * mask, axis=1) / seq_len
         else:
             output = tf.reduce_mean(attention_output, axis=1)
 
