@@ -86,9 +86,7 @@ class NucleotideEncoder(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def call(
-        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
         if isinstance(inputs, (list, tuple)):
             tokens, _ = inputs

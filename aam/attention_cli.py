@@ -26,9 +26,7 @@ class cli:
     pass
 
 
-TABLE_DESC = (
-    "Feature table containing all features that should be used for target prediction."
-)
+TABLE_DESC = "Feature table containing all features that should be used for target prediction."
 TEST_SIZE_DESC = "Fraction of input samples to exclude from training set and use for classifier testing."
 CV_DESC = "Number of k-fold cross-validations to perform."
 STRAT_DESC = "Evenly stratify training and test data among metadata categories. If True, all values in column must match at least two samples."
@@ -77,9 +75,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, type=int)
-@click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
-)
+@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -157,9 +153,7 @@ def fit_asv_encoder(
     model.summary()
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]
-    ]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     indices = np.arange(len(ids), dtype=np.int32)
 
@@ -259,9 +253,7 @@ def fit_asv_encoder(
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
-@click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
-)
+@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -279,6 +271,7 @@ def fit_asv_encoder(
 @click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
 @click.option("--p-normalize-outputs", default=True, type=bool)
+@click.option("--p-use-residual-connections", default=False, type=bool)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -314,13 +307,14 @@ def fit_unifrac_regressor(
     i_nucleotide_encoder: str,
     p_loss_type: str,
     p_normalize_outputs,
+    p_use_residual_connections: bool,
 ):
     import tensorflow_addons as tfa
     from biom import load_table
 
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers import UniFracGenerator
-    from aam.models import SequenceEncoder
+    from aam.data_handlers import MultiDepthGenerator, UniFracGenerator
+    from aam.models import SequenceEncoder, UnifracDenoiser
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.models.utils import cos_decay_with_warmup
@@ -336,14 +330,13 @@ def fit_unifrac_regressor(
     if p_unifrac_metric == "faith_pd":
         output_dim = 1
 
+    model = None
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
         model.accumulation_steps = p_accumulation_steps
     else:
         if i_nucleotide_encoder is not None:
-            i_nucleotide_encoder = tf.keras.models.load_model(
-                i_nucleotide_encoder, compile=False
-            )
+            i_nucleotide_encoder = tf.keras.models.load_model(i_nucleotide_encoder, compile=False)
         model: tf.keras.Model = SequenceEncoder(
             output_dim,
             p_asv_limit,
@@ -362,24 +355,10 @@ def fit_unifrac_regressor(
             nucleotide_encoder=i_nucleotide_encoder,
             pairwise_loss_type=p_loss_type,
             normalize_outputs=p_normalize_outputs,
+            use_residual_connections=p_use_residual_connections,
         )
 
-    # optimizer = tf.keras.optimizers.AdamW(
-    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
-    #     weight_decay=p_weight_decay,
-    # )
-    # optimizer.exclude_from_weight_decay(
-    #     var_names=[
-    #         "bias",
-    #         "rezero_alpha",
-    #         "layer_norm",
-    #         "LayerNorm",
-    #         "embeddings",
-    #     ]
-    # )
-    lr_scheduler = LAMBLRScheduler(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
-    )
+    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
 
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
@@ -403,9 +382,7 @@ def fit_unifrac_regressor(
     #
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]
-    ]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     indices = np.arange(len(ids), dtype=np.int32)
 
@@ -469,7 +446,256 @@ def fit_unifrac_regressor(
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     model_save_path = os.path.join(output_dir, "model.keras")
-    model_saver = SaveModel(model_save_path, 1, monitor="val_encoder_loss")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+    core_callbacks = [
+        tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+        # tf.keras.callbacks.EarlyStopping(
+        #     "val_encoder_loss",
+        #     patience=p_patience,
+        #     start_from_epoch=p_early_stop_warmup,
+        # ),
+        model_saver,
+        lr_scheduler,
+    ]
+    model.fit(
+        train_data["dataset"],
+        validation_data=val_data["dataset"],
+        callbacks=[*core_callbacks],
+        epochs=p_epochs,
+        steps_per_epoch=train_data["steps_pre_epoch"],
+        validation_steps=val_data["steps_pre_epoch"],
+    )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
+
+
+@cli.command()
+@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option("--i-tree", required=True, type=click.Path(exists=True))
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-patience", default=10, show_default=True, type=int)
+@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-embedding-dim", default=128, type=int)
+@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-attention-layers", default=4, type=int)
+@click.option("--p-intermediate-size", default=1024, type=int)
+@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-add-token", default=False, required=False, type=bool)
+@click.option("--p-gotu", default=False, required=False, type=bool)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-accumulation-steps", default=1, required=False, type=int)
+@click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
+@click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
+@click.option("--p-loss-type", default="mse", required=False, type=str)
+@click.option("--p-normalize-outputs", default=True, type=bool)
+@click.option("--p-use-residual-connections", default=False, type=bool)
+def fit_denoised_unifrac_regressor(
+    i_table: str,
+    i_tree: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: bool,
+    p_batch_size: int,
+    p_epochs: int,
+    p_dropout: float,
+    p_asv_dropout: float,
+    p_patience: int,
+    p_early_stop_warmup: int,
+    i_model: Union[None, str],
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_asv_limit: int,
+    p_gen_new_table: bool,
+    p_lr: float,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_add_token: bool,
+    p_gotu: bool,
+    p_is_categorical: bool,
+    p_rarefy_depth: int,
+    p_weight_decay: float,
+    p_accumulation_steps,
+    p_unifrac_metric: str,
+    i_nucleotide_encoder: str,
+    p_loss_type: str,
+    p_normalize_outputs,
+    p_use_residual_connections: bool,
+):
+    import tensorflow_addons as tfa
+    from biom import load_table
+
+    from aam.callbacks import LAMBLRScheduler
+    from aam.data_handlers import MultiDepthGenerator
+    from aam.models import UnifracDenoiser
+
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    from aam.models.utils import cos_decay_with_warmup
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    figure_path = os.path.join(output_dir, "figures")
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+
+    output_dim = p_embedding_dim
+    if p_unifrac_metric == "faith_pd":
+        output_dim = 1
+
+    model = None
+    if i_model is not None:
+        model = tf.keras.models.load_model(i_model, compile=False)
+        model.accumulation_steps = p_accumulation_steps
+    else:
+        if i_nucleotide_encoder is not None:
+            i_nucleotide_encoder = tf.keras.models.load_model(i_nucleotide_encoder, compile=False)
+        model: tf.keras.Model = UnifracDenoiser(
+            output_dim,
+            p_asv_limit,
+            p_unifrac_metric,
+            dropout_rate=p_dropout,
+            embedding_dim=p_embedding_dim,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
+            max_bp=p_max_bp,
+            is_16S=True,
+            add_token=p_add_token,
+            asv_dropout_rate=p_asv_dropout,
+            accumulation_steps=p_accumulation_steps,
+            nucleotide_encoder=i_nucleotide_encoder,
+            pairwise_loss_type=p_loss_type,
+            normalize_outputs=p_normalize_outputs,
+            unifrac_encoder=model,
+            use_residual_connections=p_use_residual_connections,
+        )
+
+    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
+
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
+        weight_decay=p_weight_decay,
+        exclude_from_weight_decay=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            # "embeddings",
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            # "embeddings",
+        ],
+    )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    #
+
+    table = load_table(i_table)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    indices = np.arange(len(ids), dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(len(ids) * 0.8)
+
+    train_indices = indices[:train_size]
+    train_ids = ids[train_indices]
+    train_table = table.filter(train_ids, inplace=False)
+
+    val_indices = indices[train_size:]
+    val_ids = ids[val_indices]
+    val_table = table.filter(val_ids, inplace=False)
+
+    common_kwargs = {
+        "metadata_column": m_metadata_column,
+        "max_token_per_sample": p_asv_limit,
+        "sample_depths": [1000, 5000, 10000],
+        "batch_size": p_batch_size,
+        "is_16S": True,
+        "is_categorical": p_is_categorical,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+        "tree_path": i_tree,
+        "metadata": df,
+        "unifrac_metric": p_unifrac_metric,
+        "repeat": 1,
+    }
+    train_gen = MultiDepthGenerator(
+        table=train_table,
+        shuffle=True,
+        shift=0.0,
+        scale=1.0,
+        gen_new_tables=p_gen_new_table,
+        **common_kwargs,
+    )
+    train_data = train_gen.get_data()
+
+    val_gen = MultiDepthGenerator(
+        table=val_table,
+        shuffle=False,
+        shift=0.0,
+        scale=1.0,
+        gen_new_tables=False,
+        **common_kwargs,
+    )
+    val_data = val_gen.get_data()
+
+    # token_shape = tf.TensorShape([None, None, 150])
+    # count_shape = tf.TensorShape([None, None, 1])
+    # model.build([token_shape, count_shape])
+    for x, y in train_data["dataset"].take(1):
+        model(x)
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
+    model.summary()
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
     core_callbacks = [
         tf.keras.callbacks.TensorBoard(log_dir=log_dir),
         # tf.keras.callbacks.EarlyStopping(
@@ -525,9 +751,7 @@ def fit_unifrac_regressor(
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
-@click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
-)
+@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -588,9 +812,7 @@ def fit_taxonomy_regressor(
         os.makedirs(figure_path)
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]
-    ]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     indices = np.arange(len(ids), dtype=np.int32)
 
@@ -711,9 +933,7 @@ def fit_taxonomy_regressor(
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option(
-    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
-)
+@click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -759,9 +979,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
-@click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
-)
+@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
@@ -844,9 +1062,7 @@ def fit_sample_regressor(
         os.makedirs(model_path)
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]
-    ]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     num_ids = len(ids)
 
@@ -950,9 +1166,7 @@ def fit_sample_regressor(
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df.loc[fold_ids]
 
-        gen = generator(
-            table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables
-        )
+        gen = generator(table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables)
 
         data = gen.get_data()
         if hasattr(gen, "num_tokens"):
@@ -1048,17 +1262,13 @@ def fit_sample_regressor(
                 # )
             ]
         else:
-            loss = tf.keras.losses.CategoricalFocalCrossentropy(
-                from_logits=False, reduction="none"
-            )
+            loss = tf.keras.losses.CategoricalFocalCrossentropy(from_logits=False, reduction="none")
             # loss = tf.keras.losses.CategoricalHinge(reduction="none")
             callbacks = [
                 ConfusionMatrx(
                     monitor="val_target_loss",
                     dataset=val_data["dataset"],
-                    output_dir=os.path.join(
-                        figure_path, f"model_f{fold_label}-val.png"
-                    ),
+                    output_dir=os.path.join(figure_path, f"model_f{fold_label}-val.png"),
                     report_back=p_report_back,
                 )
             ]
@@ -1090,9 +1300,7 @@ def fit_sample_regressor(
     model_ensemble = EnsembleModel(models)
     model_ensemble.save_best_model(best_model_path)
     best_mae, ensemble_mae = model_ensemble.val_maes()
-    print(
-        f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}"
-    )
+    print(f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}")
 
     test_data = _get_fold(
         test_indices,
@@ -1102,9 +1310,7 @@ def fit_sample_regressor(
         epochs=1,
         num_tables=5,
     )
-    best_mae, ensemble_mae = model_ensemble.plot_fn(
-        _mean_absolute_error, test_data["dataset"], figure_path
-    )
+    best_mae, ensemble_mae = model_ensemble.plot_fn(_mean_absolute_error, test_data["dataset"], figure_path)
     print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
 
 
@@ -1136,9 +1342,7 @@ def fit_sample_regressor(
 )
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option(
-    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
-)
+@click.option("--p-mixed-precision / --p-no-mixed-precision", default=True, required=False)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def predict_sample_regressor(
     i_table: str,
@@ -1217,18 +1421,14 @@ def predict_sample_regressor(
     type=click.FloatRange(0, 1),
     help=TEST_SIZE_DESC,
 )
-@click.option(
-    "--p-stratify / --p-no-stratify", default=False, show_default=True, help=STRAT_DESC
-)
+@click.option("--p-stratify / --p-no-stratify", default=False, show_default=True, help=STRAT_DESC)
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-report-back", default=5, show_default=True, type=int)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
-@click.option(
-    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
-)
+@click.option("--p-mixed-precision / --p-no-mixed-precision", default=True, required=False)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def fit_sample_classifier(
     i_table: str,
@@ -1314,9 +1514,7 @@ def fit_sample_classifier(
     cv_sample_ids = ids[fold_indices]
     sample_classes = df[df.index.isin(cv_sample_ids)][m_metadata_column]
 
-    for i, (train_ind, val_ind) in enumerate(
-        kfolds.split(fold_indices, sample_classes)
-    ):
+    for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices, sample_classes)):
         train_data = _get_fold(train_ind, shuffle=True)
         val_data = _get_fold(val_ind, shuffle=False)
 
@@ -1350,9 +1548,7 @@ def fit_sample_classifier(
             callbacks=[
                 ConfusionMatrx(
                     dataset=val_data["dataset"],
-                    output_dir=os.path.join(
-                        figure_path, f"model-f{fold_label}-val.png"
-                    ),
+                    output_dir=os.path.join(figure_path, f"model-f{fold_label}-val.png"),
                     report_back=p_report_back,
                     labels=categories,
                 )
@@ -1387,9 +1583,7 @@ def fit_sample_classifier(
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option(
-    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
-)
+@click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -1435,9 +1629,7 @@ def fit_sample_classifier(
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=512, show_default=True, type=int)
-@click.option(
-    "--p-intermediate-activation", default="gelu", show_default=True, type=str
-)
+@click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
@@ -1516,9 +1708,7 @@ def fit_gotu(
     asv_table = load_table(i_asv_table)
     gotu_table = load_table(i_gotu_table)
 
-    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]
-    ]
+    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
     asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
     gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
     num_ids = len(gotu_ids)
@@ -1538,9 +1728,7 @@ def fit_gotu(
         "metadata": df_all,
     }
 
-    def train_generator(
-        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
-    ):
+    def train_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
         return GOTUGenerator(
             table=gotu_table,
             asv_table=asv_table,
@@ -1551,9 +1739,7 @@ def fit_gotu(
             **common_kwargs,
         )
 
-    def val_generator(
-        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
-    ):
+    def val_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
         return GOTUGenerator(
             table=gotu_table,
             asv_table=asv_table,
@@ -1583,13 +1769,9 @@ def fit_gotu(
     val_gotu_ids = gotu_ids[val_gotu_indices]
     val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
 
-    train_gen = train_generator(
-        train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True
-    )
+    train_gen = train_generator(train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True)
 
-    val_gen = val_generator(
-        val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False
-    )
+    val_gen = val_generator(val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False)
 
     train_data = train_gen.get_data()
     val_data = val_gen.get_data()

@@ -32,6 +32,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         add_token: bool = True,
         nucleotide_encoder=None,
         normalize_outputs=True,
+        use_residual_connections=False,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -51,6 +52,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.add_token = add_token
         self.nucleotide_encoder = nucleotide_encoder
         self.normalize_outputs = normalize_outputs
+        self.use_residual_connections = use_residual_connections
 
         # layers used in model
         if self.is_16S:
@@ -67,15 +69,14 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 add_token=self.add_token,
                 embedding_dim=self.embedding_dim,
                 normalize_outputs=self.normalize_outputs,
+                use_residual_connections=self.use_residual_connections,
                 name="asv_encoder",
             )
         else:
             self.asv_embeddings = tf.keras.layers.Embedding(
                 self.vocab_size,
                 output_dim=self.embedding_dim,
-                embeddings_initializer=tf.keras.initializers.RandomNormal(
-                    mean=0, stddev=self.embedding_dim**0.5
-                ),
+                embeddings_initializer=tf.keras.initializers.RandomNormal(mean=0, stddev=self.embedding_dim**0.5),
             )
             self.asv_encoder = TransformerEncoder(
                 num_layers=self.sample_attention_layers,
@@ -86,15 +87,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 normalize_outputs=self.normalize_outputs,
             )
 
-        self.sample_encoder = TransformerEncoder(
-            num_layers=self.sample_attention_layers,
-            num_attention_heads=self.sample_attention_heads,
-            intermediate_size=self.sample_intermediate_size,
-            activation=self.intermediate_activation,
-            dropout_rate=self.dropout_rate,
-            normalize_outputs=self.normalize_outputs,
-        )
-
         self.attention_pool = MultiHeadAttentionPooling(self.normalize_outputs)
 
     def _split_asvs(self, embeddings, training):
@@ -102,19 +94,15 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             embeddings = self.attention_pool(embeddings, training=training)
         else:
             embeddings = embeddings[:, :, 0, :]
-        
+
         return embeddings
 
-    def call(
-        self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False
-    ) -> tuple[tf.Tensor, tf.Tensor]:
+    def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
         tokens = inputs
-        embeddings = self.asv_encoder(
-            tokens, include_bert_random_mask=include_bert_random_mask, training=training
-        )
+        embeddings = self.asv_encoder(tokens, include_bert_random_mask=include_bert_random_mask, training=training)
 
         asv_embeddings = self._split_asvs(embeddings, training=training)
-
+        print("BaseSequenceEncoder exit...")
         return asv_embeddings
 
     # def base_embeddings(
@@ -148,9 +136,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
     #     )
     #     return sample_embeddings
 
-    def asv_embeddings(
-        self, inputs: tf.Tensor, training: bool = False
-    ) -> tuple[tf.Tensor, tf.Tensor]:
+    def asv_embeddings(self, inputs: tf.Tensor, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
         # need to cast inputs to int32 to avoid error
         # because keras converts all inputs
         # to float when calling build()
@@ -165,9 +151,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         embeddings, _, _ = self.asv_encoder(asv_input, training=training)
         return self._split_asvs(embeddings, mask, indices, training=training)
 
-    def asv_gradient(
-        self, inputs: tf.Tensor, asv_embeddings
-    ) -> tuple[tf.Tensor, tf.Tensor]:
+    def asv_gradient(self, inputs: tf.Tensor, asv_embeddings) -> tuple[tf.Tensor, tf.Tensor]:
         asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
 
         if self.add_token:
@@ -176,9 +160,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         else:
             sample_embeddings = asv_embeddings
 
-        sample_gated_embeddings = self.sample_encoder(
-            sample_embeddings, mask=asv_mask, training=False
-        )
+        sample_gated_embeddings = self.sample_encoder(sample_embeddings, mask=asv_mask, training=False)
         sample_embeddings = sample_embeddings + sample_gated_embeddings
         return sample_embeddings
 
@@ -186,9 +168,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         config = super(BaseSequenceEncoder, self).get_config()
         nucleotide_encoder = self.asv_encoder
         if self.nucleotide_encoder is not None:
-            nucleotide_encoder = tf.keras.saving.serialize_keras_object(
-                nucleotide_encoder
-            )
+            nucleotide_encoder = tf.keras.saving.serialize_keras_object(nucleotide_encoder)
 
         config.update(
             {
@@ -208,6 +188,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "add_token": self.add_token,
                 "nucleotide_encoder": nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
+                "use_residual_connections": self.use_residual_connections,
             }
         )
         return config

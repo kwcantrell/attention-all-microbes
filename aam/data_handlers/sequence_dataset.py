@@ -77,9 +77,7 @@ class SequenceDataset:
     def table(self, table: Union[str, Table]):
         if not isinstance(table, (str, Table)):
             tt = type(table)
-            raise TypeError(
-                f"Invalid table type. Expected file path or Table but recieve {tt}"
-            )
+            raise TypeError(f"Invalid table type. Expected file path or Table but recieve {tt}")
 
         if isinstance(table, str):
             if not os.path.exists(table):
@@ -109,9 +107,7 @@ class SequenceDataset:
             if self.taxon_field not in self._taxonomy.columns:
                 raise Exception("Invalid taxonomy: missing 'Taxon' field")
         if self._taxonomy is not None and not self._taxonomy_built:
-            self._taxonomy[self.levels] = self._taxonomy[self.taxon_field].str.split(
-                "; ", expand=True
-            )
+            self._taxonomy[self.levels] = self._taxonomy[self.taxon_field].str.split("; ", expand=True)
             self._taxonomy_built = True
         return self._taxonomy
 
@@ -151,15 +147,13 @@ class SequenceDataset:
     def level_classes(self, table: Table, level: str) -> pd.DataFrame:
         level_taxonomy = self._retrieve_level(level)
         table, level_taxonomy = self._align_to_taxonomy(table, level_taxonomy)
-        level_taxonomy.loc[:, "class"] = level_taxonomy.loc[
-            :, self.levels[: self.levels.index(level) + 1]
-        ].agg("; ".join, axis=1)
+        level_taxonomy.loc[:, "class"] = level_taxonomy.loc[:, self.levels[: self.levels.index(level) + 1]].agg(
+            "; ".join, axis=1
+        )
 
         return table, level_taxonomy
 
-    def total_seq_dropped(
-        self, valid_mask: pd.Series, table: Table, return_ratio: bool = False
-    ) -> float:
+    def total_seq_dropped(self, valid_mask: pd.Series, table: Table, return_ratio: bool = False) -> float:
         dropped_ids = self.taxonomy.loc[~valid_mask, :].index
         dropped_table = table.filter(dropped_ids, axis="observation", inplace=False)
         dropped = dropped_table.sum()
@@ -212,9 +206,7 @@ class SequenceDataset:
 
     def _table_dataset(self, table: Table) -> tf.data.Dataset:
         data, row, col, shape = self._table_data(table)
-        indices = tf.concat(
-            [tf.expand_dims(row, axis=1), tf.expand_dims(col, axis=1)], axis=1
-        )
+        indices = tf.concat([tf.expand_dims(row, axis=1), tf.expand_dims(col, axis=1)], axis=1)
         table_data = tf.sparse.SparseTensor(
             indices=tf.cast(indices, dtype=tf.int64),
             values=data,
@@ -258,9 +250,7 @@ class SequenceDataset:
         metadata = metadata.reindex(table.ids())
         return table, metadata
 
-    def _taxonomy_dataset(
-        self, table: Table, tax_level: str
-    ) -> tuple[Table, pd.Series]:
+    def _taxonomy_dataset(self, table: Table, tax_level: str) -> tuple[Table, pd.Series]:
         table, level_tax = self.level_classes(table, tax_level)
         le = preprocessing.LabelEncoder()
         level_tax.loc[:, "token"] = le.fit_transform(level_tax["class"])
@@ -276,25 +266,17 @@ class SequenceDataset:
         batch_size: int = 8,
         level: Optional[pd.Series] = None,
     ) -> tf.data.Dataset:
-        obs_encodings = tf.cast(
-            tf.strings.unicode_decode(obs_ids, "UTF-8"), dtype=tf.int64
-        )
+        obs_encodings = tf.cast(tf.strings.unicode_decode(obs_ids, "UTF-8"), dtype=tf.int64)
         if level is not None:
-            level_encodings = tf.cast(
-                np.squeeze(level.loc[obs_ids, "token"].to_numpy()), dtype=tf.int64
-            )
+            level_encodings = tf.cast(np.squeeze(level.loc[obs_ids, "token"].to_numpy()), dtype=tf.int64)
 
         def apply_func(shuffle_buf=32, include_tax=False):
             def _inner(ds):
                 def process_table(data, target_data):
-                    sorted_order = tf.argsort(
-                        data.values, axis=-1, direction="DESCENDING"
-                    )
+                    sorted_order = tf.argsort(data.values, axis=-1, direction="DESCENDING")
 
                     asv_indices = tf.reshape(data.indices, shape=[-1])
-                    sorted_asv_indices = tf.gather(asv_indices, sorted_order)[
-                        :max_token_per_sample
-                    ]
+                    sorted_asv_indices = tf.gather(asv_indices, sorted_order)[:max_token_per_sample]
                     counts = tf.gather(data.values, sorted_order)[:max_token_per_sample]
                     counts = tf.cast(counts, dtype=tf.int32)
                     counts = tf.expand_dims(counts, axis=-1)
@@ -336,9 +318,7 @@ class SequenceDataset:
 
         include_tax = level is not None
         dataset = tf.data.Dataset.zip(*datasets)
-        return dataset.apply(apply_func(include_tax=include_tax)).prefetch(
-            tf.data.AUTOTUNE
-        )
+        return dataset.apply(apply_func(include_tax=include_tax)).prefetch(tf.data.AUTOTUNE)
 
     def get_data(
         self,
@@ -365,9 +345,7 @@ class SequenceDataset:
 
         num_obs = table.shape[0]
         if self.metadata is not None and isinstance(metadata_col, str):
-            table, metadata = self._metadata_dataset(
-                table, metadata_col, is_categorical, shift, scale
-            )
+            table, metadata = self._metadata_dataset(table, metadata_col, is_categorical, shift, scale)
             metadata = tf.data.Dataset.from_tensor_slices(metadata)
             additional_data.append(metadata)
             if num_obs != table.shape[0]:

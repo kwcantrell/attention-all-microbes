@@ -56,9 +56,7 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
         labels = []
         for label in ax.get_xticklabels():
             text = label.get_text()
-            labels.append(
-                textwrap.fill(text, width=width, break_long_words=break_long_words)
-            )
+            labels.append(textwrap.fill(text, width=width, break_long_words=break_long_words))
         ax.set_xticklabels(labels, rotation=0)
         ax.set_yticklabels(labels, rotation=0)
 

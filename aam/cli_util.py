@@ -20,9 +20,7 @@ def aam_model_options(func):
             default="add_features",
             type=click.Choice(aam_globals["feature-attention-methods"]),
         ),
-        click.option(
-            "--p-features-to-add-rate", default=1.0, show_default=True, type=float
-        ),
+        click.option("--p-features-to-add-rate", default=1.0, show_default=True, type=float),
         click.option("--p-ff-d-model", default=128, show_default=True, type=int),
         click.option("--p-ff-clr", default=1024, show_default=True, type=int),
         click.option("--p-pca-heads", default=4, show_default=True, type=int),

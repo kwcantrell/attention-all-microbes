@@ -2,9 +2,7 @@ import tensorflow as tf
 
 
 @tf.keras.saving.register_keras_serializable(package="TransformerLearningRateSchedule")
-class TransformerLearningRateSchedule(
-    tf.keras.optimizers.schedules.LearningRateSchedule
-):
+class TransformerLearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self, warmup_steps=100, decay_method="cosine", initial_lr=3e-4):
         super(TransformerLearningRateSchedule, self).__init__()
 
@@ -32,12 +30,8 @@ class TransformerLearningRateSchedule(
             )
         elif self.decay_method == "inv_sqrt":
             # Inverse Square Root decay after warmup (used in the original Transformer paper)
-            inv_sqrt_decay = self.initial_lr * tf.math.rsqrt(
-                tf.cast(step - self.warmup_steps + 1, tf.float32)
-            )
-            learning_rate = tf.cond(
-                step < self.warmup_steps, lambda: learning_rate, lambda: inv_sqrt_decay
-            )
+            inv_sqrt_decay = self.initial_lr * tf.math.rsqrt(tf.cast(step - self.warmup_steps + 1, tf.float32))
+            learning_rate = tf.cond(step < self.warmup_steps, lambda: learning_rate, lambda: inv_sqrt_decay)
 
         return learning_rate
 
@@ -92,9 +86,7 @@ def to_batch(tensor, batch_counts):
 
 
 def sort_using_counts(tensor, counts):
-    sorted_indices = tf.argsort(
-        tf.squeeze(counts, axis=-1), axis=1, direction="DESCENDING"
-    )
+    sorted_indices = tf.argsort(tf.squeeze(counts, axis=-1), axis=1, direction="DESCENDING")
     sorted_tensor = tf.gather(tensor, sorted_indices, axis=1, batch_dims=1)
     sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=1)
     return sorted_tensor, sorted_counts

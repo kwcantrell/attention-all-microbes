@@ -26,15 +26,13 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         if mask is not None:
             mask = tf.cast(mask, dtype=self.compute_dtype)
             mask = tf.matmul(mask, mask, transpose_b=True)
-        attention = self.attention(
-            inputs, inputs, attention_mask=mask, training=training
-        )
+        attention = self.attention(inputs, inputs, attention_mask=mask, training=training)
         output = tf.reduce_mean(attention, axis=1)
         if self.normalize_output:
+            print("Pooler Normalizing outputs...")
             output = self.norm(output)
 
             if self.compute_dtype == "float16":
-                print("Pooler Normalizing outputs...")
                 # output_tensor will always be float32
                 # so we need to cast it back to float16
                 output = tf.cast(output, dtype=tf.float16)

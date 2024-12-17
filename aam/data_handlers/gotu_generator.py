@@ -43,9 +43,7 @@ class GOTUGenerator(UniFracGenerator):
             self.asv_generator.rarefy_table,
             self.asv_generator.table_data,
             self.asv_generator.sample_mask,
-        ) = self.rarefy_gotu_and_asv_table(
-            self.rarefy_table, self.asv_generator.rarefy_table, rarefy=False
-        )
+        ) = self.rarefy_gotu_and_asv_table(self.rarefy_table, self.asv_generator.rarefy_table, rarefy=False)
 
         valid_mask = self.sample_mask & self.asv_generator.sample_mask
         self.sample_indices = np.arange(len(self.rarefy_table.ids()))
@@ -56,21 +54,14 @@ class GOTUGenerator(UniFracGenerator):
     def rarefy_gotu_and_asv_table(self, gotu_table, asv_table, rarefy=True):
         if rarefy:
             gotu_table = gotu_table.subsample(self.rarefy_depth, seed=self.seed)
-            asv_table = asv_table.subsample(
-                self.asv_generator.rarefy_depth, seed=self.asv_generator.seed
-            )
+            asv_table = asv_table.subsample(self.asv_generator.rarefy_depth, seed=self.asv_generator.seed)
 
         keep = set(gotu_table.ids()).intersection(asv_table.ids())
         gotu_table = gotu_table.filter(keep)
         asv_table = asv_table.filter(keep)
 
-        gotu_sample_mask = (
-            gotu_table.pa(inplace=False).sum(axis="sample") <= self.max_token_per_sample
-        )
-        asv_sample_mask = (
-            asv_table.pa(inplace=False).sum(axis="sample")
-            <= self.asv_generator.max_token_per_sample
-        )
+        gotu_sample_mask = gotu_table.pa(inplace=False).sum(axis="sample") <= self.max_token_per_sample
+        asv_sample_mask = asv_table.pa(inplace=False).sum(axis="sample") <= self.asv_generator.max_token_per_sample
 
         gotu_table_data = self._create_table_data(gotu_table)
         asv_table_data = self.asv_generator._create_table_data(asv_table)
@@ -130,13 +121,9 @@ class GOTUGenerator(UniFracGenerator):
                 asv_rarefy_table,
                 asv_table_data,
                 asv_sample_mask,
-            ) = self.rarefy_gotu_and_asv_table(
-                self.preprocessed_table, self.asv_generator.preprocessed_table
-            )
+            ) = self.rarefy_gotu_and_asv_table(self.preprocessed_table, self.asv_generator.preprocessed_table)
 
-            asv_encoder_target = self.asv_generator._create_encoder_target(
-                asv_rarefy_table
-            )
+            asv_encoder_target = self.asv_generator._create_encoder_target(asv_rarefy_table)
 
             sample_indices = np.arange(len(gotu_rarefy_table.ids()))
             valid_mask = gotu_sample_mask & asv_sample_mask
@@ -214,9 +201,7 @@ class GOTUGenerator(UniFracGenerator):
 
         if asv_encoder_target is None:
             asv_encoder_target = self.asv_generator.encoder_target
-        asv_encoder_output = self.asv_generator._encoder_output(
-            asv_encoder_target, gotu_s_ids, None
-        )
+        asv_encoder_output = self.asv_generator._encoder_output(asv_encoder_target, gotu_s_ids, None)
 
         return (
             asv_batch_counts,
@@ -263,9 +248,7 @@ class GOTUGenerator(UniFracGenerator):
 
                 def sample_data(minibatch):
                     samples = self._minibatch_indices(minibatch, sample_indices)
-                    return self._sample_data(
-                        samples, gotu_table_data, asv_table_data, asv_encoder_target
-                    )
+                    return self._sample_data(samples, gotu_table_data, asv_table_data, asv_encoder_target)
 
                 while not self._epoch_complete(processed):
                     (
@@ -303,9 +286,7 @@ class GOTUGenerator(UniFracGenerator):
         sample_ids: Iterable[str],
         ob_ids: list[str],
     ) -> np.ndarray[float]:
-        return super(GOTUGenerator, self)._encoder_output(
-            encoder_target, sample_ids, ob_ids
-        )
+        return super(GOTUGenerator, self)._encoder_output(encoder_target, sample_ids, ob_ids)
 
     def map_tokens(self) -> dict:
         """

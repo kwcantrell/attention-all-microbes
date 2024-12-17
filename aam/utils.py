@@ -17,12 +17,8 @@ def float_mask(tensor: tf.Tensor, dtype=tf.float32) -> tf.Tensor:
     return mask
 
 
-def create_random_mask(
-    shape: tf.Tensor, percent: tf.float32, dtype: tf.DType = tf.float32
-) -> tf.Tensor:
-    random_mask = tf.random.uniform(
-        shape, maxval=1, dtype=tf.keras.mixed_precision.global_policy().compute_dtype
-    )
+def create_random_mask(shape: tf.Tensor, percent: tf.Tensor, dtype: tf.DType = tf.float32) -> tf.Tensor:
+    random_mask = tf.random.uniform(shape, maxval=1, dtype=tf.keras.mixed_precision.global_policy().compute_dtype)
     random_mask = tf.cast(random_mask <= percent, dtype=dtype)
     return random_mask
 

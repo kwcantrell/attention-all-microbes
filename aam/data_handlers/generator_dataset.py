@@ -52,7 +52,7 @@ class GeneratorDataset:
 
     def __init__(
         self,
-        table: Union[str, Table],
+        table: Union[str, Table] = None,
         metadata: Optional[Union[str, pd.DataFrame]] = None,
         metadata_column: Optional[str] = None,
         shift: Optional[Union[str, float]] = None,
@@ -69,15 +69,17 @@ class GeneratorDataset:
         repeat=1,
         seed=None,
     ):
-        table, metadata
-        self.table = table
+        if table is not None:
+            self.table = table
 
         self.metadata_column = metadata_column
         self.is_categorical = is_categorical
         self.include_sample_weight = is_categorical
         self.shift = shift
         self.scale = scale
-        self.metadata = metadata
+
+        if table is not None:
+            self.metadata = metadata
 
         self.max_token_per_sample = max_token_per_sample
         self.shuffle = shuffle
@@ -90,33 +92,29 @@ class GeneratorDataset:
         self.max_bp = max_bp
         self.is_16S = is_16S
         self.repeat = repeat
-
-        self.preprocessed_table = self.table
-        self.obs_ids = self.preprocessed_table.ids(axis="observation")
         self.seed = seed
 
-        print("creating table...")
-        self.rarefy_table, self.sample_mask = self.create_rarefied_table(
-            self.preprocessed_table
-        )
+        if table is not None:
+            self.preprocessed_table = self.table
+            self.obs_ids = self.preprocessed_table.ids(axis="observation")
 
-        print(f"Table shape: {self.rarefy_table.shape}")
-        self.sample_indices = np.arange(len(self.rarefy_table.ids()))
-        self.size = len(self.sample_indices)
-        self.sample_indices = self.sample_indices[self.sample_mask]
-        self.steps_per_epoch = (self.size // self.batch_size) * self.repeat
-        self.table_data = self._create_table_data(self.rarefy_table)
-        self.y_data = self._create_y_data(self.rarefy_table)
-        self.encoder_target = None
-        self.encoder_dtype = None
-        self.encoder_output_type = None
+            print("creating table...")
+            self.rarefy_table, self.sample_mask = self.create_rarefied_table(self.preprocessed_table)
+
+            print(f"Table shape: {self.rarefy_table.shape}")
+            self.sample_indices = np.arange(len(self.rarefy_table.ids()))
+            self.size = len(self.sample_indices)
+            self.sample_indices = self.sample_indices[self.sample_mask]
+            self.steps_per_epoch = (self.size // self.batch_size) * self.repeat
+            self.table_data = self._create_table_data(self.rarefy_table)
+            self.y_data = self._create_y_data(self.rarefy_table)
+            self.encoder_target = None
+            self.encoder_dtype = None
+            self.encoder_output_type = None
 
     def create_rarefied_table(self, table):
         rarefied_table = table.subsample(self.rarefy_depth, seed=self.seed)
-        sample_mask = (
-            rarefied_table.pa(inplace=False).sum(axis="sample")
-            <= self.max_token_per_sample
-        )
+        sample_mask = rarefied_table.pa(inplace=False).sum(axis="sample") <= self.max_token_per_sample
         return rarefied_table, sample_mask
 
     def _validate_dataframe(self, df: pd.DataFrame):
@@ -137,9 +135,7 @@ class GeneratorDataset:
     def table(self, table: Union[str, Table]):
         if not isinstance(table, (str, Table)):
             tt = type(table)
-            raise TypeError(
-                f"Invalid table type. Expected file path or Table but recieve {tt}"
-            )
+            raise TypeError(f"Invalid table type. Expected file path or Table but recieve {tt}")
 
         if isinstance(table, str):
             if not os.path.exists(table):
@@ -208,9 +204,7 @@ class GeneratorDataset:
     def _encoder_output(self, encoder_target, sample_ids, obs_ids):
         return None
 
-    def _y_output(
-        self, y_data: Optional[pd.Series], sample_ids: Iterable[str]
-    ) -> np.ndarray:
+    def _y_output(self, y_data: Optional[pd.Series], sample_ids: Iterable[str]) -> np.ndarray:
         if y_data is None:
             return None
 
@@ -222,17 +216,13 @@ class GeneratorDataset:
 
         return y_data.loc[sample_ids].to_numpy().reshape(-1, 1)
 
-    def _create_table_data(
-        self, table: Table
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _create_table_data(self, table: Table) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         obs_ids = table.ids(axis="observation")
         sample_ids = table.ids()
 
         obs_encodings = None
         if self.is_16S:
-            obs_encodings = tf.cast(
-                tf.strings.unicode_decode(obs_ids, "UTF-8"), dtype=tf.int64
-            )
+            obs_encodings = tf.cast(tf.strings.unicode_decode(obs_ids, "UTF-8"), dtype=tf.int64)
             obs_encodings = self.lookup_table.lookup(obs_encodings).numpy()
 
         table_data, row, col, shape = self._table_data(table)
@@ -252,9 +242,7 @@ class GeneratorDataset:
         row, col, counts, obs_encodings, sample_ids, obs_ids = table_data
 
         if max(samples) >= len(sample_ids):
-            raise Exception(
-                f"\tsample_indices exceed max {len(sample_ids)}. samples {samples}..."
-            )
+            raise Exception(f"\tsample_indices exceed max {len(sample_ids)}. samples {samples}...")
         s_ids = [sample_ids[s] for s in samples]
 
         samples = samples.reshape((-1, 1))
@@ -287,16 +275,7 @@ class GeneratorDataset:
             encoder_target = self.encoder_target
         encoder_output = self._encoder_output(encoder_target, s_ids, s_obj_ids)
 
-        return (
-            batch_counts,
-            s_counts.reshape((-1, 1)),
-            s_tokens,
-            obj_indices,
-            y_output,
-            encoder_output,
-            s_obj_ids,
-            s_ids,
-        )
+        return (batch_counts, s_counts.reshape((-1, 1)), s_tokens, obj_indices, y_output, encoder_output, s_obj_ids, s_ids)
 
     def _epoch_complete(self, processed):
         if processed < self.steps_per_epoch:
@@ -311,20 +290,10 @@ class GeneratorDataset:
             end = self.samples_per_minibatch
         return sample_indices[start:end]
 
-    def _epoch_samples(
-        self,
-        epoch,
-        table_data,
-        y_data,
-        encoder_target,
-        sample_mask,
-        sample_indices,
-    ):
+    def _epoch_samples(self, epoch, table_data, y_data, encoder_target, sample_mask, sample_indices):
         if self.gen_new_tables and epoch > 0:
             print(f"epcoh {epoch}: generating new table...")
-            rarefy_table, sample_mask = self.create_rarefied_table(
-                self.preprocessed_table
-            )
+            rarefy_table, sample_mask = self.create_rarefied_table(self.preprocessed_table)
             table_data = self._create_table_data(rarefy_table)
             y_data = self._create_y_data(rarefy_table)
             encoder_target = self._create_encoder_target(rarefy_table)
@@ -348,34 +317,16 @@ class GeneratorDataset:
                 print(f"Finished epcoh: {epoch} processed {processed}")
                 processed = 0
                 minibatch = 0
-                table_data, y_data, encoder_target, sample_mask, sample_indices = (
-                    self._epoch_samples(
-                        epoch,
-                        table_data,
-                        y_data,
-                        encoder_target,
-                        sample_mask,
-                        sample_indices,
-                    )
+                table_data, y_data, encoder_target, sample_mask, sample_indices = self._epoch_samples(
+                    epoch, table_data, y_data, encoder_target, sample_mask, sample_indices
                 )
 
                 def sample_data(minibatch):
                     samples = self._minibatch_indices(minibatch, sample_indices)
-                    return self._sample_data(
-                        samples, table_data, y_data, encoder_target
-                    )
+                    return self._sample_data(samples, table_data, y_data, encoder_target)
 
                 while not self._epoch_complete(processed):
-                    (
-                        batch_counts,
-                        counts,
-                        tokens,
-                        indices,
-                        y_output,
-                        encoder_out,
-                        ob_ids,
-                        s_ids,
-                    ) = sample_data(minibatch)
+                    (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = sample_data(minibatch)
 
                     if counts is not None:
                         processed += 1
@@ -392,28 +343,17 @@ class GeneratorDataset:
 
                         if encoder_out is not None:
                             if isinstance(encoder_out, tuple):
-                                encoder_out = tuple(
-                                    [
-                                        o.astype(t)
-                                        for o, t in zip(encoder_out, self.encoder_dtype)
-                                    ]
-                                )
+                                encoder_out = tuple([o.astype(t) for o, t in zip(encoder_out, self.encoder_dtype)])
                             else:
                                 encoder_out = encoder_out.astype(self.encoder_dtype)
 
                             if output is not None:
-                                output = (
-                                    output,
-                                    encoder_out,
-                                )
+                                output = (output, encoder_out)
                             else:
                                 output = encoder_out
 
                         if include_seq_id:
-                            output = (
-                                *output,
-                                ob_ids,
-                            )
+                            output = (*output, ob_ids)
                         if include_sample_ids:
                             output = (*output, s_ids)
 
@@ -435,9 +375,7 @@ class GeneratorDataset:
         def generator():
             for s in range(0, len(sample_indices)):
                 batch_samples = [sample_indices[s]]
-                counts, tokens, encoder_out = self._sample_data(
-                    batch_samples, table_data, enocder_target
-                )
+                counts, tokens, encoder_out = self._sample_data(batch_samples, table_data, enocder_target)
 
                 if counts is not None:
                     sample_id = sample_ids[sample_indices[s]]
@@ -479,17 +417,9 @@ class GeneratorDataset:
 
         if y_output_sig is not None:
             if include_seq_id:
-                y_output_sig = (
-                    *y_output_sig,
-                    tf.TensorSpec(
-                        shape=(self.batch_size, None), dtype=tf.string, name=None
-                    ),
-                )
+                y_output_sig = (*y_output_sig, tf.TensorSpec(shape=(self.batch_size, None), dtype=tf.string, name=None))
             if include_sample_ids:
-                y_output_sig = (
-                    *y_output_sig,
-                    tf.TensorSpec(shape=(self.batch_size,), dtype=tf.string, name=None),
-                )
+                y_output_sig = (*y_output_sig, tf.TensorSpec(shape=(self.batch_size,), dtype=tf.string, name=None))
             output_sig = (output_sig, y_output_sig)
         class_weights = None
         if self.is_categorical:
@@ -516,14 +446,10 @@ class GeneratorDataset:
         }
         return data_obj
 
-    def get_data_by_id(
-        self, samples: np.ndarray[str], axis: Union[str, tuple[str]] = None
-    ):
+    def get_data_by_id(self, samples: np.ndarray[str], axis: Union[str, tuple[str]] = None):
         if isinstance(axis, str):
             axis = [axis]
         _, sample_indices = _matching_sample_indices(samples, self.table_data[-2])
         mask, _ = _matching_sample_indices(axis, self.axes)
-        sample_data = self._sample_data(
-            sample_indices, self.table_data, self.y_data, self.encoder_target
-        )
+        sample_data = self._sample_data(sample_indices, self.table_data, self.y_data, self.encoder_target)
         return [d for d, m in zip(sample_data, mask) if m]

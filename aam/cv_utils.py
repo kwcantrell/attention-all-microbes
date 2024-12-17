@@ -11,9 +11,7 @@ from aam.models.utils import cos_decay_with_warmup
 
 
 class CVModel:
-    def __init__(
-        self, model: tf.keras.Model, train_data, val_data, output_dir, fold_label
-    ):
+    def __init__(self, model: tf.keras.Model, train_data, val_data, output_dir, fold_label):
         self.model: tf.keras.Model = model
         self.train_data = train_data
         self.val_data = val_data
@@ -24,9 +22,7 @@ class CVModel:
             output_dir,
             f"logs/fold-{self.fold_label}-{self.time_stamp}",
         )
-        self.log_dir = os.path.join(
-            output_dir, f"logs/fold-{self.fold_label}-{self.time_stamp}"
-        )
+        self.log_dir = os.path.join(output_dir, f"logs/fold-{self.fold_label}-{self.time_stamp}")
 
     def fit_fold(
         self,
@@ -61,9 +57,7 @@ class CVModel:
         optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
-            tf.keras.callbacks.TensorBoard(
-                log_dir=self.log_dir, histogram_freq=0, write_graph=False
-            ),
+            tf.keras.callbacks.TensorBoard(log_dir=self.log_dir, histogram_freq=0, write_graph=False),
             # tf.keras.callbacks.EarlyStopping(
             #     "val_loss", patience=patience, start_from_epoch=early_stop_warmup
             # ),

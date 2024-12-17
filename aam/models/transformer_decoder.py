@@ -62,9 +62,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
                 )
             )
         if self.use_layer_norm:
-            self.output_normalization = tf.keras.layers.LayerNormalization(
-                epsilon=1e-6, dtype=tf.float32
-            )
+            self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         super(TransformerDecoder, self).build(input_shape)
 
     def get_config(self):
@@ -83,9 +81,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         base_config = super(TransformerDecoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    def call(
-        self, asv_inputs, gotu_inputs, asv_mask=None, gotu_mask=None, training=False
-    ):
+    def call(self, asv_inputs, gotu_inputs, asv_mask=None, gotu_mask=None, training=False):
         """Return the output of the encoder.
 
         Args:
@@ -105,26 +101,18 @@ class TransformerDecoder(tf.keras.layers.Layer):
         gotu_shape = tf.shape(encoder_inputs)
         batch_dim = gotu_shape[0]
         g_seq_len = gotu_shape[1]
-        causal_mask = tf.linalg.band_part(
-            tf.ones([batch_dim, g_seq_len, g_seq_len], dtype=self.compute_dtype), -1, 0
-        )
+        causal_mask = tf.linalg.band_part(tf.ones([batch_dim, g_seq_len, g_seq_len], dtype=self.compute_dtype), -1, 0)
         if gotu_mask is not None:
-            causal_mask = causal_mask * tf.matmul(
-                gotu_mask, gotu_mask, transpose_b=True
-            )
+            causal_mask = causal_mask * tf.matmul(gotu_mask, gotu_mask, transpose_b=True)
         for layer_idx in range(self.num_layers):
-            encoder_inputs = self.encoder_layers[layer_idx](
-                [encoder_inputs, causal_mask], training=training
-            )
+            encoder_inputs = self.encoder_layers[layer_idx]([encoder_inputs, causal_mask], training=training)
 
         decoder_inputs = encoder_inputs
         attention_mask = None
         if asv_mask is not None and gotu_mask is not None:
             attention_mask = tf.matmul(gotu_mask, asv_mask, transpose_b=True)
         for layer_idx in range(self.num_layers):
-            decoder_inputs = self.decoder_layers[layer_idx](
-                [decoder_inputs, asv_inputs, attention_mask], training=training
-            )
+            decoder_inputs = self.decoder_layers[layer_idx]([decoder_inputs, asv_inputs, attention_mask], training=training)
         output_tensor = decoder_inputs
         if self.use_layer_norm:
             output_tensor = self.output_normalization(output_tensor)

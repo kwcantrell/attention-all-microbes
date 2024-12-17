@@ -13,9 +13,7 @@ class AttentionPooling(tf.keras.layers.Layer):
         attention_scores = tf.squeeze(attention_scores, axis=-1)  # [B, T]
 
         # Scale the scores for numerical stability
-        attention_scores = attention_scores / tf.sqrt(
-            tf.cast(tf.shape(inputs)[-1], tf.float32)
-        )
+        attention_scores = attention_scores / tf.sqrt(tf.cast(tf.shape(inputs)[-1], tf.float32))
 
         # Apply mask (if provided)
         if mask is not None:
@@ -27,9 +25,7 @@ class AttentionPooling(tf.keras.layers.Layer):
         attention_weights = tf.nn.softmax(attention_scores, axis=-1)  # [B, T]
 
         # Weighted sum (pooling)
-        pooled_output = tf.reduce_sum(
-            inputs * tf.expand_dims(attention_weights, axis=-1), axis=1
-        )  # [B, D]
+        pooled_output = tf.reduce_sum(inputs * tf.expand_dims(attention_weights, axis=-1), axis=1)  # [B, D]
 
         # Apply normalization
         return self.norm(pooled_output)

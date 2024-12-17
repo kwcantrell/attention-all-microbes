@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Union
 
 import tensorflow as tf
+import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
 
@@ -14,7 +15,6 @@ from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import float_mask
-import tensorflow_models as tfm
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceEncoder")
@@ -39,6 +39,7 @@ class SequenceEncoder(tf.keras.Model):
         nucleotide_encoder=None,
         pairwise_loss_type="mse",
         normalize_outputs=True,
+        use_residual_connections=False,
         **kwargs,
     ):
         super(SequenceEncoder, self).__init__(**kwargs)
@@ -60,6 +61,7 @@ class SequenceEncoder(tf.keras.Model):
         self.nucleotide_encoder = nucleotide_encoder
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
+        self.use_residual_connections = use_residual_connections
 
         self._get_encoder_loss()
         self.loss_tracker = tf.keras.metrics.Mean()
@@ -86,10 +88,12 @@ class SequenceEncoder(tf.keras.Model):
             add_token=self.add_token,
             nucleotide_encoder=nucleotide_encoder,
             normalize_outputs=self.normalize_outputs,
+            use_residual_connections=self.use_residual_connections,
             name="base_encoder",
         )
 
         self.attention_pooling = MultiHeadAttentionPooling(self.normalize_outputs)
+
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
@@ -97,13 +101,15 @@ class SequenceEncoder(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
+            use_residual_connections=self.use_residual_connections,
             name="encoder",
         )
 
+        self._rezero = self.add_weight(
+            name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+        )
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(
-                mean=0.0, stddev=0.02
-            )
+            self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
         )
 
         self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
@@ -187,7 +193,7 @@ class SequenceEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, encoder_embeddings = self.call(inputs, training=False)
+        embeddings, encoder_embeddings = self(inputs, training=False)
 
         return encoder_embeddings, y
 
@@ -205,9 +211,7 @@ class SequenceEncoder(tf.keras.Model):
         y_target, encoder_target = y
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, nuc_loss, encoder_loss = self._compute_loss(
-                inputs, encoder_target, outputs
-            )
+            loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
 
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
@@ -238,9 +242,7 @@ class SequenceEncoder(tf.keras.Model):
         inputs, y = data
         y_target, encoder_target = y
         outputs = self(inputs, training=False)
-        loss, nuc_loss, encoder_loss = self._compute_loss(
-            inputs, encoder_target, outputs
-        )
+        loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
         self.loss_tracker.update_state(loss)
         self.encoder_tracker.update_state(encoder_loss)
         self.nuc_tracker.update_state(nuc_loss)
@@ -251,6 +253,14 @@ class SequenceEncoder(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
+    def build(self, input_shape=None):
+        inputs = [tf.keras.layers.Input(shape[1:]) for shape in input_shape]
+        outputs = self.call(inputs, training=False)
+        self.inputs = inputs
+        self.outputs = outputs
+        self._build_input_shape = input_shape
+        self.built = True
+
     def call(
         self,
         inputs,
@@ -260,35 +270,27 @@ class SequenceEncoder(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, tokens, indicies, counts = inputs
 
-        sample_embeddings = self.base_encoder(
-            tokens, include_bert_random_mask=include_bert_random_mask, training=training
-        )
-        sample_embeddings = tf.gather(
-            sample_embeddings, tf.cast(indicies, dtype=tf.int32)
-        )
+        sample_embeddings = self.base_encoder(tokens, include_bert_random_mask=include_bert_random_mask, training=training)
+        sample_embeddings = tf.gather(sample_embeddings, tf.cast(indicies, dtype=tf.int32))
         sample_embeddings = to_batch(sample_embeddings, batch_counts)
 
         counts = to_batch(counts, batch_counts)
-        sample_embeddings, counts = sort_using_counts(sample_embeddings, counts)
-        sample_embeddings = sample_embeddings + self.pos_emb(sample_embeddings)
         count_mask = float_mask(counts, dtype=self.compute_dtype)
 
-        encoder_gated_embeddings = self.encoder(
-            sample_embeddings, mask=count_mask, training=training
+        sample_embeddings, counts = sort_using_counts(sample_embeddings, counts)
+        sample_embeddings = sample_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(
+            sample_embeddings
         )
+        sample_embeddings = self.encoder(sample_embeddings, mask=count_mask, training=training)
+        encoder_pred = self.extract_encoder_pred(sample_embeddings, count_mask, training=training)
 
-        encoder_pred = self.extract_encoder_pred(
-            encoder_gated_embeddings, count_mask, training=training
-        )
-        encoder_embeddings = encoder_gated_embeddings
+        print("SequenceEncoder exit...")
         if not return_counts:
-            return encoder_embeddings, encoder_pred
+            return sample_embeddings, encoder_pred
         else:
-            return encoder_embeddings, counts, encoder_pred
+            return sample_embeddings, counts, encoder_pred
 
-    def base_embeddings(
-        self, inputs: tuple[tf.Tensor, tf.Tensor]
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def base_embeddings(self, inputs: tuple[tf.Tensor, tf.Tensor]) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
         tokens, counts = inputs
         tokens = tf.cast(tokens, dtype=tf.int32)
@@ -301,15 +303,11 @@ class SequenceEncoder(tf.keras.Model):
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
 
-        unifrac_gated_embeddings = self.unifrac_encoder(
-            sample_embeddings, mask=count_attention_mask
-        )
+        unifrac_gated_embeddings = self.unifrac_encoder(sample_embeddings, mask=count_attention_mask)
         unifrac_pred = unifrac_gated_embeddings[:, 0, :]
         unifrac_pred = self.unifrac_ff(unifrac_pred)
 
-        unifrac_embeddings = (
-            sample_embeddings + unifrac_gated_embeddings * self._unifrac_alpha
-        )
+        unifrac_embeddings = sample_embeddings + unifrac_gated_embeddings * self._unifrac_alpha
 
         return unifrac_embeddings
 
@@ -321,9 +319,7 @@ class SequenceEncoder(tf.keras.Model):
         sample_embeddings = self.base_encoder(tokens, training=False)
         return sample_embeddings
 
-    def asv_gradient(
-        self, inputs: tuple[tf.Tensor, tf.Tensor], asv_embeddings
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def asv_gradient(self, inputs: tuple[tf.Tensor, tf.Tensor], asv_embeddings) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
         tokens, counts = inputs
         tokens = tf.cast(tokens, dtype=tf.int32)
@@ -336,15 +332,11 @@ class SequenceEncoder(tf.keras.Model):
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
 
-        unifrac_gated_embeddings = self.unifrac_encoder(
-            sample_embeddings, mask=count_attention_mask
-        )
+        unifrac_gated_embeddings = self.unifrac_encoder(sample_embeddings, mask=count_attention_mask)
         unifrac_pred = unifrac_gated_embeddings[:, 0, :]
         unifrac_pred = self.unifrac_ff(unifrac_pred)
 
-        unifrac_embeddings = (
-            sample_embeddings + unifrac_gated_embeddings * self._unifrac_alpha
-        )
+        unifrac_embeddings = sample_embeddings + unifrac_gated_embeddings * self._unifrac_alpha
 
         return unifrac_embeddings
 
@@ -372,6 +364,21 @@ class SequenceEncoder(tf.keras.Model):
                 "accumulation_steps": self.accumulation_steps,
                 "nucleotide_encoder": self.nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
+                "use_residual_connections": self.use_residual_connections,
+                "build_input_shape": self.get_build_config(),
             }
         )
         return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        input_shape = None
+        if "build_input_shape" in config:
+            build_input_shape = config.pop("build_input_shape")
+            input_shape = build_input_shape["input_shape"]
+
+        model = cls(**config)
+
+        if input_shape is not None:
+            model.build(input_shape)
+        return model

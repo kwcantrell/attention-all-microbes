@@ -23,9 +23,7 @@ class TaxonomyGenerator(GeneratorDataset):
 
         self.encoder_target = self._create_encoder_target(self.rarefy_table)
         self.encoder_dtype = np.int32
-        self.encoder_output_type = tf.TensorSpec(
-            shape=[self.batch_size, None], dtype=tf.int32
-        )
+        self.encoder_output_type = tf.TensorSpec(shape=[self.batch_size, None], dtype=tf.int32)
 
     def _create_encoder_target(self, table: Table) -> None:
         if not hasattr(self, "_taxonomy"):
@@ -33,9 +31,7 @@ class TaxonomyGenerator(GeneratorDataset):
         obs = table.ids(axis="observation")
         return self.taxonomy.loc[obs, "token"]
 
-    def _encoder_output(
-        self, encoder_target: pd.Series, sample_ids: Iterable[str], obs_ids: list[str]
-    ):
+    def _encoder_output(self, encoder_target: pd.Series, sample_ids: Iterable[str], obs_ids: list[str]):
         tax_tokens = [encoder_target.loc[obs] for obs in obs_ids]
         max_len = max([len(tokens) for tokens in tax_tokens])
         return np.array([np.pad(t, [[0, max_len - len(t)]]) for t in tax_tokens])
@@ -72,12 +68,8 @@ class TaxonomyGenerator(GeneratorDataset):
         le = preprocessing.LabelEncoder()
         taxonomy.loc[:, "token"] = le.fit_transform(taxonomy["class"])
         taxonomy.loc[:, "token"] += 1  # shifts tokens to be between 1 and n
-        print(
-            "min token:", min(taxonomy["token"]), "max token:", max(taxonomy["token"])
-        )
-        self.num_tokens = (
-            max(taxonomy["token"]) + 1
-        )  # still need to add 1 to account for shift
+        print("min token:", min(taxonomy["token"]), "max token:", max(taxonomy["token"]))
+        self.num_tokens = max(taxonomy["token"]) + 1  # still need to add 1 to account for shift
         self._taxonomy = taxonomy
 
 

@@ -11,7 +11,7 @@ from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 # from aam.models.unifrac_encoder import UniFracEncoder
 from aam.models.sequence_encoder import SequenceEncoder
 from aam.models.transformers import TransformerEncoder
-from aam.models.utils import to_batch, sort_using_counts
+from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import create_random_mask, float_mask
@@ -97,9 +97,7 @@ class SequenceRegressor(tf.keras.Model):
             self.base_model = base_model
 
         self.base_losses = {"base_loss": self.base_model._compute_encoder_loss}
-        self.base_metrics = {
-            "base_loss": ["encoder_loss", self.base_model.encoder_tracker]
-        }
+        self.base_metrics = {"base_loss": ["encoder_loss", self.base_model.encoder_tracker]}
 
         if self.freeze_base:
             print("Freezing base model...")
@@ -112,9 +110,7 @@ class SequenceRegressor(tf.keras.Model):
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
         )
-        self.count_pos = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit + 5, initializer="zeros"
-        )
+        self.count_pos = tfm.nlp.layers.PositionEmbedding(self.token_limit + 5, initializer="zeros")
         self.count_out = tf.keras.layers.Dense(1, dtype=tf.float32)
         self._rezero_a = self.add_weight(
             name="rezero_alpha",
@@ -144,9 +140,7 @@ class SequenceRegressor(tf.keras.Model):
         self.attention_pooling = MultiHeadAttentionPooling()
         self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
 
-        self.loss_metrics = sorted(
-            ["loss", "target_loss", "count_mse", self.metric_string]
-        )
+        self.loss_metrics = sorted(["loss", "target_loss", "count_mse", self.metric_string])
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
 
@@ -169,14 +163,10 @@ class SequenceRegressor(tf.keras.Model):
         loss = self.loss(y_true, y_pred)  # * weights
         return tf.reduce_mean(loss)
 
-    def _compute_count_loss(
-        self, counts: tf.Tensor, count_pred: tf.Tensor, count_mask
-    ) -> tf.Tensor:
+    def _compute_count_loss(self, counts: tf.Tensor, count_pred: tf.Tensor, count_mask) -> tf.Tensor:
         count_mask = counts > 0
         count_mask = tf.reshape(count_mask, shape=[-1])
-        relative_counts = tf.reshape(self._relative_abundance(counts), shape=[-1])[
-            count_mask
-        ]
+        relative_counts = tf.reshape(self._relative_abundance(counts), shape=[-1])[count_mask]
         count_pred = tf.reshape(count_pred, shape=[-1])[count_mask]
 
         loss = tf.square(tf.math.log(relative_counts) - tf.math.log(count_pred))
@@ -253,9 +243,7 @@ class SequenceRegressor(tf.keras.Model):
         ],
     ):
         inputs, (y_true, _) = data
-        target_embeddings, count_pred, y_pred, base_pred, nuc_mask, nuc_pred = self(
-            inputs, training=False
-        )
+        target_embeddings, count_pred, y_pred, base_pred, nuc_mask, nuc_pred = self(inputs, training=False)
 
         if not self.classifier:
             y_true = y_true * self.scale + self.shift
@@ -276,9 +264,7 @@ class SequenceRegressor(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            target_loss, count_mse, nuc_loss, encoder_loss = self._compute_loss(
-                inputs, y, outputs
-            )
+            target_loss, count_mse, nuc_loss, encoder_loss = self._compute_loss(inputs, y, outputs)
             loss = target_loss + count_mse + nuc_loss + encoder_loss
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
@@ -314,9 +300,7 @@ class SequenceRegressor(tf.keras.Model):
         inputs, y = data
 
         outputs = self(inputs, training=False)
-        target_loss, count_mse, nuc_loss, encoder_loss = self._compute_loss(
-            inputs, y, outputs
-        )
+        target_loss, count_mse, nuc_loss, encoder_loss = self._compute_loss(inputs, y, outputs)
         loss = target_loss + count_mse + nuc_loss + encoder_loss
 
         self.loss_tracker.update_state(loss)
@@ -345,24 +329,16 @@ class SequenceRegressor(tf.keras.Model):
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         count_shape = tf.shape(counts)
         valid_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        random_mask = (
-            create_random_mask(count_shape, percent=0.15, dtype=self.compute_dtype)
-            * valid_mask
-        )
+        random_mask = create_random_mask(count_shape, percent=0.15, dtype=self.compute_dtype) * valid_mask
 
         if False:
             # of the masked tokens, select 20% to either keep or change to
             # random token
-            random_non_mask = (
-                create_random_mask(count_shape, percent=0.2, dtype=self.compute_dtype)
-                * random_mask
-            )
+            random_non_mask = create_random_mask(count_shape, percent=0.2, dtype=self.compute_dtype) * random_mask
 
             # of the 20% of masked tokens to either keep or change, select 50%  to keep
             # and 50% to change
-            random_change = create_random_mask(
-                count_shape, percent=0.5, dtype=self.compute_dtype
-            )
+            random_change = create_random_mask(count_shape, percent=0.5, dtype=self.compute_dtype)
 
             # tokens to keep the same
             random_keep = random_non_mask * random_change
@@ -374,19 +350,13 @@ class SequenceRegressor(tf.keras.Model):
             masked_input = counts * (1 - random_mask)
 
             # step 2: change 10% of <MASK> tokens back to original token
-            masked_input = (
-                masked_input + counts * random_keep * random_mask * valid_mask
-            )
+            masked_input = masked_input + counts * random_keep * random_mask * valid_mask
 
             # step 3: change 10% of <MASK> tokens to random token
-            random_tokens = tf.random.uniform(
-                tf.shape(counts), minval=0, maxval=1, dtype=self.compute_dtype
-            )
+            random_tokens = tf.random.uniform(tf.shape(counts), minval=0, maxval=1, dtype=self.compute_dtype)
 
             # step 4: create masked input
-            masked_input = (
-                masked_input + random_tokens * random_change * random_mask * valid_mask
-            )
+            masked_input = masked_input + random_tokens * random_change * random_mask * valid_mask
             counts = masked_input
 
         # convert random_mask to boolean mask
@@ -402,9 +372,7 @@ class SequenceRegressor(tf.keras.Model):
         training: bool = False,
     ) -> tf.Tensor:
         count_embeddings = tensor + self.count_pos(tensor) * (1 + relative_abundances)
-        count_embeddings = self.count_encoder(
-            count_embeddings, mask=attention_mask, training=training
-        )
+        count_embeddings = self.count_encoder(count_embeddings, mask=attention_mask, training=training)
 
         count_pred = self.count_out(count_embeddings)
         large_neg_num = -1e9
@@ -422,9 +390,7 @@ class SequenceRegressor(tf.keras.Model):
         attention_mask: Optional[tf.Tensor] = None,
         training: bool = False,
     ) -> tf.Tensor:
-        target_embeddings = self.target_encoder(
-            tensor, mask=attention_mask, training=training
-        )
+        target_embeddings = self.target_encoder(tensor, mask=attention_mask, training=training)
         # target_embeddings = tensor
         target_out = self.attention_pooling(target_embeddings, mask=attention_mask)
         target_out = self.target_ff(target_out)
@@ -492,9 +458,7 @@ class SequenceRegressor(tf.keras.Model):
 
         # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-        rel_abundance = tf.pad(
-            rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1
-        )
+        rel_abundance = tf.pad(rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         base_embeddings = self.base_model.base_embeddings((tokens, counts))
 
         return base_embeddings
@@ -515,9 +479,7 @@ class SequenceRegressor(tf.keras.Model):
 
         # account for <SAMPLE> token
         count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-        rel_abundance = tf.pad(
-            rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1
-        )
+        rel_abundance = tf.pad(rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
 
         count_gated_embeddings, count_pred = self._compute_count_embeddings(
@@ -528,9 +490,7 @@ class SequenceRegressor(tf.keras.Model):
         # count_embeddings = base_embeddings + count_gated_embeddings * self._count_alpha
         count_embeddings = count_gated_embeddings
 
-        target_embeddings, target_out = self._compute_target_embeddings(
-            count_embeddings, attention_mask=count_attention_mask
-        )
+        target_embeddings, target_out = self._compute_target_embeddings(count_embeddings, attention_mask=count_attention_mask)
 
         return self.target_activation(target_out)
 
@@ -551,12 +511,8 @@ class SequenceRegressor(tf.keras.Model):
         # account for <SAMPLE> token
         if self.add_token:
             count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-            rel_abundance = tf.pad(
-                rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1
-            )
-        asv_embeddings = self.base_model.asv_embeddings(
-            (tokens, counts), training=False
-        )
+            rel_abundance = tf.pad(rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1)
+        asv_embeddings = self.base_model.asv_embeddings((tokens, counts), training=False)
 
         return asv_embeddings
 
@@ -572,13 +528,9 @@ class SequenceRegressor(tf.keras.Model):
         # account for <SAMPLE> token
         if self.add_token:
             count_mask = tf.pad(count_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-            rel_abundance = tf.pad(
-                rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1
-            )
+            rel_abundance = tf.pad(rel_abundance, [[0, 0], [1, 0], [0, 0]], constant_values=1)
         count_attention_mask = count_mask
-        base_embeddings = self.base_model.asv_gradient(
-            (tokens, counts), asv_embeddings=asv_embeddings
-        )
+        base_embeddings = self.base_model.asv_gradient((tokens, counts), asv_embeddings=asv_embeddings)
 
         count_gated_embeddings, count_pred = self._compute_count_embeddings(
             base_embeddings,
@@ -629,8 +581,6 @@ class SequenceRegressor(tf.keras.Model):
 
     @classmethod
     def from_config(cls, config):
-        config["base_model"] = tf.keras.saving.deserialize_keras_object(
-            config["base_model"]
-        )
+        config["base_model"] = tf.keras.saving.deserialize_keras_object(config["base_model"])
         model = cls(**config)
         return model

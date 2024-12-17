@@ -22,9 +22,7 @@ class GOTURegressoin(tf.keras.Model):
         self.batch_size = batch_size
         # self.regression_loss = tf.keras.losses.MeanSquaredError()
         self.regression_loss = PairwiseLoss()
-        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True, reduction="none"
-        )
+        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
         self.loss_tracker = tf.keras.metrics.Mean()
         self.reg_tracker = tf.keras.metrics.Mean()
         self.attention_tracker = tf.keras.metrics.SparseCategoricalAccuracy()
@@ -45,18 +43,14 @@ class GOTURegressoin(tf.keras.Model):
         """inputs: [(B, N), (B, N)]"""
         features_pre_pad, counts = inputs
         counts = tf.cast(counts, dtype=self.compute_dtype)
-        features = tf.pad(
-            features_pre_pad, [[0, 0], [0, 1]], constant_values=self.total_tokens - 1
-        )
+        features = tf.pad(features_pre_pad, [[0, 0], [0, 1]], constant_values=self.total_tokens - 1)
         counts = tf.pad(counts, [[0, 0], [0, 1]], constant_values=0)
 
         attention_mask = float_mask(tf.expand_dims(features, axis=-1))
         attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
 
         if training:
-            seq_mask = tf.random.uniform(
-                tf.shape(counts), minval=0, maxval=1, dtype=self.compute_dtype
-            )
+            seq_mask = tf.random.uniform(tf.shape(counts), minval=0, maxval=1, dtype=self.compute_dtype)
             seq_mask = tf.less_equal(seq_mask, 0.9)
             seq_mask = tf.cast(seq_mask, dtype=self.compute_dtype)
             features = tf.multiply(features, tf.cast(seq_mask, dtype=tf.int64))
@@ -65,9 +59,7 @@ class GOTURegressoin(tf.keras.Model):
         counts = tf.expand_dims(counts, axis=-1)
         embeddings = embeddings + self.pos_emb(embeddings)
 
-        output = self.encoder(
-            embeddings, attention_mask=attention_mask, training=training
-        )
+        output = self.encoder(embeddings, attention_mask=attention_mask, training=training)
         if return_transfer_info:
             return embeddings, features_pre_pad, counts, attention_mask
         else:
@@ -92,9 +84,7 @@ class GOTURegressoin(tf.keras.Model):
             reg_loss = tf.reduce_sum(self.regression_loss(y, reg_out), axis=-1)
             loss = tf.reduce_mean(reg_loss)
 
-            attention_loss = tf.reduce_sum(
-                self.attention_loss(features, logits), axis=-1
-            )
+            attention_loss = tf.reduce_sum(self.attention_loss(features, logits), axis=-1)
             loss += tf.reduce_mean(attention_loss)
 
         # # Update weights
@@ -157,9 +147,7 @@ class GOTUTransfer(tf.keras.Model):
         super().__init__(**kwargs)
         self.base_model = base_model
         self.regression_loss = tf.keras.losses.MeanSquaredError(reduction="none")
-        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True, reduction="none"
-        )
+        self.attention_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
         self.loss_tracker = tf.keras.metrics.Mean()
         self.reg_tracker = tf.keras.metrics.MeanAbsoluteError()
         self.attention_tracker = tf.keras.metrics.SparseCategoricalAccuracy()
@@ -190,9 +178,7 @@ class GOTUTransfer(tf.keras.Model):
         )
         # embeddings = embeddings + self.count_ff(counts, training=training)
         embeddings = embeddings + counts
-        embeddings = self.encoder(
-            embeddings, attention_mask=attention_mask, training=False
-        )
+        embeddings = self.encoder(embeddings, attention_mask=attention_mask, training=False)
         reg_out = self.reg_out(embeddings[:, -1, :])
         att_out = self.att_out(embeddings[:, :-1, :])
         return reg_out, att_out, features_pre_pad
@@ -214,9 +200,7 @@ class GOTUTransfer(tf.keras.Model):
             reg_loss = tf.reduce_sum(self.regression_loss(y, reg_out), axis=-1)
             loss = tf.reduce_mean(reg_loss)
 
-            attention_loss = tf.reduce_sum(
-                self.attention_loss(features, logits), axis=-1
-            )
+            attention_loss = tf.reduce_sum(self.attention_loss(features, logits), axis=-1)
             loss += tf.reduce_mean(attention_loss)
 
         # # Update weights
