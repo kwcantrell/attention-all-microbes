@@ -153,15 +153,15 @@ class ASVEncoder(tf.keras.layers.Layer):
         unmasked_tokens = tf.reshape(unmasked_tokens, shape=[-1])[masked_nuc]
         masked_nuc = nuc_embeddings[masked_nuc]
         nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
-        self._compute_nuc_loss(unmasked_tokens, nuc_pred)
+        loss = self._compute_nuc_loss(unmasked_tokens, nuc_pred)
         print("ASVEncoder exit...")
-        return output
+        return output, loss
 
     def _compute_nuc_loss(self, tokens, pred):
         tokens = tf.one_hot(tokens, tf.shape(pred)[-1])
         nuc_loss = self.nuc_loss(tokens, pred)
         nuc_loss = tf.reduce_mean(nuc_loss)
-        self.add_loss(tf.reduce_mean(nuc_loss))
+        return tf.reduce_mean(nuc_loss)
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()

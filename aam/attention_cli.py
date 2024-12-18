@@ -271,7 +271,7 @@ def fit_asv_encoder(
 @click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
 @click.option("--p-normalize-outputs", default=True, type=bool)
-@click.option("--p-use-residual-connections", default=False, type=bool)
+@click.option("--p-use-residual-connections", default=True, type=bool)
 def fit_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -519,7 +519,7 @@ def fit_unifrac_regressor(
 @click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
 @click.option("--p-normalize-outputs", default=True, type=bool)
-@click.option("--p-use-residual-connections", default=False, type=bool)
+@click.option("--p-use-residual-connections", default=True, type=bool)
 def fit_denoised_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -649,7 +649,7 @@ def fit_denoised_unifrac_regressor(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
-        "sample_depths": [1000, 1000],
+        "sample_depths": [1000, 5000, 10000],
         "batch_size": p_batch_size,
         "is_16S": True,
         "is_categorical": p_is_categorical,

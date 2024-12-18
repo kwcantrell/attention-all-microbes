@@ -97,11 +97,25 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
         return embeddings
 
-    def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
-        tokens = inputs
-        embeddings = self.asv_encoder(tokens, include_bert_random_mask=include_bert_random_mask, training=training)
+    def dynamic_call(self, inputs, include_bert_random_mask=True, training: bool = False):
+        delta = 1024
+        num_seq = tf.shape(inputs)[0]
+        encodings = tf.TensorArray(tf.float32, size=num_seq, colocate_with_first_write_call=True)
+        losses = tf.TensorArray(tf.float32, size=tf.truncatediv(num_seq, delta) + 1)
+        for i in tf.range(start=0, limit=num_seq, delta=delta):
+            embeddings, loss = self.asv_encoder(
+                inputs[i : i + delta], include_bert_random_mask=include_bert_random_mask, training=training
+            )
+            encodings = encodings.scatter(indices=tf.range(i, i + tf.shape(embeddings)[0]), value=embeddings)
+            losses = losses.write(tf.truncatediv(i, delta), loss)
+        encodings = encodings.stack()
+        losses = losses.stack()
+        self.add_loss(tf.reduce_sum(losses))
+        return encodings
 
-        asv_embeddings = self._split_asvs(embeddings, training=training)
+    def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
+        encodings = self.dynamic_call(inputs, include_bert_random_mask, training)
+        asv_embeddings = self._split_asvs(encodings, training=training)
         print("BaseSequenceEncoder exit...")
         return asv_embeddings
 
