@@ -499,6 +499,7 @@ def fit_unifrac_regressor(
 @click.option("--p-patience", default=10, show_default=True, type=int)
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--i-model", default=None, required=False, type=str)
+@click.option("--i-unifrac-model", default=None, required=False, type=str)
 @click.option("--p-embedding-dim", default=128, type=int)
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
@@ -535,6 +536,7 @@ def fit_denoised_unifrac_regressor(
     p_patience: int,
     p_early_stop_warmup: int,
     i_model: Union[None, str],
+    i_unifrac_model: Union[None, str],
     p_embedding_dim: int,
     p_attention_heads: int,
     p_attention_layers: int,
@@ -587,6 +589,8 @@ def fit_denoised_unifrac_regressor(
     else:
         if i_nucleotide_encoder is not None:
             i_nucleotide_encoder = tf.keras.models.load_model(i_nucleotide_encoder, compile=False)
+        if i_unifrac_model is not None:
+            i_unifrac_model = tf.keras.models.load_model(i_unifrac_model, compile=False)
         model: tf.keras.Model = UnifracDenoiser(
             output_dim,
             p_asv_limit,
@@ -605,7 +609,7 @@ def fit_denoised_unifrac_regressor(
             nucleotide_encoder=i_nucleotide_encoder,
             pairwise_loss_type=p_loss_type,
             normalize_outputs=p_normalize_outputs,
-            unifrac_encoder=model,
+            unifrac_encoder=i_unifrac_model,
             use_residual_connections=p_use_residual_connections,
         )
 
@@ -656,7 +660,6 @@ def fit_denoised_unifrac_regressor(
         "is_16S": True,
         "is_categorical": p_is_categorical,
         "max_bp": p_max_bp,
-        "epochs": p_epochs,
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
@@ -668,6 +671,7 @@ def fit_denoised_unifrac_regressor(
         shift=0.0,
         scale=1.0,
         gen_new_tables=p_gen_new_table,
+        epochs=p_epochs,
         **common_kwargs,
     )
     train_data = train_gen.get_data()
@@ -678,20 +682,21 @@ def fit_denoised_unifrac_regressor(
         shift=0.0,
         scale=1.0,
         gen_new_tables=False,
+        epochs=1,
         **common_kwargs,
     )
     val_data = val_gen.get_data()
 
-    # token_shape = tf.TensorShape([None, None, 150])
-    # count_shape = tf.TensorShape([None, None, 1])
-    # model.build([token_shape, count_shape])
-    for x, y in train_data["dataset"].take(1):
-        model(x)
+    batch_counts = tf.TensorShape([None])
+    token_shape = tf.TensorShape([None, 150])
+    indicies_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+    model.build([batch_counts, token_shape, indicies_shape, count_shape])
+    model.summary()
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
     )
-    model.summary()
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):

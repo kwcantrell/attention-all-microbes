@@ -80,6 +80,11 @@ class PairwiseLoss(tf.keras.losses.Loss):
             differences = tf.math.square(y_pred_dist - y_true)
         elif self.loss_type == "msle":
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
+
+        # extract just the upper triangle of distance matrix
+        mask = tf.linalg.band_part(y_true, 0, -1) > 0
+        mask = tf.reshape(mask, shape=[-1])
+        differences = tf.reshape(differences, shape=[-1])[mask]
         return differences
 
 

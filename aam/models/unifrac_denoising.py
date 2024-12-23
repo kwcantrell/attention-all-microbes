@@ -64,16 +64,21 @@ class UnifracDenoiser(tf.keras.Model):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.unifrac_encoder = unifrac_encoder
 
-        self.loss_tracker = tf.keras.metrics.Mean()
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.pairwise_loss = PairwiseLoss(self.pairwise_loss_type)
-        self.unifrac_tracker = tf.keras.metrics.Mean()
-        self.denoise_tracker = tf.keras.metrics.Mean()
+        self.unifrac_tracker = tf.keras.metrics.Mean(name="unifrac_loss")
+        self.denoise_tracker = tf.keras.metrics.Mean(name="denoised_loss")
 
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        self.nuc_tracker = tf.keras.metrics.Mean()
+        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
 
-        if unifrac_encoder is None:
+        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
+        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
+
+    def build(self, input_shape):
+        if self.unifrac_encoder is None:
             self.unifrac_encoder = SequenceEncoder(
                 output_dim=self.output_dim,
                 token_limit=self.token_limit,
@@ -93,10 +98,10 @@ class UnifracDenoiser(tf.keras.Model):
                 nucleotide_encoder=self.nucleotide_encoder,
                 pairwise_loss_type=self.pairwise_loss_type,
                 normalize_outputs=self.normalize_outputs,
-                use_residual_connections=use_residual_connections,
+                use_residual_connections=self.use_residual_connections,
             )
         else:
-            self.unifrac_encoder = unifrac_encoder
+            self.unifrac_encoder = self.unifrac_encoder
 
         self._rezero = self.add_weight(
             name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
@@ -107,19 +112,19 @@ class UnifracDenoiser(tf.keras.Model):
         self.denoise_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
-            intermediate_size=intermediate_size,
+            intermediate_size=self.intermediate_size,
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             name="encoder",
         )
-        self.attention_pooling = MultiHeadAttentionPooling(self.normalize_outputs)
+        self.attention_pooling = MultiHeadAttentionPooling(
+            self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_connections
+        )
 
         self.denoiser_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
-
-        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
+        super(UnifracDenoiser, self).build(input_shape)
 
     def _embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
@@ -129,11 +134,6 @@ class UnifracDenoiser(tf.keras.Model):
     def _unifrac_loss(self, inputs):
         y_true, encoder_embeddings = inputs
         loss = self.pairwise_loss(y_true, encoder_embeddings)
-
-        # extract just the upper triangle of distance matrix
-        mask = tf.linalg.band_part(y_true > 0, 0, -1)
-        mask = tf.reshape(mask, shape=[-1])
-        loss = tf.reshape(loss, shape=[-1])[mask]
         loss = tf.reduce_mean(loss)
         return loss
 
@@ -166,14 +166,6 @@ class UnifracDenoiser(tf.keras.Model):
 
         loss = nuc_loss + unifrac_loss + denoise_loss
         return loss, nuc_loss, unifrac_loss, denoise_loss
-
-    def build(self, input_shape=None):
-        inputs = [tf.keras.layers.Input(shape[1:]) for shape in input_shape]
-        outputs = self.call(inputs, training=False)
-        self.inputs = inputs
-        self.outputs = outputs
-        self._build_input_shape = input_shape
-        self.built = True
 
     def predict_step(
         self,

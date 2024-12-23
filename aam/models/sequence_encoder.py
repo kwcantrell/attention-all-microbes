@@ -146,11 +146,6 @@ class SequenceEncoder(tf.keras.Model):
         unifrac_embeddings: tf.Tensor,
     ) -> tf.Tensor:
         loss = self._unifrac_loss(y_true, unifrac_embeddings)
-
-        # extract just the upper triangle of distance matrix
-        mask = tf.linalg.band_part(y_true > 0, 0, -1)
-        mask = tf.reshape(mask, shape=[-1])
-        loss = tf.reshape(loss, shape=[-1])[mask]
         loss = tf.reduce_mean(loss)
         return loss
 

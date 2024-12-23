@@ -2,7 +2,7 @@ import tensorflow as tf
 
 
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, normalize_output, num_heads=4, use_residual_connections=False):
+    def __init__(self, normalize_output, num_heads=4, use_residual_connections=True):
         super(MultiHeadAttentionPooling, self).__init__()
         self.num_heads = num_heads
         self.normalize_output = normalize_output
@@ -24,7 +24,13 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
 
     def get_config(self):
         config = super(MultiHeadAttentionPooling, self).get_config()
-        config.update({"normalize_output": self.normalize_output, "num_heads": self.num_heads})
+        config.update(
+            {
+                "normalize_output": self.normalize_output,
+                "num_heads": self.num_heads,
+                "use_residual_connections": self.use_residual_connections,
+            }
+        )
         return config
 
     def call(self, inputs, mask=None, training=False):

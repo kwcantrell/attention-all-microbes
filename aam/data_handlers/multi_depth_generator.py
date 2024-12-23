@@ -57,7 +57,6 @@ class MultiDepthGenerator(GeneratorDataset):
         ]
 
         batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids = [], [], [], [], [], [], [], []
-
         shift = 0
         for bc, c, t, ind, yo, eo, oi, si in outputs:
             batch_counts.append(bc)
@@ -68,8 +67,7 @@ class MultiDepthGenerator(GeneratorDataset):
             encoder_out.append(eo)
             ob_ids.append(oi)
             s_ids.append(si)
-            shift += np.sum(bc)
-
+            shift = np.max(ind + shift + 1)
         batch_counts = np.concatenate(batch_counts)
         counts = np.concatenate(counts)
         tokens = np.concatenate(tokens)
@@ -79,7 +77,8 @@ class MultiDepthGenerator(GeneratorDataset):
         ob_ids = np.concatenate(ob_ids)
         s_ids = np.concatenate(s_ids)
 
-        return batch_counts, counts.reshape((-1, 1)), tokens, indices, y_output, encoder_out, ob_ids, s_ids
+        unique_t, unique_ind = np.unique(tokens, return_inverse=True, axis=0)
+        return batch_counts, counts.reshape((-1, 1)), unique_t, unique_ind[indices], y_output, encoder_out, ob_ids, s_ids
 
     def _epoch_samples(self, epoch, table_data, y_data, encoder_target, sample_mask, sample_indices):
         if self.gen_new_tables and epoch > 0 and epoch % self.gen_new_table_frequency == 0:
@@ -212,7 +211,7 @@ if __name__ == "__main__":
         tree_path="/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk",
         metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-healthy.txt",
         metadata_column="host_age",
-        sample_depths=[100, 1000, 5000],
+        sample_depths=[100, 1000],
         shift=0.0,
         scale=100.0,
         gen_new_tables=True,
@@ -220,18 +219,19 @@ if __name__ == "__main__":
         batch_size=4,
     )
     data_obj = ug.get_data()
-    model = tf.keras.models.load_model(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
-        compile=False,
-    )
+    # model = tf.keras.models.load_model(
+    #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
+    #     compile=False,
+    # )
     for x, y in data_obj["dataset"].take(1):
+        print("!!!!!!!!!")
         y_target, encoder_target = y
-    print(encoder_target)
-    shape = tf.shape(encoder_target)
-    batch_dim = shape[0]
-    group_dim = shape[-1]
-    groups = batch_dim // group_dim
-    print(tf.reshape(encoder_target, shape=[groups, group_dim, group_dim]))
+    # print(encoder_target)
+    # shape = tf.shape(encoder_target)
+    # batch_dim = shape[0]
+    # group_dim = shape[-1]
+    # groups = batch_dim // group_dim
+    # print(tf.reshape(encoder_target, shape=[groups, group_dim, group_dim]))
     # data = ug.get_data()
     # for i, (x, y) in enumerate(data["dataset"]):
     #     print(y[1], np.log1p(y[1]), np.sqrt(y[1]))
