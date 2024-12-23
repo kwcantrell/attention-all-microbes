@@ -63,11 +63,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.nucleotide_position = tf.range(0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32)
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
 
-        # nuc postions start at 1 as 0 is used for mask token
-        # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
-        self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32)
-        self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
-
     def build(self, input_shape):
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
@@ -87,11 +82,17 @@ class ASVEncoder(tf.keras.layers.Layer):
             dropout_rate=self.dropout_rate,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
-            normalize_outputs=False,
+            normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
         )
-        self.norm_out = tf.keras.layers.BatchNormalization(axis=1, epsilon=1e-6, dtype=tf.float32)
-        super(ASVEncoder, self).build(input_shape)
+        # self.norm_out = tf.keras.layers.LayerNormalization(axis=1, epsilon=1e-6, dtype=tf.float32)
+
+        # nuc postions start at 1 as 0 is used for mask token
+        # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
+        self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True)
+        self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
+        self._softmax.build(input_shape)
+        super().build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
         inputs = tf.cast(inputs, dtype=tf.int32)
@@ -144,7 +145,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_input = asv_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_input)
 
         output = self.asv_attention(asv_input, training=training)
-        output = self.norm_out(output, training=training)
 
         # extract the masked nucleotides
         unmasked_tokens = inputs + self.nucleotide_position

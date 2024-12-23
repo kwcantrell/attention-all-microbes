@@ -405,7 +405,6 @@ def fit_unifrac_regressor(
         "is_16S": True,
         "is_categorical": p_is_categorical,
         "max_bp": p_max_bp,
-        "epochs": p_epochs,
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
@@ -417,6 +416,7 @@ def fit_unifrac_regressor(
         shift=0.0,
         scale=1.0,
         gen_new_tables=p_gen_new_table,
+        epochs=p_epochs,
         **common_kwargs,
     )
     train_data = train_gen.get_data()
@@ -427,20 +427,22 @@ def fit_unifrac_regressor(
         shift=0.0,
         scale=1.0,
         gen_new_tables=False,
+        epochs=1,
         **common_kwargs,
     )
     val_data = val_gen.get_data()
 
-    # token_shape = tf.TensorShape([None, None, 150])
-    # count_shape = tf.TensorShape([None, None, 1])
-    # model.build([token_shape, count_shape])
-    for x, y in train_data["dataset"].take(1):
-        model(x)
+    batch_counts = tf.TensorShape([None])
+    token_shape = tf.TensorShape([None, 150])
+    indicies_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+    model.build([batch_counts, token_shape, indicies_shape, count_shape])
+    model.summary()
+
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
     )
-    model.summary()
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
@@ -463,7 +465,7 @@ def fit_unifrac_regressor(
         callbacks=[*core_callbacks],
         epochs=p_epochs,
         steps_per_epoch=train_data["steps_pre_epoch"],
-        validation_steps=val_data["steps_pre_epoch"],
+        max_queue_size=1,
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")

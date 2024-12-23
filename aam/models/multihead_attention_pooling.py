@@ -2,15 +2,15 @@ import tensorflow as tf
 
 
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, normalize_output):
+    def __init__(self, normalize_output, num_heads=4):
         super(MultiHeadAttentionPooling, self).__init__()
-        self.num_heads = 4
-        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
+        self.num_heads = num_heads
         self.normalize_output = normalize_output
 
     def build(self, input_shape):
         hidden_dim = input_shape[-1]
         key_dim = int(hidden_dim // self.num_heads)
+        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         self.attention = tf.keras.layers.MultiHeadAttention(
             self.num_heads,
             key_dim=key_dim,
@@ -19,7 +19,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
 
     def get_config(self):
         config = super(MultiHeadAttentionPooling, self).get_config()
-        config.update({"normalize_output": self.normalize_output})
+        config.update({"normalize_output": self.normalize_output, "num_heads": self.num_heads})
         return config
 
     def call(self, inputs, mask=None, training=False):

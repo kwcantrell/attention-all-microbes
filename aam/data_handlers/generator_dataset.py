@@ -37,18 +37,23 @@ def _matching_sample_indices(query, search):
     return mask, indices[mask]
 
 
+# Unicode mapping dictionary
+mapping = {65: 1, 67: 2, 71: 3, 84: 4}  # Maps Unicode numbers to specific values
+
+
+# Create the mapping function
+def map_unicode(val):
+    return mapping.get(val, 0)  # Return 0 if the value is not in the mapping
+
+
 class GeneratorDataset:
     table_fn = "table.biom"
     taxonomy_fn = "taxonomy.tsv"
     axes = np.array(["counts", "tokens", "y", "encoder"])
-    # These are the UTF-8 encodings of A, C, T, G respectively
-    # lookup table converts utf-8 encodings to token
-    # tokens start at 1 to make room for pad token
-    key_val_init = tf.lookup.KeyValueTensorInitializer(
-        keys=tf.constant([65, 67, 71, 84], dtype=tf.int64),
-        values=tf.constant([1, 2, 3, 4], dtype=tf.int64),
-    )
-    lookup_table = tf.lookup.StaticVocabularyTable(key_val_init, num_oov_buckets=1)
+    # # These are the UTF-8 encodings of A, C, T, G respectively
+    # # lookup table converts utf-8 encodings to token
+    # # tokens start at 1 to make room for pad token
+    lookup_table = np.vectorize(map_unicode)
 
     def __init__(
         self,
@@ -224,8 +229,8 @@ class GeneratorDataset:
 
         obs_encodings = None
         if self.is_16S:
-            obs_encodings = tf.cast(tf.strings.unicode_decode(obs_ids, "UTF-8"), dtype=tf.int64)
-            obs_encodings = self.lookup_table.lookup(obs_encodings).numpy()
+            obs_encodings = np.array([[ord(char) for char in string] for string in obs_ids])
+            obs_encodings = self.lookup_table(obs_encodings)
 
         table_data, row, col, shape = self._table_data(table)
         # only keep observations with count > 0
@@ -436,7 +441,7 @@ class GeneratorDataset:
             generator,
             output_signature=output_sig,
         )
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        # dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
         data_obj = {
             "dataset": dataset,

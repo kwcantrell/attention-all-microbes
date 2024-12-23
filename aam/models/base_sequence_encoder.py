@@ -54,17 +54,18 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
 
+    def build(self, input_shape):
         # layers used in model
         if self.is_16S:
             # if self.nucleotide_encoder is not None:
             #     self.asv_encoder = self.nucleotide_encoder
             # else:
             self.asv_encoder = ASVEncoder(
-                max_bp,
-                nuc_attention_heads,
-                nuc_attention_layers,
-                dropout_rate,
-                nuc_intermediate_size,
+                self.max_bp,
+                self.nuc_attention_heads,
+                self.nuc_attention_layers,
+                self.dropout_rate,
+                self.nuc_intermediate_size,
                 intermediate_activation=self.intermediate_activation,
                 add_token=self.add_token,
                 embedding_dim=self.embedding_dim,
@@ -87,7 +88,8 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 normalize_outputs=self.normalize_outputs,
             )
 
-        self.attention_pool = MultiHeadAttentionPooling(self.normalize_outputs)
+        self.attention_pool = MultiHeadAttentionPooling(self.normalize_outputs, num_heads=self.nuc_attention_heads)
+        super().build(input_shape)
 
     def _split_asvs(self, embeddings, training):
         if self.is_16S:
@@ -97,25 +99,10 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
         return embeddings
 
-    def dynamic_call(self, inputs, include_bert_random_mask=True, training: bool = False):
-        delta = 1024
-        num_seq = tf.shape(inputs)[0]
-        encodings = tf.TensorArray(tf.float32, size=num_seq, colocate_with_first_write_call=True)
-        losses = tf.TensorArray(tf.float32, size=tf.truncatediv(num_seq, delta) + 1)
-        for i in tf.range(start=0, limit=num_seq, delta=delta):
-            embeddings, loss = self.asv_encoder(
-                inputs[i : i + delta], include_bert_random_mask=include_bert_random_mask, training=training
-            )
-            encodings = encodings.scatter(indices=tf.range(i, i + tf.shape(embeddings)[0]), value=embeddings)
-            losses = losses.write(tf.truncatediv(i, delta), loss)
-        encodings = encodings.stack()
-        losses = losses.stack()
-        self.add_loss(tf.reduce_sum(losses))
-        return encodings
-
     def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
-        encodings = self.dynamic_call(inputs, include_bert_random_mask, training)
-        asv_embeddings = self._split_asvs(encodings, training=training)
+        embeddings, loss = self.asv_encoder(inputs, include_bert_random_mask=include_bert_random_mask, training=training)
+        self.add_loss(loss)
+        asv_embeddings = self._split_asvs(embeddings, training=training)
         print("BaseSequenceEncoder exit...")
         return asv_embeddings
 

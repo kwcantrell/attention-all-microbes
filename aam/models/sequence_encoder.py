@@ -64,12 +64,16 @@ class SequenceEncoder(tf.keras.Model):
         self.use_residual_connections = use_residual_connections
 
         self._get_encoder_loss()
-        self.loss_tracker = tf.keras.metrics.Mean()
-        self.encoder_tracker = tf.keras.metrics.Mean()
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self.encoder_tracker = tf.keras.metrics.Mean(name="encoder_loss")
 
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        self.nuc_tracker = tf.keras.metrics.Mean()
+        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
 
+        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
+        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
+
+    def build(self, input_shape):
         # layers used in model
         self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,
@@ -86,7 +90,7 @@ class SequenceEncoder(tf.keras.Model):
             is_16S=self.is_16S,
             vocab_size=self.vocab_size,
             add_token=self.add_token,
-            nucleotide_encoder=nucleotide_encoder,
+            nucleotide_encoder=self.nucleotide_encoder,
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             name="base_encoder",
@@ -97,7 +101,7 @@ class SequenceEncoder(tf.keras.Model):
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
-            intermediate_size=intermediate_size,
+            intermediate_size=self.intermediate_size,
             dropout_rate=self.dropout_rate,
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
@@ -113,18 +117,7 @@ class SequenceEncoder(tf.keras.Model):
         )
 
         self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
-
-        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
-
-        # asv_tokens, asv_indicies, asv_counts = [[None, self.max_bp], [None], [None, 1]]
-        # self.inputs = [
-        #     tf.keras.Input(shape=[], batch_size=None),
-        #     tf.keras.Input(asv_tokens),
-        #     tf.keras.Input(asv_indicies),
-        #     tf.keras.Input(asv_counts),
-        # ]
-        # self.outputs = self.call(self.inputs)
+        super(SequenceEncoder, self).build(input_shape)
 
     @property
     def accumulation_steps(self):
@@ -206,7 +199,6 @@ class SequenceEncoder(tf.keras.Model):
     ):
         if not self.gradient_accumulator.built:
             self.gradient_accumulator.build(self.optimizer, self)
-
         inputs, y = data
         y_target, encoder_target = y
         with tf.GradientTape() as tape:
@@ -225,12 +217,7 @@ class SequenceEncoder(tf.keras.Model):
         self.encoder_tracker.update_state(encoder_loss)
         self.nuc_tracker.update_state(nuc_loss)
 
-        return {
-            "loss": self.loss_tracker.result(),
-            "encoder_loss": self.encoder_tracker.result(),
-            "nuc_loss": self.nuc_tracker.result(),
-            "learning_rate": self.optimizer.learning_rate,
-        }
+        return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
 
     def test_step(
         self,
@@ -246,20 +233,7 @@ class SequenceEncoder(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.encoder_tracker.update_state(encoder_loss)
         self.nuc_tracker.update_state(nuc_loss)
-        return {
-            "loss": self.loss_tracker.result(),
-            "encoder_loss": self.encoder_tracker.result(),
-            "nuc_loss": self.nuc_tracker.result(),
-            "learning_rate": self.optimizer.learning_rate,
-        }
-
-    def build(self, input_shape=None):
-        inputs = [tf.keras.layers.Input(shape[1:]) for shape in input_shape]
-        outputs = self.call(inputs, training=False)
-        self.inputs = inputs
-        self.outputs = outputs
-        self._build_input_shape = input_shape
-        self.built = True
+        return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
 
     def call(
         self,
@@ -269,7 +243,6 @@ class SequenceEncoder(tf.keras.Model):
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, tokens, indicies, counts = inputs
-
         sample_embeddings = self.base_encoder(tokens, include_bert_random_mask=include_bert_random_mask, training=training)
         sample_embeddings = tf.gather(sample_embeddings, tf.cast(indicies, dtype=tf.int32))
         sample_embeddings = to_batch(sample_embeddings, batch_counts)

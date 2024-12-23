@@ -92,13 +92,13 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
         output_tensor = inputs
         for layer_idx in range(self.num_layers):
-            output_tensor = self.encoder_layers[layer_idx]([output_tensor, attention_mask], training=training)
+            output_tensor = tf.cast(
+                self.encoder_layers[layer_idx]([output_tensor, attention_mask], training=training), dtype=self.compute_dtype
+            )
 
         if self.use_residual_connections:
             print("Encoder residual connection...")
-            # output of encoder will always be float32
-            inputs = tf.cast(inputs, dtype=tf.float32)
-            output_tensor = inputs + tf.cast(self._rezero, dtype=tf.float32) * output_tensor
+            output_tensor = inputs + self._rezero * output_tensor
 
         if self.normalize_outputs:
             print("Encoder normalizing outputs...")
