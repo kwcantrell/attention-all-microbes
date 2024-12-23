@@ -74,6 +74,9 @@ class SequenceEncoder(tf.keras.Model):
         self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
 
     def build(self, input_shape):
+        if self.built:
+            print("already built")
+            return
         # layers used in model
         self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,

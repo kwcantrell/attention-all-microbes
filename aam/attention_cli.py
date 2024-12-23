@@ -332,6 +332,7 @@ def fit_unifrac_regressor(
 
     model = None
     if i_model is not None:
+        print("loading model...")
         model = tf.keras.models.load_model(i_model, compile=False)
         model.accumulation_steps = p_accumulation_steps
     else:

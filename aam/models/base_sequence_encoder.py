@@ -91,7 +91,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.attention_pool = MultiHeadAttentionPooling(
             self.normalize_outputs, num_heads=self.nuc_attention_heads, use_residual_connections=self.use_residual_connections
         )
-        super().build(input_shape)
+        super(BaseSequenceEncoder, self).build(input_shape)
 
     def _split_asvs(self, embeddings, training):
         if self.is_16S:
