@@ -96,7 +96,9 @@ class SequenceEncoder(tf.keras.Model):
             name="base_encoder",
         )
 
-        self.attention_pooling = MultiHeadAttentionPooling(self.normalize_outputs)
+        self.attention_pooling = MultiHeadAttentionPooling(
+            self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_connections
+        )
 
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,

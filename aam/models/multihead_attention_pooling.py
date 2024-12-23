@@ -2,10 +2,11 @@ import tensorflow as tf
 
 
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, normalize_output, num_heads=4):
+    def __init__(self, normalize_output, num_heads=4, use_residual_connections=False):
         super(MultiHeadAttentionPooling, self).__init__()
         self.num_heads = num_heads
         self.normalize_output = normalize_output
+        self.use_residual_connections = use_residual_connections
 
     def build(self, input_shape):
         hidden_dim = input_shape[-1]
@@ -16,6 +17,10 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
             key_dim=key_dim,
             dropout=0.1,
         )
+        if self.use_residual_connections:
+            self._rezero = self.add_weight(
+                name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+            )
 
     def get_config(self):
         config = super(MultiHeadAttentionPooling, self).get_config()
@@ -28,6 +33,10 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
             attention_mask = tf.cast(attention_mask, dtype=self.compute_dtype)
             attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
         attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=training)
+
+        if self.use_residual_connections:
+            print("Pooler residual connection...")
+            attention_output = inputs + self._rezero * attention_output
 
         if mask is not None:
             mask = tf.cast(mask, dtype=self.compute_dtype)
