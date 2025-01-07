@@ -1656,6 +1656,8 @@ def fit_sample_classifier(
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
+@click.option("--p-normalize-outputs", default=False, type=bool)
+
 def fit_gotu(
     i_asv_table: str,
     i_gotu_table: str,
@@ -1699,6 +1701,7 @@ def fit_gotu(
     p_accumulation_steps: int,
     p_unifrac_metric: str,
     p_scale_loss: bool,
+    p_normalize_outputs: bool,
 ):
     from aam.data_handlers import GOTUGenerator
     from aam.models import GOTUModel, SequenceEncoder
@@ -1788,6 +1791,19 @@ def fit_gotu(
     asv_counts = [None, None, 1]
     gotu_tokens = [None, None, 1]
     gotu_counts = [None, None, 1]
+    for (
+        asv_batch_counts,
+        asv_tokens,
+        asv_indices,
+        asv_counts,
+        gotu_batch_counts,
+        gotu_tokens,
+        gotu_counts,
+        asv_unifrac,
+    ) in train_data["dataset"].take(1):
+        asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
+        gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
+    
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         base_model.accumulation_steps = p_accumulation_steps
@@ -1802,9 +1818,15 @@ def fit_gotu(
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
             intermediate_activation=p_intermediate_activation,
+            normalize_outputs=p_normalize_outputs,
             name="sequence_encoder",
         )
-        # base_model.build([None, asv_tokens, [None], asv_counts])
+    batch_counts = tf.TensorShape([None])
+    token_shape = tf.TensorShape([None, 150])
+    indicies_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+    
+    base_model.build([batch_counts, token_shape, indicies_shape, count_shape])
     model = GOTUModel(
         p_output_dim,
         p_asv_limit,
@@ -1816,6 +1838,7 @@ def fit_gotu(
         intermediate_activation=p_intermediate_activation,
         asv_embedding_layer=base_model,
         gotu_count=gotu_count,
+        max_gotu=p_asv_limit,
         freeze_base_weights=p_no_freeze_base_weights,
         name="gotu_model",
     )
@@ -1835,19 +1858,8 @@ def fit_gotu(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    for (
-        asv_batch_counts,
-        asv_tokens,
-        asv_indices,
-        asv_counts,
-        gotu_batch_counts,
-        gotu_tokens,
-        gotu_counts,
-        asv_unifrac,
-    ) in train_data["dataset"].take(1):
-        asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
-        gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
-        model((asv_inputs, gotu_inputs))
+    
+    model((asv_inputs, gotu_inputs))
     # model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
     model.compile(
         optimizer=optimizer,

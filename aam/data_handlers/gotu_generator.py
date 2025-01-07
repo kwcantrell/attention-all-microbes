@@ -326,11 +326,11 @@ class GOTUGenerator(UniFracGenerator):
 
 if __name__ == "__main__":
     gotu_gen = GOTUGenerator(
-        table="/home/kalen/aam-research-exam/research-exam/s2s/gotu_ordered_table.biom",
-        asv_table="/home/kalen/aam-research-exam/research-exam/s2s/asv_ordered_table.biom",
-        tree_path="/home/kalen/aam-research-exam/research-exam/s2s/tulsa-tree.nwk",
-        metadata="/home/kalen/aam-research-exam/research-exam/s2s/metag_metadata.tsv",
-        metadata_column="Age",
+        table="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/gotu_ordered_table.biom",
+        asv_table="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/asv_ordered_table.biom",
+        tree_path="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/tulsa-tree.nwk",
+        metadata="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/metag_metadata.tsv",
+        metadata_column="host_age",
         shift=0.0,
         scale=100.0,
         gen_new_tables=True,
@@ -354,22 +354,21 @@ if __name__ == "__main__":
     # asv_data = ug.get_data()
     # asv_dataset = asv_data["dataset"]
 
-    # for i, (x, y) in enumerate(asv_dataset):
-    #     print("ASV_DATSET_VALUES")
-    #     print(f"Printing X Data: {x}\nPrinting Y Data {y}")
-    #     break
+    for item in gotu_dataset:
+        print(len(item), item)
+        break
 
-    for i, (
-        asv_batch_counts,
-        asv_tokens,
-        asv_indicies,
-        asv_counts,
-        gotu_batch_counts,
-        gotu_tokens,
-        gotu_counts,
-        asv_unifrac,
-    ) in enumerate(gotu_dataset):
-        print("GOTU_DATSET_VALUES", i)
+    # for i, (
+    #     asv_batch_counts,
+    #     asv_tokens,
+    #     asv_indicies,
+    #     asv_counts,
+    #     gotu_batch_counts,
+    #     gotu_tokens,
+    #     gotu_counts,
+    #     asv_unifrac,
+    # ) in enumerate(gotu_dataset):
+    #     print("GOTU_DATSET_VALUES", i)
         # print(asv_tokens, asv_counts)
         # print(gotu_tokens, gotu_counts)
         # print(f"Printing X Data: {x}\nPrinting Y Data {y}")

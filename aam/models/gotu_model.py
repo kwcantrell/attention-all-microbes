@@ -28,7 +28,7 @@ class GOTUModel(tf.keras.Model):
         nucleotide_encoder=None,
         pairwise_loss_type="mse",
         gotu_count=None,
-        max_gotu=1024,
+        max_gotu=2048,
         asv_embedding_layer=None,
         freeze_base_weights=False,
         bert_training=False,
@@ -72,12 +72,8 @@ class GOTUModel(tf.keras.Model):
             self.embedding_dim,
         )
 
-        self.gotu_pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_gotu + 1, seq_axis=1, initializer="zeros")
-        if self.asv_embedding_layer is not None:
-            if freeze_base_weights is True:
-                print("freezing base weights...")
-                self.asv_embedding_layer.trainable = False
-        else:
+        self.gotu_pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_gotu + 3, seq_axis=1, initializer="zeros")
+        if self.asv_embedding_layer is None:
             self.asv_embedding_layer = SequenceEncoder(
                 output_dim=self.output_dim,
                 token_limit=self.token_limit,
@@ -97,6 +93,10 @@ class GOTUModel(tf.keras.Model):
                 nucleotide_encoder=self.nucleotide_encoder,
                 pairwise_loss_type=self.pairwise_loss_type,
             )
+        if freeze_base_weights is True:
+            print("freezing base weights...")
+            self.asv_embedding_layer.trainable = False
+            
         self.gotu_decoder = TransformerDecoder(
             num_attention_heads=self.attention_heads,
             num_layers=self.attention_layers,
@@ -168,17 +168,17 @@ class GOTUModel(tf.keras.Model):
     def _compute_loss(self, asv_inputs, gotu_inputs, asv_unifrac_dist, outputs):
         asv_batch_counts, asv_tokens, asv_indicies, _ = asv_inputs
         gotu_batch_counts, gotu_tokens, gotu_counts = gotu_inputs
-        gotu_pred, unifrac_pred, nuc_mask, nuc_pred = outputs
+        gotu_pred, unifrac_pred = outputs
 
         # compute nucleotide loss
-        asv_tokens = asv_tokens + self.asv_embedding_layer.base_encoder.asv_encoder.nucleotide_position
-        asv_tokens = tf.reshape(asv_tokens, shape=[-1])
-        nuc_mask = tf.reshape(nuc_mask, shape=[-1])
-        asv_tokens = asv_tokens[nuc_mask]
-        asv_tokens = tf.one_hot(asv_tokens, tf.shape(nuc_pred)[-1])
-        nuc_loss = self.nuc_loss(asv_tokens, nuc_pred)
-        nuc_loss = tf.reduce_mean(nuc_loss)
-
+        # asv_tokens = asv_tokens + self.asv_embedding_layer.base_encoder.asv_encoder.nucleotide_position
+        # asv_tokens = tf.reshape(asv_tokens, shape=[-1])
+        # nuc_mask = tf.reshape(nuc_mask, shape=[-1])
+        # asv_tokens = asv_tokens[nuc_mask]
+        # asv_tokens = tf.one_hot(asv_tokens, tf.shape(nuc_pred)[-1])
+        # nuc_loss = self.nuc_loss(asv_tokens, nuc_pred)
+        # nuc_loss = tf.reduce_mean(nuc_loss)
+        nuc_loss = self.asv_embedding_layer.losses
         # compute unifrac loss
         unifrac_loss = self.asv_embedding_layer._compute_unifrac_loss(asv_unifrac_dist, unifrac_pred)
 
@@ -312,7 +312,7 @@ class GOTUModel(tf.keras.Model):
         gotu_embeddings = self.gotu_embedding_layer(tf.squeeze(gotu_tokens, axis=-1))
         gotu_embeddings = gotu_embeddings + self.gotu_pos_emb(gotu_embeddings)
 
-        asv_embeddings, unifrac_pred, nuc_mask, nuc_pred = self.asv_embedding_layer(
+        asv_embeddings, unifrac_pred = self.asv_embedding_layer(
             asv_inputs,
             include_bert_random_mask=self.bert_training,
             training=training,
@@ -321,4 +321,4 @@ class GOTUModel(tf.keras.Model):
         gotu_pred = self.gotu_output(gotu_pred)
         gotu_pred = self._softmax(gotu_pred)
 
-        return gotu_pred, unifrac_pred, nuc_mask, nuc_pred
+        return gotu_pred, unifrac_pred
