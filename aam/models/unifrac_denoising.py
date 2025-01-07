@@ -104,10 +104,15 @@ class UnifracDenoiser(tf.keras.Model):
             self.unifrac_encoder = self.unifrac_encoder
 
         self._rezero = self.add_weight(
-            name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+            name="rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
         )
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
+            self.token_limit,
+            seq_axis=1,
+            initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
         )
         self.denoise_encoder = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -120,7 +125,9 @@ class UnifracDenoiser(tf.keras.Model):
             name="encoder",
         )
         self.attention_pooling = MultiHeadAttentionPooling(
-            self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_connections
+            self.normalize_outputs,
+            num_heads=self.attention_heads,
+            use_residual_connections=self.use_residual_connections,
         )
 
         self.denoiser_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
@@ -130,6 +137,14 @@ class UnifracDenoiser(tf.keras.Model):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
         encoder_pred = self.denoiser_ff(encoder_pred)
         return encoder_pred
+
+    def losses(self):
+        return tf.reduce_sum(self.unifrac_encoder.base_encoder.losses)
+
+    def _compute_unifrac_loss(
+        self, y_true: tf.Tensor, encoder_embeddings: tf.Tensor
+    ) -> tf.Tensor:
+        return self._unifrac_loss((y_true, encoder_embeddings))
 
     def _unifrac_loss(self, inputs):
         y_true, encoder_embeddings = inputs
@@ -153,15 +168,27 @@ class UnifracDenoiser(tf.keras.Model):
         group_dim = shape[-1]
         groups = batch_dim // group_dim
         y_true = tf.reshape(y_true, shape=[groups, group_dim, group_dim])
-        unifrac_embeddings = tf.reshape(unifrac_embeddings, shape=[groups, group_dim, self.embedding_dim])
-        denoised_embeddings = tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim])
+        unifrac_embeddings = tf.reshape(
+            unifrac_embeddings, shape=[groups, group_dim, self.embedding_dim]
+        )
+        denoised_embeddings = tf.reshape(
+            denoised_embeddings, shape=[groups, group_dim, self.embedding_dim]
+        )
 
-        unifrac_loss = tf.map_fn(self._unifrac_loss, (y_true, unifrac_embeddings), fn_output_signature=tf.float32)
+        unifrac_loss = tf.map_fn(
+            self._unifrac_loss,
+            (y_true, unifrac_embeddings),
+            fn_output_signature=tf.float32,
+        )
         unifrac_loss = tf.reduce_mean(unifrac_loss)
 
         y_true = tf.reduce_mean(y_true, axis=0, keepdims=True)
         y_true = tf.broadcast_to(y_true, shape=[groups, group_dim, group_dim])
-        denoise_loss = tf.map_fn(self._unifrac_loss, (y_true, denoised_embeddings), fn_output_signature=tf.float32)
+        denoise_loss = tf.map_fn(
+            self._unifrac_loss,
+            (y_true, denoised_embeddings),
+            fn_output_signature=tf.float32,
+        )
         denoise_loss = tf.reduce_mean(denoise_loss)
 
         loss = nuc_loss + unifrac_loss + denoise_loss
@@ -175,7 +202,9 @@ class UnifracDenoiser(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
+        embeddings, denoise_unifrac_embeddings, unifrac_embeddings = self.call(
+            inputs, training=False
+        )
 
         return unifrac_embeddings, y
 
@@ -193,7 +222,9 @@ class UnifracDenoiser(tf.keras.Model):
         y_target, encoder_target = y
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, nuc_loss, unifrac_loss, denoise_loss = self._compute_loss(inputs, encoder_target, outputs)
+            loss, nuc_loss, unifrac_loss, denoise_loss = self._compute_loss(
+                inputs, encoder_target, outputs
+            )
 
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
@@ -226,7 +257,9 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         y_target, encoder_target = y
         outputs = self(inputs, training=False)
-        loss, nuc_loss, unifrac_loss, denoise_loss = self._compute_loss(inputs, encoder_target, outputs)
+        loss, nuc_loss, unifrac_loss, denoise_loss = self._compute_loss(
+            inputs, encoder_target, outputs
+        )
         self.loss_tracker.update_state(loss)
         self.unifrac_tracker.update_state(unifrac_loss)
         self.denoise_tracker.update_state(denoise_loss)
@@ -242,18 +275,29 @@ class UnifracDenoiser(tf.keras.Model):
     def call(
         self,
         inputs,
+        include_bert_random_mask: bool = True,
+        return_unifrac_pred: bool = True,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        sample_embeddings, counts, unifrac_pred = self.unifrac_encoder(inputs, return_counts=True, training=training)
-        sample_embeddings = sample_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(
-            sample_embeddings
+        sample_embeddings, counts, unifrac_pred = self.unifrac_encoder(
+            inputs, include_bert_random_mask=True, return_counts=True, training=training
         )
+        sample_embeddings = sample_embeddings + tf.cast(
+            self._rezero, dtype=self.compute_dtype
+        ) * self.pos_emb(sample_embeddings)
 
         count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        denoised_sample_embeddings = self.denoise_encoder(sample_embeddings, mask=count_mask, training=training)
-        denoised_pred = self._embeddings(denoised_sample_embeddings, count_mask, training=training)
+        denoised_sample_embeddings = self.denoise_encoder(
+            sample_embeddings, mask=count_mask, training=training
+        )
+        denoised_pred = self._embeddings(
+            denoised_sample_embeddings, count_mask, training=training
+        )
         print("UniFracDenoiser exit...")
-        return denoised_sample_embeddings, denoised_pred, unifrac_pred
+        if return_unifrac_pred:
+            return denoised_sample_embeddings, denoised_pred, unifrac_pred
+        else:
+            return denoised_sample_embeddings, denoised_pred
 
     def asv_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
@@ -285,7 +329,9 @@ class UnifracDenoiser(tf.keras.Model):
                 "nucleotide_encoder": self.nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
-                "unifrac_encoder": tf.keras.saving.serialize_keras_object(self.unifrac_encoder),
+                "unifrac_encoder": tf.keras.saving.serialize_keras_object(
+                    self.unifrac_encoder
+                ),
                 "build_input_shape": self.get_build_config(),
             }
         )
@@ -298,7 +344,9 @@ class UnifracDenoiser(tf.keras.Model):
             build_input_shape = config.pop("build_input_shape")
             input_shape = build_input_shape["input_shape"]
 
-        config["unifrac_encoder"] = tf.keras.saving.deserialize_keras_object(config["unifrac_encoder"])
+        config["unifrac_encoder"] = tf.keras.saving.deserialize_keras_object(
+            config["unifrac_encoder"]
+        )
         model = cls(**config)
 
         if input_shape is not None:
