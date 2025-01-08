@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Union
 import tensorflow as tf
 
 
@@ -47,8 +49,10 @@ def _pairwise_distances_unstable(embeddings, squared=False):
     return distances
 
 
-def _pairwise_distances(embeddings, squared=False):
-    distances = tf.expand_dims(embeddings, axis=0) - tf.expand_dims(embeddings, axis=1)
+def _pairwise_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False):
+    if y is None:
+        y = x
+    distances = tf.expand_dims(x, axis=0) - tf.expand_dims(y, axis=1)
     distances = tf.multiply(distances, distances)
     distances = tf.reduce_sum(distances, axis=-1)
 
@@ -86,6 +90,18 @@ class PairwiseLoss(tf.keras.losses.Loss):
         mask = tf.reshape(mask, shape=[-1])
         differences = tf.reshape(differences, shape=[-1])[mask]
         return differences
+
+
+class TripletLoss(tf.keras.losses.Loss):
+    def __init__(self, reduction="none", **kwargs):
+        super().__init__(reduction=reduction, **kwargs)
+
+    def call(self, embeddings_left, embeddings_right):
+        distances = _pairwise_distances(embeddings_left, embeddings_right, squared=True)
+        mask_p = tf.linalg.diag(tf.ones_like(distances))
+        dist_p = tf.reduce_sum(distances * mask_p, axis=-1)
+        dist_n = tf.reduce_min(distances * (1 - mask_p) + 1e7 * mask_p, axis=-1)
+        return dist_p - dist_n
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
