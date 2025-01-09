@@ -656,7 +656,7 @@ def fit_denoised_unifrac_regressor(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
-        "sample_depths": [1000, 5000, 10000],
+        "sample_depths": [1000, 1000],
         "batch_size": p_batch_size,
         "is_16S": True,
         "is_categorical": p_is_categorical,
@@ -1657,7 +1657,6 @@ def fit_sample_classifier(
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
 @click.option("--p-normalize-outputs", default=False, type=bool)
-
 def fit_gotu(
     i_asv_table: str,
     i_gotu_table: str,
@@ -1803,7 +1802,7 @@ def fit_gotu(
     ) in train_data["dataset"].take(1):
         asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
         gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
-    
+
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         base_model.accumulation_steps = p_accumulation_steps
@@ -1825,7 +1824,7 @@ def fit_gotu(
     token_shape = tf.TensorShape([None, 150])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
-    
+
     base_model.build([batch_counts, token_shape, indicies_shape, count_shape])
     model = GOTUModel(
         p_output_dim,
@@ -1858,7 +1857,6 @@ def fit_gotu(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    
     model((asv_inputs, gotu_inputs))
     # model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
     model.compile(

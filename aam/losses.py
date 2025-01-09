@@ -97,11 +97,20 @@ class TripletLoss(tf.keras.losses.Loss):
         super().__init__(reduction=reduction, **kwargs)
 
     def call(self, embeddings_left, embeddings_right):
-        distances = _pairwise_distances(embeddings_left, embeddings_right, squared=True)
+        distances = _pairwise_distances(embeddings_left, embeddings_right)
+        pair_dist_l = _pairwise_distances(embeddings_left)
+        # pair_dist_r = _pairwise_distances(embeddings_right)
+
         mask_p = tf.linalg.diag(tf.ones_like(distances))
         dist_p = tf.reduce_sum(distances * mask_p, axis=-1)
-        dist_n = tf.reduce_min(distances * (1 - mask_p) + 1e7 * mask_p, axis=-1)
-        return dist_p - dist_n
+
+        dist_n = distances * (1 - mask_p) + 1e7 * mask_p
+        pair_dist_ln = pair_dist_l * (1 - mask_p) + 1e7 * mask_p
+        left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
+        left_neg_dist = tf.reduce_min(left_neg_dist, axis=-1)
+
+        # pair_dist_rn = tf.reduce_min(pair_dist_r * (1 - mask_p) + 1e7 * mask_p, axis=-1)
+        return dist_p - left_neg_dist
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
