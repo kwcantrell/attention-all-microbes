@@ -172,6 +172,8 @@ class UnifracDenoiser(tf.keras.Model):
         )
         unifrac_loss = tf.reduce_mean(unifrac_loss)
 
+        denoised_embeddings = tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim])
+        # denoised_embeddings = tf.unstack(tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim]))
         y_true = tf.reduce_mean(y_true, axis=0, keepdims=True)
         y_true = tf.broadcast_to(y_true, shape=[groups, group_dim, group_dim])
         denoise_loss = tf.map_fn(
@@ -180,7 +182,6 @@ class UnifracDenoiser(tf.keras.Model):
             fn_output_signature=tf.float32,
         )
 
-        # denoised_embeddings = tf.unstack(tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim]))
         # denoise_loss = self.triplet_loss(denoised_embeddings[0], denoised_embeddings[1])
 
         denoise_loss = tf.reduce_mean(denoise_loss)
