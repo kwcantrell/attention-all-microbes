@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from typing import Union
+
 import tensorflow as tf
 
 
@@ -112,7 +114,8 @@ class TripletLoss(tf.keras.losses.Loss):
         # pair_dist_rn = tf.reduce_min(pair_dist_r * (1 - mask_p) + 1e7 * mask_p, axis=-1)
         MARGIN = 0.5
         trip_loss = (dist_p - left_neg_dist) + MARGIN
-        return tf.where(trip_loss > 0, trip_loss, 0)
+        trip_mask = tf.cast(trip_loss > 0, dtype=tf.float32)
+        return trip_loss * trip_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
