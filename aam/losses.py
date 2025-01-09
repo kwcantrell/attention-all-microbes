@@ -108,12 +108,10 @@ class TripletLoss(tf.keras.losses.Loss):
         pair_dist_ln = pair_dist_l * (1 - mask_p) + 1e7 * mask_p
         left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
         left_neg_dist = tf.reduce_min(left_neg_dist, axis=-1)
-        triplet_mask = dist_p < left_neg_dist
 
         # pair_dist_rn = tf.reduce_min(pair_dist_r * (1 - mask_p) + 1e7 * mask_p, axis=-1)
-        MARGIN = 0.2
+        MARGIN = 0.5
         trip_loss = (dist_p - left_neg_dist) + MARGIN
-        trip_loss = trip_loss[triplet_mask]
         return tf.where(trip_loss > 0, trip_loss, 0)
 
 
