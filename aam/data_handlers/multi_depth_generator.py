@@ -38,6 +38,8 @@ class MultiDepthGenerator(GeneratorDataset):
         kwargs["tree_path"] = tree_path
         kwargs["unifrac_metric"] = unifrac_metric
         self.generators = [UniFracGenerator(table=self.table, rarefy_depth=depth, **kwargs) for depth in sample_depths]
+        self.shift = self.generators[0].shift
+        self.scale = self.generators[0].scale
 
         self.sample_mask = np.logical_and.reduce([gen.sample_mask for gen in self.generators])
         self.sample_indices = np.arange(len(self.table.ids()))[self.sample_mask]
@@ -212,8 +214,8 @@ if __name__ == "__main__":
         metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-healthy.txt",
         metadata_column="host_age",
         sample_depths=[100, 1000],
-        shift=0.0,
-        scale=100.0,
+        # shift=0.0,
+        scale="minmax",
         gen_new_tables=True,
         max_token_per_sample=100,
         batch_size=4,
@@ -223,9 +225,11 @@ if __name__ == "__main__":
     #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
     #     compile=False,
     # )
+    print(data_obj)
     for x, y in data_obj["dataset"].take(1):
         print("!!!!!!!!!")
         y_target, encoder_target = y
+        print(y_target)
     # print(encoder_target)
     # shape = tf.shape(encoder_target)
     # batch_dim = shape[0]

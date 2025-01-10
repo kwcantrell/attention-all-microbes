@@ -1050,7 +1050,7 @@ def fit_sample_regressor(
     p_scale_loss: bool,
 ):
     from aam.callbacks import ConfusionMatrx
-    from aam.data_handlers import CombinedGenerator, TaxonomyGenerator, UniFracGenerator
+    from aam.data_handlers import CombinedGenerator, MultiDepthGenerator, TaxonomyGenerator, UniFracGenerator
     from aam.models import SequenceRegressor
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -1109,17 +1109,39 @@ def fit_sample_regressor(
         )
 
     def unifrac_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
-        return UniFracGenerator(
+        common_kwargs = {
+            "metadata_column": m_metadata_column,
+            "max_token_per_sample": p_asv_limit,
+            "sample_depths": [1000, 5000],
+            "batch_size": p_batch_size,
+            "is_16S": True,
+            "is_categorical": p_is_categorical,
+            "max_bp": p_max_bp,
+            "tree_path": p_tree,
+            "metadata": df,
+            "unifrac_metric": p_unifrac_metric,
+            "repeat": 1,
+        }
+        # return UniFracGenerator(
+        #     table=table,
+        #     metadata=df,
+        #     tree_path=p_tree,
+        #     shuffle=shuffle,
+        #     shift=shift,
+        #     scale=scale,
+        #     epochs=epochs,
+        #     gen_new_tables=gen_new_tables,
+        #     max_bp=p_max_bp,
+        #     unifrac_metric=p_unifrac_metric,
+        #     **common_kwargs,
+        # )
+        return MultiDepthGenerator(
             table=table,
-            metadata=df,
-            tree_path=p_tree,
             shuffle=shuffle,
             shift=shift,
             scale=scale,
-            epochs=epochs,
             gen_new_tables=gen_new_tables,
-            max_bp=p_max_bp,
-            unifrac_metric=p_unifrac_metric,
+            epochs=epochs,
             **common_kwargs,
         )
 
@@ -1153,11 +1175,11 @@ def fit_sample_regressor(
 
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
-        base_type = base_model.encoder_type
-        if base_type == "taxonomy":
-            generator = tax_gen
-        else:
-            generator = unifrac_gen
+        # base_type = base_model.encoder_type
+        # if base_type == "taxonomy":
+        #     generator = tax_gen
+        # else:
+        #     generator = unifrac_gen
 
         if not p_no_freeze_base_weights:
             print("base_model's weights are set to trainable.")
@@ -1199,8 +1221,8 @@ def fit_sample_regressor(
         train_data = _get_fold(
             train_ind,
             shuffle=True,
-            # shift=0.0,
-            scale="minmax",
+            shift=0.0,
+            scale=100.0,
             gen_new_tables=p_gen_new_table,
         )
         val_data = _get_fold(
@@ -1245,15 +1267,17 @@ def fit_sample_regressor(
             out_dim=p_output_dim,
             classifier=p_is_categorical,
             add_token=p_add_token,
-            class_weights=train_data["class_weights"],
+            class_weights=None,  # train_data["class_weights"],
             accumulation_steps=p_accumulation_steps,
             scale_losses=p_scale_loss,
         )
-        for x, y in train_data["dataset"].take(1):
-            model(x)
-        # token_shape = tf.TensorShape([None, None, p_max_bp])
-        # count_shape = tf.TensorShape([None, None, 1])
-        # model.build([token_shape, count_shape])
+        # for x, y in train_data["dataset"].take(1):
+        #     model(x)
+        batch_counts = tf.TensorShape([None])
+        token_shape = tf.TensorShape([None, 150])
+        indicies_shape = tf.TensorShape([None])
+        count_shape = tf.TensorShape([None, 1])
+        model.build([batch_counts, token_shape, indicies_shape, count_shape])
         model.summary()
 
         fold_label = i + 1

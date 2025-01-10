@@ -265,6 +265,7 @@ class UnifracDenoiser(tf.keras.Model):
         inputs,
         include_bert_random_mask: bool = True,
         return_unifrac_pred: bool = True,
+        return_count_mask: bool = False,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         sample_embeddings, counts, unifrac_pred = self.unifrac_encoder(
@@ -279,9 +280,15 @@ class UnifracDenoiser(tf.keras.Model):
         denoised_pred = self._embeddings(denoised_sample_embeddings, count_mask, training=training)
         print("UniFracDenoiser exit...")
         if return_unifrac_pred:
-            return denoised_sample_embeddings, denoised_pred, unifrac_pred
+            if not return_count_mask:
+                return denoised_sample_embeddings, denoised_pred, unifrac_pred
+            else:
+                return denoised_sample_embeddings, denoised_pred, unifrac_pred, count_mask
         else:
-            return denoised_sample_embeddings, denoised_pred
+            if not return_count_mask:
+                return denoised_sample_embeddings, denoised_pred
+            else:
+                return denoised_sample_embeddings, denoised_pred, count_mask
 
     def asv_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
