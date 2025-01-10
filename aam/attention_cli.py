@@ -524,6 +524,7 @@ def fit_unifrac_regressor(
 @click.option("--p-loss-type", default="mse", required=False, type=str)
 @click.option("--p-normalize-outputs", default=True, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--p-use-residual-pool", default=None, type=bool)
 @click.option("--p-train-nuc-encoder", default=True, type=bool)
 def fit_denoised_unifrac_regressor(
     i_table: str,
@@ -562,6 +563,7 @@ def fit_denoised_unifrac_regressor(
     p_loss_type: str,
     p_normalize_outputs,
     p_use_residual_connections: bool,
+    p_use_residual_pool: bool,
     p_train_nuc_encoder: bool,
 ):
     import tensorflow_addons as tfa
@@ -589,11 +591,16 @@ def fit_denoised_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
         model.accumulation_steps = p_accumulation_steps
+        model.train_nuc_encoder = p_train_nuc_encoder
+
     else:
         if i_nucleotide_encoder is not None:
             i_nucleotide_encoder = tf.keras.models.load_model(i_nucleotide_encoder, compile=False)
+            i_nucleotide_encoder.trainable = p_train_nuc_encoder
         if i_unifrac_model is not None:
             i_unifrac_model = tf.keras.models.load_model(i_unifrac_model, compile=False)
+            i_unifrac_model.train_nuc_encoder = p_train_nuc_encoder
+
         model: tf.keras.Model = UnifracDenoiser(
             output_dim,
             p_asv_limit,
@@ -614,8 +621,8 @@ def fit_denoised_unifrac_regressor(
             normalize_outputs=p_normalize_outputs,
             unifrac_encoder=i_unifrac_model,
             use_residual_connections=p_use_residual_connections,
+            use_residual_pool=p_use_residual_pool,
         )
-    model.train_nuc_encoder = p_train_nuc_encoder
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
 

@@ -33,6 +33,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         nucleotide_encoder=None,
         normalize_outputs=True,
         use_residual_connections=False,
+        use_residual_pool=None,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -53,6 +54,9 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.nucleotide_encoder = nucleotide_encoder
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        if use_residual_pool is None:
+            use_residual_pool = use_residual_connections
+        self.use_residual_pool = use_residual_pool
 
     def build(self, input_shape):
         # layers used in model
@@ -89,7 +93,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
             )
 
         self.attention_pool = MultiHeadAttentionPooling(
-            self.normalize_outputs, num_heads=self.nuc_attention_heads, use_residual_connections=self.use_residual_connections
+            self.normalize_outputs, num_heads=self.nuc_attention_heads, use_residual_connections=self.use_residual_pool
         )
         super(BaseSequenceEncoder, self).build(input_shape)
 
@@ -192,6 +196,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "nucleotide_encoder": nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
+                "use_residual_pool": self.use_residual_pool,
             }
         )
         return config

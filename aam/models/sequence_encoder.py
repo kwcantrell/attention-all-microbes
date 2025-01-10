@@ -40,6 +40,7 @@ class SequenceEncoder(tf.keras.Model):
         pairwise_loss_type="mse",
         normalize_outputs=True,
         use_residual_connections=False,
+        use_residual_pool=None,
         **kwargs,
     ):
         super(SequenceEncoder, self).__init__(**kwargs)
@@ -62,6 +63,9 @@ class SequenceEncoder(tf.keras.Model):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        if use_residual_pool is None:
+            use_residual_pool = use_residual_connections
+        self.use_residual_pool = use_residual_pool
 
         self._get_encoder_loss()
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
@@ -97,11 +101,12 @@ class SequenceEncoder(tf.keras.Model):
             nucleotide_encoder=self.nucleotide_encoder,
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
+            use_residual_pool=self.use_residual_pool,
             name="base_encoder",
         )
 
         self.attention_pooling = MultiHeadAttentionPooling(
-            self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_connections
+            self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_pool
         )
 
         self.encoder = TransformerEncoder(
@@ -350,6 +355,7 @@ class SequenceEncoder(tf.keras.Model):
                 "nucleotide_encoder": self.nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
+                "use_residual_pool": self.use_residual_pool,
                 "build_input_shape": self.get_build_config(),
             }
         )

@@ -42,6 +42,7 @@ class UnifracDenoiser(tf.keras.Model):
         normalize_outputs=True,
         unifrac_encoder=None,
         use_residual_connections=False,
+        use_residual_pool=None,
         **kwargs,
     ):
         super(UnifracDenoiser, self).__init__(**kwargs)
@@ -64,21 +65,11 @@ class UnifracDenoiser(tf.keras.Model):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        if use_residual_pool is None:
+            use_residual_pool = use_residual_connections
+        self.use_residual_pool = use_residual_pool
+
         self.unifrac_encoder = unifrac_encoder
-
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.pairwise_loss = PairwiseLoss(self.pairwise_loss_type)
-        self.triplet_loss = TripletLoss()
-        self.unifrac_tracker = tf.keras.metrics.Mean(name="unifrac_loss")
-        self.denoise_tracker = tf.keras.metrics.Mean(name="denoised_loss")
-
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
-
-        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
-
-    def build(self, input_shape):
         if self.unifrac_encoder is None:
             self.unifrac_encoder = SequenceEncoder(
                 output_dim=self.output_dim,
@@ -100,10 +91,22 @@ class UnifracDenoiser(tf.keras.Model):
                 pairwise_loss_type=self.pairwise_loss_type,
                 normalize_outputs=self.normalize_outputs,
                 use_residual_connections=self.use_residual_connections,
+                use_residual_pool=self.use_residual_pool,
             )
-        else:
-            self.unifrac_encoder = self.unifrac_encoder
 
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self.pairwise_loss = PairwiseLoss(self.pairwise_loss_type)
+        self.triplet_loss = TripletLoss()
+        self.unifrac_tracker = tf.keras.metrics.Mean(name="unifrac_loss")
+        self.denoise_tracker = tf.keras.metrics.Mean(name="denoised_loss")
+
+        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
+        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
+
+        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
+        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
+
+    def build(self, input_shape):
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -128,7 +131,7 @@ class UnifracDenoiser(tf.keras.Model):
         self.attention_pooling = MultiHeadAttentionPooling(
             self.normalize_outputs,
             num_heads=self.attention_heads,
-            use_residual_connections=self.use_residual_connections,
+            use_residual_connections=self.use_residual_pool,
         )
 
         self.denoiser_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
@@ -325,6 +328,7 @@ class UnifracDenoiser(tf.keras.Model):
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "unifrac_encoder": tf.keras.saving.serialize_keras_object(self.unifrac_encoder),
+                "use_residual_pool": self.use_residual_pool,
                 "build_input_shape": self.get_build_config(),
             }
         )
