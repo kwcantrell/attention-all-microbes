@@ -95,8 +95,9 @@ class PairwiseLoss(tf.keras.losses.Loss):
 
 
 class TripletLoss(tf.keras.losses.Loss):
-    def __init__(self, reduction="none", **kwargs):
+    def __init__(self, margin=0.1, reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
+        self.margin = margin
 
     def call(self, embeddings_left, embeddings_right):
         distances = _pairwise_distances(embeddings_left, embeddings_right)
@@ -116,12 +117,12 @@ class TripletLoss(tf.keras.losses.Loss):
         right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
         right_neg_dist = tf.reduce_min(right_neg_dist, axis=-1)
 
-        MARGIN = 0.5
-        trip_loss_l = (dist_p - left_neg_dist) + MARGIN
+        # MARGIN = 0.5
+        trip_loss_l = (dist_p - left_neg_dist) + self.margin
         trip_mask = tf.cast(trip_loss_l > 0, dtype=tf.float32)
         trip_loss_l = trip_loss_l * trip_mask
 
-        trip_loss_r = (dist_p - right_neg_dist) + MARGIN
+        trip_loss_r = (dist_p - right_neg_dist) + self.margin
         trip_mask = tf.cast(trip_loss_r > 0, dtype=tf.float32)
         trip_loss_r = trip_loss_r * trip_mask
 
