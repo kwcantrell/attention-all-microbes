@@ -524,6 +524,7 @@ def fit_unifrac_regressor(
 @click.option("--p-loss-type", default="mse", required=False, type=str)
 @click.option("--p-normalize-outputs", default=True, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--p-train-nuc-encoder", default=True, type=bool)
 def fit_denoised_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -561,6 +562,7 @@ def fit_denoised_unifrac_regressor(
     p_loss_type: str,
     p_normalize_outputs,
     p_use_residual_connections: bool,
+    p_train_nuc_encoder: bool,
 ):
     import tensorflow_addons as tfa
     from biom import load_table
@@ -613,6 +615,7 @@ def fit_denoised_unifrac_regressor(
             unifrac_encoder=i_unifrac_model,
             use_residual_connections=p_use_residual_connections,
         )
+    model.train_nuc_encoder = p_train_nuc_encoder
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
 
@@ -1006,6 +1009,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
+@click.option("--p-train-nuc-encoder", default=True, type=bool)
 def fit_sample_regressor(
     i_table: str,
     i_base_model_path: str,
@@ -1048,6 +1052,7 @@ def fit_sample_regressor(
     p_accumulation_steps: int,
     p_unifrac_metric: str,
     p_scale_loss: bool,
+    p_train_nuc_encoder: bool,
 ):
     from aam.callbacks import ConfusionMatrx
     from aam.data_handlers import CombinedGenerator, MultiDepthGenerator, TaxonomyGenerator, UniFracGenerator
@@ -1183,6 +1188,7 @@ def fit_sample_regressor(
 
         if not p_no_freeze_base_weights:
             print("base_model's weights are set to trainable.")
+        base_model.train_nuc_encoder = p_train_nuc_encoder
 
     def _get_fold(
         indices,

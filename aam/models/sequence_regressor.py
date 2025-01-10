@@ -5,6 +5,8 @@ from typing import Optional, Union
 import tensorflow as tf
 import tensorflow_models as tfm
 
+from aam.models.count_encoder import CountEncoder
+
 # from aam.models.attention_pooling import AttentionPooling
 from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 
@@ -80,26 +82,6 @@ class SequenceRegressor(tf.keras.Model):
         # layers used in model
         self.combined_base = False
         self.base_model = base_model
-        # if isinstance(base_model, str):
-        #     self.base_model = SequenceEncoder(
-        #         output_dim=self.base_output_dim,
-        #         token_limit=self.token_limit,
-        #         encoder_type=base_model,
-        #         dropout_rate=self.dropout_rate,
-        #         embedding_dim=self.embedding_dim,
-        #         attention_heads=self.attention_heads,
-        #         attention_layers=self.attention_layers,
-        #         intermediate_size=self.intermediate_size,
-        #         intermediate_activation=self.intermediate_activation,
-        #         max_bp=self.max_bp,
-        #         is_16S=self.is_16S,
-        #         vocab_size=self.vocab_size,
-        #         add_token=self.add_token,
-        #         asv_dropout_rate=self.asv_dropout_rate,
-        #         accumulation_steps=self.accumulation_steps,
-        #     )
-        # else:
-        #     self.base_model = base_model
 
         # self.base_losses = {"base_loss": self.base_model._compute_encoder_loss}
         # self.base_metrics = {"base_loss": ["encoder_loss", self.base_model.encoder_tracker]}
@@ -123,8 +105,8 @@ class SequenceRegressor(tf.keras.Model):
         #     trainable=True,
         #     dtype=tf.float32,
         # )
-        # self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
-        # self.count_tracker = tf.keras.metrics.Mean()
+        self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
+        self.count_tracker = tf.keras.metrics.Mean()
 
         # self.target_encoder = TransformerEncoder(
         #     num_layers=self.attention_layers,
@@ -190,7 +172,6 @@ class SequenceRegressor(tf.keras.Model):
             use_residual_connections=self.use_residual_connections,
             name="encoder",
         )
-
         self._rezero = self.add_weight(
             name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
         )
@@ -198,6 +179,25 @@ class SequenceRegressor(tf.keras.Model):
             self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
         )
         self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
+
+        self.count_encoder = CountEncoder(
+            output_dim=self.base_output_dim,
+            token_limit=self.token_limit,
+            encoder_type=self.base_model,
+            dropout_rate=self.dropout_rate,
+            embedding_dim=self.embedding_dim,
+            attention_heads=self.attention_heads,
+            attention_layers=self.attention_layers,
+            intermediate_size=self.intermediate_size,
+            intermediate_activation=self.intermediate_activation,
+            max_bp=self.max_bp,
+            is_16S=self.is_16S,
+            vocab_size=self.vocab_size,
+            add_token=self.add_token,
+            asv_dropout_rate=self.asv_dropout_rate,
+            accumulation_steps=self.accumulation_steps,
+        )
+
         super(SequenceRegressor, self).build(input_shape)
 
     def evaluate_metric(self, dataset, metric, **kwargs):
@@ -246,13 +246,14 @@ class SequenceRegressor(tf.keras.Model):
         target_loss = self._compute_target_loss(y_target, y_pred)
 
         base_loss, nuc_loss, unifrac_loss, denoise_loss = self.base_model._compute_loss(model_inputs, base_target, outputs)
+        count_loss = self.count_encoder.losses
         # counts = tf.cast(counts, dtype=tf.float32)
         # count_loss = self._compute_count_loss(counts, count_pred, count_mask)
         # _, nuc_loss, encoder_loss = self.base_model._compute_loss(
         #     model_inputs, base_target, (base_target, base_pred, nuc_mask, nuc_pred)
         # )
-        loss = target_loss + base_loss
-        return loss, target_loss, nuc_loss, unifrac_loss, denoise_loss
+        loss = target_loss + base_loss + count_loss
+        return loss, target_loss, nuc_loss, unifrac_loss, denoise_loss, count_loss
 
     def _compute_metric(
         self,
@@ -303,7 +304,7 @@ class SequenceRegressor(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, target_loss, nuc_loss, unifrac_loss, denoise_loss = self._compute_loss(inputs, y, outputs)
+            loss, target_loss, nuc_loss, unifrac_loss, denoise_loss, count_loss = self._compute_loss(inputs, y, outputs)
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
 
@@ -313,7 +314,7 @@ class SequenceRegressor(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
-        # self.count_tracker.update_state(count_mse)
+        self.count_tracker.update_state(count_loss)
         self._compute_metric(y, outputs)
         self.base_model.nuc_tracker.update_state(nuc_loss)
         self.base_model.unifrac_tracker.update_state(unifrac_loss)
@@ -321,7 +322,7 @@ class SequenceRegressor(tf.keras.Model):
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
-            # "count_mse": self.count_tracker.result(),
+            "count_mse": self.count_tracker.result(),
             "unifrac_loss": self.base_model.unifrac_tracker.result(),
             "denoise_loss": self.base_model.denoise_tracker.result(),
             "nuc_loss": self.base_model.nuc_tracker.result(),
@@ -339,11 +340,11 @@ class SequenceRegressor(tf.keras.Model):
         inputs, y = data
 
         outputs = self(inputs, training=False)
-        loss, target_loss, nuc_loss, unifrac_loss, denoise_loss = self._compute_loss(inputs, y, outputs)
+        loss, target_loss, nuc_loss, unifrac_loss, denoise_loss, count_loss = self._compute_loss(inputs, y, outputs)
 
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
-        # self.count_tracker.update_state(count_mse)
+        self.count_tracker.update_state(count_loss)
 
         self._compute_metric(y, outputs)
         self.base_model.nuc_tracker.update_state(nuc_loss)
@@ -352,18 +353,13 @@ class SequenceRegressor(tf.keras.Model):
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
-            # "count_mse": self.count_tracker.result(),
+            "count_mse": self.count_tracker.result(),
             "unifrac_loss": self.base_model.unifrac_tracker.result(),
             "denoise_loss": self.base_model.denoise_tracker.result(),
             "nuc_loss": self.base_model.nuc_tracker.result(),
             self.metric_string: self.metric_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
-
-    def _relative_abundance(self, counts: tf.Tensor) -> tf.Tensor:
-        count_sums = tf.reduce_sum(counts, axis=1, keepdims=True)
-        rel_abundance = counts / count_sums
-        return rel_abundance
 
     def mask_counts(self, counts, training=False):
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
@@ -403,27 +399,6 @@ class SequenceRegressor(tf.keras.Model):
         random_mask = random_mask > 0
         return counts, random_mask
 
-    def _compute_count_embeddings(
-        self,
-        tensor: tf.Tensor,
-        relative_abundances: tf.Tensor,
-        attention_mask: Optional[tf.Tensor] = None,
-        count_mask: Optional[tf.Tensor] = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        count_embeddings = tensor + self.count_pos(tensor) * (1 + relative_abundances)
-        count_embeddings = self.count_encoder(count_embeddings, mask=attention_mask, training=training)
-
-        count_pred = self.count_out(count_embeddings)
-        large_neg_num = -1e9
-
-        mask = tf.cast(attention_mask, dtype=tf.float32)  # [B, T, 1]
-        count_pred += (1.0 - mask) * large_neg_num  # Mask padding tokens
-        count_pred = tf.squeeze(count_pred, axis=-1)
-        count_pred = tf.nn.softmax(count_pred, axis=-1)
-
-        return count_embeddings, count_pred
-
     def _compute_target_embeddings(
         self,
         tensor: tf.Tensor,
@@ -443,61 +418,23 @@ class SequenceRegressor(tf.keras.Model):
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
         include_bert_random_mask = True if not self.freeze_base else False
-        denoised_sample_embeddings, denoised_pred, unifrac_pred, count_mask = self.base_model(
+        denoised_sample_embeddings, denoised_pred, unifrac_pred, counts = self.base_model(
             inputs,
             include_bert_random_mask=include_bert_random_mask,
             return_unifrac_pred=True,
-            return_count_mask=True,
+            return_counts=True,
             training=training and not self.freeze_base,
         )
-        denoised_sample_embeddings = denoised_sample_embeddings + tf.cast(
-            self._rezero, dtype=self.compute_dtype
-        ) * self.pos_emb(denoised_sample_embeddings)
 
-        denoised_sample_embeddings = self.encoder(denoised_sample_embeddings, mask=count_mask, training=training)
-        sample_embeddings = self.attention_pooling(denoised_sample_embeddings, mask=count_mask, training=training)
+        count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+        count_embeddings = self.count_encoder([denoised_sample_embeddings, counts], training=training)
+
+        count_embeddings = count_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(count_embeddings)
+        target_embeddings = self.encoder(count_embeddings, mask=count_mask, training=training)
+        sample_embeddings = self.attention_pooling(target_embeddings, mask=count_mask, training=training)
         output = self.target_ff(sample_embeddings)
         print("SequenceRegressor exit...")
         return output, denoised_pred, unifrac_pred
-        # # count_attention_mask = count_mask
-        # base_embeddings, counts, base_pred, nuc_mask, nuc_pred = self.base_model(
-        #     inputs, return_counts=True, training=(training and self.base_model.trainable)
-        # )
-
-        # counts = tf.cast(counts, dtype=self.compute_dtype)
-        # count_mask = float_mask(counts, dtype=self.compute_dtype)
-        # rel_abundance = self._relative_abundance(counts)
-        # count_attention_mask = count_mask
-
-        # # base_embeddings will always be float32
-        # base_embeddings = tf.cast(base_embeddings, dtype=self.compute_dtype)
-        # rel_abundance, count_mask = self.mask_counts(rel_abundance, training=training)
-        # count_gated_embeddings, count_pred = self._compute_count_embeddings(
-        #     base_embeddings,
-        #     rel_abundance,
-        #     attention_mask=count_attention_mask,
-        #     count_mask=count_mask,
-        #     training=training,
-        # )
-
-        # # add percentage to base
-        # # count_embeddings = base_embeddings + self._rezero_a * count_gated_embeddings
-        # count_embeddings = count_gated_embeddings
-
-        # target_embeddings, target_out = self._compute_target_embeddings(
-        #     count_embeddings, attention_mask=count_attention_mask, training=training
-        # )
-
-        # return (
-        #     target_embeddings,
-        #     counts,
-        #     count_pred,
-        #     count_mask,
-        #     target_out,
-        #     base_pred,
-        #     nuc_mask,
-        #     nuc_pred,
-        # )
 
     def base_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor]
@@ -640,7 +577,7 @@ class SequenceRegressor(tf.keras.Model):
         return config
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config, custom_objects=None):
         config["base_model"] = tf.keras.saving.deserialize_keras_object(config["base_model"])
         model = cls(**config)
 

@@ -172,20 +172,16 @@ class UnifracDenoiser(tf.keras.Model):
         )
         unifrac_loss = tf.reduce_mean(unifrac_loss)
 
-        # denoised_embeddings = tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim])
         denoised_embeddings = tf.unstack(tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim]))
-        # y_true = tf.reduce_mean(y_true, axis=0, keepdims=True)
-        # y_true = tf.broadcast_to(y_true, shape=[groups, group_dim, group_dim])
-        # denoise_loss = tf.map_fn(
-        #     self._unifrac_loss,
-        #     (y_true, denoised_embeddings),
-        #     fn_output_signature=tf.float32,
-        # )
         denoise_loss = self.triplet_loss(denoised_embeddings[0], denoised_embeddings[1])
 
         denoise_loss = tf.reduce_mean(denoise_loss)
 
-        loss = nuc_loss + unifrac_loss + denoise_loss
+        loss = unifrac_loss + denoise_loss
+
+        if self.train_nuc_encoder:
+            print("add nuc loss")
+            loss += nuc_loss
         return loss, nuc_loss, unifrac_loss, denoise_loss
 
     def predict_step(
@@ -265,7 +261,7 @@ class UnifracDenoiser(tf.keras.Model):
         inputs,
         include_bert_random_mask: bool = True,
         return_unifrac_pred: bool = True,
-        return_count_mask: bool = False,
+        return_counts: bool = False,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         sample_embeddings, counts, unifrac_pred = self.unifrac_encoder(
@@ -280,15 +276,15 @@ class UnifracDenoiser(tf.keras.Model):
         denoised_pred = self._embeddings(denoised_sample_embeddings, count_mask, training=training)
         print("UniFracDenoiser exit...")
         if return_unifrac_pred:
-            if not return_count_mask:
+            if not return_counts:
                 return denoised_sample_embeddings, denoised_pred, unifrac_pred
             else:
-                return denoised_sample_embeddings, denoised_pred, unifrac_pred, count_mask
+                return denoised_sample_embeddings, denoised_pred, unifrac_pred, counts
         else:
-            if not return_count_mask:
+            if not return_counts:
                 return denoised_sample_embeddings, denoised_pred
             else:
-                return denoised_sample_embeddings, denoised_pred, count_mask
+                return denoised_sample_embeddings, denoised_pred, counts
 
     def asv_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
@@ -297,6 +293,14 @@ class UnifracDenoiser(tf.keras.Model):
         tokens = inputs
         sample_embeddings = self.unifrac_encoder.base_encoder(tokens, training=False)
         return sample_embeddings
+
+    @property
+    def train_nuc_encoder(self):
+        return self.unifrac_encoder.train_nuc_encoder
+
+    @train_nuc_encoder.setter
+    def train_nuc_encoder(self, flag: bool):
+        self.unifrac_encoder.train_nuc_encoder = flag
 
     def get_config(self):
         config = super(UnifracDenoiser, self).get_config()
@@ -327,7 +331,7 @@ class UnifracDenoiser(tf.keras.Model):
         return config
 
     @classmethod
-    def from_config(cls, config, custom_objects=None):
+    def from_config(cls, config):
         input_shape = None
         if "build_input_shape" in config:
             build_input_shape = config.pop("build_input_shape")

@@ -244,7 +244,9 @@ class SequenceEncoder(tf.keras.Model):
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         batch_counts, tokens, indicies, counts = inputs
-        sample_embeddings = self.base_encoder(tokens, include_bert_random_mask=include_bert_random_mask, training=training)
+        sample_embeddings = self.base_encoder(
+            tokens, include_bert_random_mask=include_bert_random_mask, training=training and self.train_nuc_encoder
+        )
         sample_embeddings = tf.gather(sample_embeddings, tf.cast(indicies, dtype=tf.int32))
         sample_embeddings = to_batch(sample_embeddings, batch_counts)
 
@@ -316,6 +318,15 @@ class SequenceEncoder(tf.keras.Model):
 
     def set_nucleotide_encoder(self, nucleotide_encoder):
         self.base_encoder.asv_encoder = nucleotide_encoder
+
+    @property
+    def train_nuc_encoder(self):
+        return self.base_encoder.trainable
+
+    @train_nuc_encoder.setter
+    def train_nuc_encoder(self, flag: bool):
+        print("train nuc encoder:", flag)
+        self.base_encoder.trainable = flag
 
     def get_config(self):
         config = super(SequenceEncoder, self).get_config()
