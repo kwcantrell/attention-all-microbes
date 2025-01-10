@@ -76,10 +76,6 @@ class CountEncoder(tf.keras.layers.Layer):
             key_dim=key_dim,
             dropout=self.dropout_rate,
         )
-        self._rezero_count = self.add_weight(
-            name="rezero_alpha_count", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
-        )
-
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
@@ -112,8 +108,8 @@ class CountEncoder(tf.keras.layers.Layer):
         count_pred = self.encoder_ff(count_embeddings)
         count_pred = self._softmax(count_pred)
         count_mask = tf.cast(counts > 0, dtype=tf.float32)
-        count_loss = tf.reduce_mean(tf.square(tf.math.log1p(counts) - tf.math.log1p(count_pred)) * count_mask)
-        self.add_loss(count_loss)
+        count_loss = tf.square(tf.math.log1p(counts) - tf.math.log1p(count_pred)) * count_mask
+        self.add_loss(tf.reduce_mean(count_loss))
 
     def _relative_abundance(self, counts: tf.Tensor) -> tf.Tensor:
         count_sums = tf.reduce_sum(counts, axis=1, keepdims=True)
@@ -130,17 +126,12 @@ class CountEncoder(tf.keras.layers.Layer):
         count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
         rel_abundance = self._relative_abundance(counts)
 
-        pos_embeddings = (
-            tf.cast(self._rezero, dtype=self.compute_dtype)
-            * self.pos_emb(embeddings)
-            * tf.cast((rel_abundance), dtype=self.compute_dtype)
-        )
-        count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        attention_output = self.attention(pos_embeddings, pos_embeddings, attention_mask=count_mask, training=training)
-        pos_embeddings = pos_embeddings + tf.cast(self._rezero_count, dtype=self.compute_dtype) * attention_output
+        pos_embeddings = self.pos_emb(embeddings) * tf.cast((rel_abundance), dtype=self.compute_dtype)
+        attention_mask = tf.matmul(count_mask, count_mask, transpose_b=True)
+        pos_embeddings = self.attention(pos_embeddings, pos_embeddings, attention_mask=attention_mask, training=training)
         self._compute_loss(rel_abundance, pos_embeddings, training=training)
 
-        count_embeddings = embeddings + pos_embeddings
+        count_embeddings = embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * pos_embeddings
         count_embeddings = self.encoder(count_embeddings, count_mask, training=training)
         print("CountEncoder exit...")
         return count_embeddings
