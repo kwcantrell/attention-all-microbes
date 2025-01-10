@@ -95,7 +95,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
 
 
 class TripletLoss(tf.keras.losses.Loss):
-    def __init__(self, margin=0.5, reduction="none", **kwargs):
+    def __init__(self, margin=0.2, reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
         self.margin = margin
 
@@ -114,31 +114,31 @@ class TripletLoss(tf.keras.losses.Loss):
         semi_mask = tf.cast((dist_p + self.margin) - left_neg_dist > 0, dtype=tf.float32)
         trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * (1 - hard_mask) * semi_mask
         left_neg_dist = left_neg_dist
-        tf.print(dist_p)
-        tf.print(left_neg_dist)
+        # tf.print(dist_p)
+        # tf.print(left_neg_dist)
 
         trip_loss_l = (dist_p - left_neg_dist) + self.margin
         trip_loss_l = tf.reduce_sum(trip_loss_l * trip_mask, axis=-1)
         trip_loss_l = tf.math.divide_no_nan(trip_loss_l, tf.reduce_sum(trip_mask, axis=-1))
-        tf.print(trip_loss_l, trip_mask)
+        # tf.print(trip_loss_l, trip_mask)
 
         dist_n = tf.transpose(dist_n, perm=[1, 0])
         pair_dist_rn = pair_dist_r * (1 - mask_p)
         right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
         hard_mask = tf.cast(right_neg_dist < dist_p, dtype=tf.float32)
         semi_mask = tf.cast((dist_p + self.margin) - right_neg_dist > 0, dtype=tf.float32)
-        trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * (1 - mask_p) * (1 - hard_mask) * semi_mask
+        trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * (1 - hard_mask) * semi_mask
         right_neg_dist = right_neg_dist
-        tf.print(dist_p)
-        tf.print(right_neg_dist)
+        # tf.print(dist_p)
+        # tf.print(right_neg_dist)
 
         trip_loss_r = (dist_p - right_neg_dist) + self.margin
         trip_loss_r = tf.reduce_sum(trip_loss_r * trip_mask, axis=-1)
         trip_loss_r = tf.math.divide_no_nan(trip_loss_r, tf.reduce_sum(trip_mask, axis=-1))
-        tf.print(trip_loss_r, trip_mask)
+        # tf.print(trip_loss_r, trip_mask)
 
         trip_loss = tf.concat([trip_loss_l, trip_loss_r], axis=0)
-        tf.print(trip_loss)
+        # tf.print(trip_loss)
         return trip_loss
 
 
