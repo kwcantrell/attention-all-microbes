@@ -112,7 +112,7 @@ class TripletLoss(tf.keras.losses.Loss):
         left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
         hard_mask = tf.cast(dist_p < left_neg_dist, dtype=tf.float32)
         semi_mask = tf.cast((dist_p + self.margin) - left_neg_dist > 0, dtype=tf.float32)
-        trip_mask = (1 - hard_mask) * semi_mask
+        trip_mask = (1 - mask_p) * (1 - hard_mask) * semi_mask
         left_neg_dist = left_neg_dist
         tf.print(dist_p)
         tf.print(left_neg_dist)
@@ -126,7 +126,7 @@ class TripletLoss(tf.keras.losses.Loss):
         right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
         hard_mask = tf.cast(dist_p < right_neg_dist, dtype=tf.float32)
         semi_mask = tf.cast((dist_p + self.margin) - right_neg_dist > 0, dtype=tf.float32)
-        trip_mask = (1 - hard_mask) * semi_mask
+        trip_mask = (1 - mask_p) * (1 - hard_mask) * semi_mask
         right_neg_dist = right_neg_dist
         tf.print(dist_p)
         tf.print(right_neg_dist)
