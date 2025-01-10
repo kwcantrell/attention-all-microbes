@@ -139,7 +139,7 @@ class UnifracDenoiser(tf.keras.Model):
 
     def _embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
-        encoder_pred = self.denoiser_ff(encoder_pred)
+        encoder_pred = tf.math.l2_normalize(self.denoiser_ff(encoder_pred), axis=1)
         return encoder_pred
 
     def _compute_unifrac_loss(self, y_true: tf.Tensor, encoder_embeddings: tf.Tensor) -> tf.Tensor:
