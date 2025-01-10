@@ -1010,6 +1010,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
 @click.option("--p-train-nuc-encoder", default=True, type=bool)
+@click.option("--p-include-count-encoder", default=True, type=bool)
 def fit_sample_regressor(
     i_table: str,
     i_base_model_path: str,
@@ -1053,6 +1054,7 @@ def fit_sample_regressor(
     p_unifrac_metric: str,
     p_scale_loss: bool,
     p_train_nuc_encoder: bool,
+    p_include_count_encoder: bool,
 ):
     from aam.callbacks import ConfusionMatrx
     from aam.data_handlers import CombinedGenerator, MultiDepthGenerator, TaxonomyGenerator, UniFracGenerator

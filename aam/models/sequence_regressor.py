@@ -49,6 +49,7 @@ class SequenceRegressor(tf.keras.Model):
         scale_losses=False,
         normalize_outputs=False,
         use_residual_connections=True,
+        include_count_encoder=True,
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
@@ -77,6 +78,7 @@ class SequenceRegressor(tf.keras.Model):
         self.scale_losses = scale_losses
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.include_count_encoder = include_count_encoder
         self.loss_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
@@ -180,23 +182,24 @@ class SequenceRegressor(tf.keras.Model):
         )
         self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
 
-        self.count_encoder = CountEncoder(
-            output_dim=self.base_output_dim,
-            token_limit=self.token_limit,
-            encoder_type=self.base_model,
-            dropout_rate=self.dropout_rate,
-            embedding_dim=self.embedding_dim,
-            attention_heads=self.attention_heads,
-            attention_layers=self.attention_layers,
-            intermediate_size=self.intermediate_size,
-            intermediate_activation=self.intermediate_activation,
-            max_bp=self.max_bp,
-            is_16S=self.is_16S,
-            vocab_size=self.vocab_size,
-            add_token=self.add_token,
-            asv_dropout_rate=self.asv_dropout_rate,
-            accumulation_steps=self.accumulation_steps,
-        )
+        if self.include_count_encoder:
+            self.count_encoder = CountEncoder(
+                output_dim=self.base_output_dim,
+                token_limit=self.token_limit,
+                encoder_type=self.base_model,
+                dropout_rate=self.dropout_rate,
+                embedding_dim=self.embedding_dim,
+                attention_heads=self.attention_heads,
+                attention_layers=self.attention_layers,
+                intermediate_size=self.intermediate_size,
+                intermediate_activation=self.intermediate_activation,
+                max_bp=self.max_bp,
+                is_16S=self.is_16S,
+                vocab_size=self.vocab_size,
+                add_token=self.add_token,
+                asv_dropout_rate=self.asv_dropout_rate,
+                accumulation_steps=self.accumulation_steps,
+            )
 
         super(SequenceRegressor, self).build(input_shape)
 
@@ -246,12 +249,10 @@ class SequenceRegressor(tf.keras.Model):
         target_loss = self._compute_target_loss(y_target, y_pred)
 
         base_loss, nuc_loss, unifrac_loss, denoise_loss = self.base_model._compute_loss(model_inputs, base_target, outputs)
-        count_loss = self.count_encoder.losses
-        # counts = tf.cast(counts, dtype=tf.float32)
-        # count_loss = self._compute_count_loss(counts, count_pred, count_mask)
-        # _, nuc_loss, encoder_loss = self.base_model._compute_loss(
-        #     model_inputs, base_target, (base_target, base_pred, nuc_mask, nuc_pred)
-        # )
+        if self.include_count_encoder:
+            count_loss, _ = self.count_encoder.losses
+        else:
+            count_loss = 0
         loss = target_loss + base_loss + count_loss
         return loss, target_loss, nuc_loss, unifrac_loss, denoise_loss, count_loss
 
@@ -427,8 +428,10 @@ class SequenceRegressor(tf.keras.Model):
         )
 
         count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        count_embeddings = self.count_encoder([denoised_sample_embeddings, counts], training=training)
-
+        if self.include_count_encoder:
+            count_embeddings = self.count_encoder([denoised_sample_embeddings, counts], training=training)
+        else:
+            count_embeddings = denoised_sample_embeddings
         count_embeddings = count_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(count_embeddings)
         target_embeddings = self.encoder(count_embeddings, mask=count_mask, training=training)
         sample_embeddings = self.attention_pooling(target_embeddings, mask=count_mask, training=training)
@@ -572,6 +575,7 @@ class SequenceRegressor(tf.keras.Model):
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "build_input_shape": self.get_build_config(),
+                "include_count_encoder": self.include_count_encoder,
             }
         )
         return config

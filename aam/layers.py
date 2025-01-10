@@ -161,7 +161,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         tokens = tf.one_hot(tokens, tf.shape(pred)[-1])
         nuc_loss = self.nuc_loss(tokens, pred)
         nuc_loss = tf.reduce_mean(nuc_loss)
-        return tf.reduce_mean(nuc_loss)
+        nuc_loss = tf.reduce_mean(nuc_loss)
+        return nuc_loss
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()

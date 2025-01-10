@@ -69,6 +69,16 @@ class CountEncoder(tf.keras.layers.Layer):
             print("already built")
             return
         # layers used in model
+        hidden_dim = self.embedding_dim
+        key_dim = int(hidden_dim // self.attention_heads)
+        self.attention = tf.keras.layers.MultiHeadAttention(
+            self.attention_heads,
+            key_dim=key_dim,
+            dropout=self.dropout_rate,
+        )
+        self._rezero_count = self.add_weight(
+            name="rezero_alpha_count", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+        )
 
         self.encoder = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -97,11 +107,12 @@ class CountEncoder(tf.keras.layers.Layer):
         self,
         counts: tuple[tf.Tensor, tf.Tensor],
         count_embeddings: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
+        training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         count_pred = self.encoder_ff(count_embeddings)
         count_pred = self._softmax(count_pred)
         count_mask = tf.cast(counts > 0, dtype=tf.float32)
-        count_loss = tf.reduce_mean(tf.square(counts - count_pred * count_mask))
+        count_loss = tf.reduce_mean(tf.square(tf.math.log1p(counts) - tf.math.log1p(count_pred)) * count_mask)
         self.add_loss(count_loss)
 
     def _relative_abundance(self, counts: tf.Tensor) -> tf.Tensor:
@@ -124,9 +135,13 @@ class CountEncoder(tf.keras.layers.Layer):
             * self.pos_emb(embeddings)
             * tf.cast((rel_abundance), dtype=self.compute_dtype)
         )
+        count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+        attention_output = self.attention(pos_embeddings, pos_embeddings, attention_mask=count_mask, training=training)
+        pos_embeddings = pos_embeddings + tf.cast(self._rezero_count, dtype=self.compute_dtype) * attention_output
+        self._compute_loss(rel_abundance, pos_embeddings, training=training)
+
         count_embeddings = embeddings + pos_embeddings
         count_embeddings = self.encoder(count_embeddings, count_mask, training=training)
-        self._compute_loss(rel_abundance, count_embeddings)
         print("CountEncoder exit...")
         return count_embeddings
 
