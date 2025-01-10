@@ -105,28 +105,39 @@ class TripletLoss(tf.keras.losses.Loss):
         pair_dist_r = _pairwise_distances(embeddings_right)
 
         mask_p = tf.linalg.band_part(tf.ones_like(distances), 0, 0)
-        dist_p = tf.reduce_sum(distances * mask_p, axis=-1)
+        dist_p = tf.reduce_sum(distances * mask_p, axis=-1, keepdims=True)
 
-        dist_n = distances * (1 - mask_p) + 1e7 * mask_p
-
-        pair_dist_ln = pair_dist_l * (1 - mask_p) + 1e7 * mask_p
+        dist_n = distances * (1 - mask_p)
+        pair_dist_ln = pair_dist_l * (1 - mask_p)
         left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
-        left_neg_dist = tf.reduce_min(left_neg_dist, axis=-1)
+        hard_mask = tf.cast(dist_p < left_neg_dist, dtype=tf.float32)
+        semi_mask = tf.cast((dist_p + self.margin) > left_neg_dist, dtype=tf.float32)
+        left_neg_dist = left_neg_dist * (1 - hard_mask) * semi_mask
+        tf.print(dist_p)
+        tf.print(left_neg_dist)
 
-        pair_dist_rn = pair_dist_r * (1 - mask_p) + 1e7 * mask_p
+        dist_n = tf.transpose(dist_n, perm=[1, 0])
+        pair_dist_rn = pair_dist_r * (1 - mask_p)
         right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
-        right_neg_dist = tf.reduce_min(right_neg_dist, axis=-1)
+        hard_mask = tf.cast(dist_p < right_neg_dist, dtype=tf.float32)
+        semi_mask = tf.cast((dist_p + self.margin) > right_neg_dist, dtype=tf.float32)
+        right_neg_dist = right_neg_dist * (1 - hard_mask) * semi_mask
+        tf.print(dist_p)
+        tf.print(right_neg_dist)
 
-        # MARGIN = 0.5
         trip_loss_l = (dist_p - left_neg_dist) + self.margin
         trip_mask = tf.cast(trip_loss_l > 0, dtype=tf.float32)
-        trip_loss_l = trip_loss_l * trip_mask
+        tf.print(trip_loss_l, trip_mask)
+        trip_loss_l = tf.reduce_sum(trip_loss_l * trip_mask, axis=-1) / tf.reduce_sum(trip_mask, axis=-1)
 
         trip_loss_r = (dist_p - right_neg_dist) + self.margin
         trip_mask = tf.cast(trip_loss_r > 0, dtype=tf.float32)
-        trip_loss_r = trip_loss_r * trip_mask
+        tf.print(trip_loss_l, trip_mask)
+        trip_loss_r = tf.reduce_sum(trip_loss_r * trip_mask, axis=-1) / tf.reduce_sum(trip_mask, axis=-1)
 
-        return tf.concat([trip_loss_l, trip_loss_r], axis=0)
+        trip_loss = tf.concat([trip_loss_l, trip_loss_r], axis=0)
+        tf.print(trip_loss)
+        return trip_loss
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
