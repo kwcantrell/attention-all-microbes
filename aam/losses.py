@@ -74,6 +74,23 @@ def _pairwise_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=
     return distances
 
 
+def _pairwise_cosine_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False):
+    if y is None:
+        y = x
+    cos_sim = tf.matmul(x, y, transpose_b=True)
+    return 1 - cos_sim
+
+
+def global_ortogonal_regulization(sample_embeddings, non_matching_pairs_mask):
+    d = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
+    sample_inner_prod = tf.matmul(sample_embeddings, sample_embeddings, transpose_b=True)
+    non_matching_pairs = sample_inner_prod[non_matching_pairs_mask]
+
+    m1 = tf.reduce_mean(non_matching_pairs)
+    m2 = tf.reduce_mean(tf.square(non_matching_pairs))
+    return m1 * m1 + tf.maximum(0.0, m2 - 1 / d)
+
+
 class PairwiseLoss(tf.keras.losses.Loss):
     def __init__(self, loss_type="mse", reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
@@ -94,59 +111,67 @@ class PairwiseLoss(tf.keras.losses.Loss):
         return differences
 
 
-class TripletLoss(tf.keras.losses.Loss):
-    def __init__(self, margin=0.2, reduction="none", **kwargs):
-        super().__init__(reduction=reduction, **kwargs)
-        self.margin = margin
+def triplet_loss(embeddings, groups=2, margin=0.2):
+    emb_shape = tf.shape(embeddings, out_type=tf.int32)
+    batch_dim = emb_shape[0]
+    group_size = batch_dim // tf.cast(groups, dtype=tf.int32)
 
-    def call(self, embeddings_left, embeddings_right):
-        distances = _pairwise_distances(embeddings_left, embeddings_right)
-        pair_dist_l = _pairwise_distances(embeddings_left)
-        pair_dist_r = _pairwise_distances(embeddings_right)
+    matching_mask = tf.linalg.diag(tf.ones(shape=[group_size]))
+    matching_mask = tf.tile(matching_mask, [groups, groups])
+    off_diag = 1 - tf.linalg.diag(tf.ones(shape=[batch_dim]))
+    non_matching_mask = tf.cast((1 - matching_mask) * off_diag, dtype=tf.bool)
+    matching_mask = tf.cast(matching_mask * off_diag, dtype=tf.bool)
 
-        mask_p = tf.linalg.band_part(tf.ones_like(distances), 0, 0)
-        dist_p = tf.reduce_sum(distances * mask_p, axis=-1, keepdims=True)
+    distances = _pairwise_cosine_distances(embeddings)
 
-        dist_n = distances * (1 - mask_p)
-        pair_dist_ln = pair_dist_l * (1 - mask_p)
-        left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
-        semi_mask = tf.cast((dist_p + self.margin) - left_neg_dist > 0, dtype=tf.float32)
-        trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * semi_mask
-        left_neg_dist = left_neg_dist
-        # tf.print(dist_p)
-        # tf.print(left_neg_dist)
+    matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
+    non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
 
-        trip_loss_l = (dist_p - left_neg_dist) + self.margin
-        trip_loss_l = tf.reduce_sum(trip_loss_l * trip_mask, axis=-1)
-        trip_loss_l = tf.math.divide_no_nan(trip_loss_l, tf.reduce_sum(trip_mask, axis=-1))
-        # tf.print(trip_loss_l, trip_mask)
+    triplet_loss = matching_pairs - non_matching_pairs + margin
+    valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
 
-        dist_n = tf.transpose(dist_n, perm=[1, 0])
-        pair_dist_rn = pair_dist_r * (1 - mask_p)
-        right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
-        semi_mask = tf.cast((dist_p + self.margin) - right_neg_dist > 0, dtype=tf.float32)
-        trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * semi_mask
-        right_neg_dist = right_neg_dist
-        # tf.print(dist_p)
-        # tf.print(right_neg_dist)
+    return tf.reduce_mean(triplet_loss * valid_mask) + global_ortogonal_regulization(embeddings, non_matching_mask)
 
-        trip_loss_r = (dist_p - right_neg_dist) + self.margin
-        trip_loss_r = tf.reduce_sum(trip_loss_r * trip_mask, axis=-1)
-        trip_loss_r = tf.math.divide_no_nan(trip_loss_r, tf.reduce_sum(trip_mask, axis=-1))
-        # tf.print(trip_loss_r, trip_mask)
+    # distances = _pairwise_cosine_distances(embeddings_left, embeddings_right)
+    # pair_dist_l = _pairwise_cosine_distances(embeddings_left)
+    # pair_dist_r = _pairwise_cosine_distances(embeddings_right)
 
-        trip_loss = tf.concat([trip_loss_l, trip_loss_r], axis=0)
+    # mask_p = tf.linalg.band_part(tf.ones_like(distances), 0, 0)
+    # dist_p = tf.reduce_sum(distances * mask_p, axis=-1, keepdims=True)
 
-        # GOR
-        d = tf.cast(tf.shape(embeddings_left)[-1], dtype=tf.float32)
-        non_matching_pairs = tf.reshape(tf.concat([left_neg_dist, right_neg_dist], axis=0), shape=[-1])
-        mask = non_matching_pairs > 0
-        non_matching_pairs = non_matching_pairs[mask]
-        M1 = tf.reduce_mean(non_matching_pairs)
-        M2 = tf.reduce_mean(tf.square(non_matching_pairs))
-        gor_loss = M1 * M1 + tf.maximum(0.0, M2 - 1.0 / d)
-        # tf.print(trip_loss)
-        return tf.reduce_mean(trip_loss) + gor_loss
+    # dist_n = distances * (1 - mask_p)
+    # pair_dist_ln = pair_dist_l * (1 - mask_p)
+    # left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
+    # semi_mask = tf.cast((dist_p + self.margin) - left_neg_dist > 0, dtype=tf.float32)
+    # trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * semi_mask
+    # left_neg_dist = left_neg_dist
+
+    # trip_loss_l = (dist_p - left_neg_dist) + self.margin
+    # trip_loss_l = tf.reduce_sum(trip_loss_l * trip_mask, axis=-1)
+    # trip_loss_l = tf.math.divide_no_nan(trip_loss_l, tf.reduce_sum(trip_mask, axis=-1))
+
+    # dist_n = tf.transpose(dist_n, perm=[1, 0])
+    # pair_dist_rn = pair_dist_r * (1 - mask_p)
+    # right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
+    # semi_mask = tf.cast((dist_p + self.margin) - right_neg_dist > 0, dtype=tf.float32)
+    # trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * semi_mask
+    # right_neg_dist = right_neg_dist
+
+    # trip_loss_r = (dist_p - right_neg_dist) + self.margin
+    # trip_loss_r = tf.reduce_sum(trip_loss_r * trip_mask, axis=-1)
+    # trip_loss_r = tf.math.divide_no_nan(trip_loss_r, tf.reduce_sum(trip_mask, axis=-1))
+
+    # trip_loss = tf.concat([trip_loss_l, trip_loss_r], axis=0)
+
+    # # GOR
+    # d = tf.cast(tf.shape(embeddings_left)[-1], dtype=tf.float32)
+    # non_matching_pairs = tf.reshape(tf.concat([left_neg_dist, right_neg_dist], axis=0), shape=[-1])
+    # mask = non_matching_pairs > 0
+    # non_matching_pairs = non_matching_pairs[mask]
+    # M1 = tf.reduce_mean(non_matching_pairs)
+    # M2 = tf.reduce_mean(tf.square(non_matching_pairs))
+    # gor_loss = M1 * M1 + tf.maximum(0.0, M2 - 1.0 / d)
+    # return tf.reduce_mean(triplet_loss)
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")

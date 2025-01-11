@@ -623,6 +623,10 @@ def fit_denoised_unifrac_regressor(
             use_residual_connections=p_use_residual_connections,
             use_residual_pool=p_use_residual_pool,
         )
+    config = model.get_config()
+    new_model = UnifracDenoiser.from_config(config)
+    new_model.unifrac_encoder.base_encoder.set_weights(model.unifrac_encoder.base_encoder.get_weights())
+    model = new_model
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
 

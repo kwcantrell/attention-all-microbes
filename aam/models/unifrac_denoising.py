@@ -5,7 +5,7 @@ from typing import Union
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from aam.losses import PairwiseLoss, TripletLoss
+from aam.losses import PairwiseLoss, triplet_loss
 from aam.models import SequenceEncoder
 
 # from aam.models.attention_pooling import AttentionPooling
@@ -96,7 +96,7 @@ class UnifracDenoiser(tf.keras.Model):
 
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.pairwise_loss = PairwiseLoss(self.pairwise_loss_type)
-        self.triplet_loss = TripletLoss()
+        self.triplet_loss = triplet_loss
         self.unifrac_tracker = tf.keras.metrics.Mean(name="unifrac_loss")
         self.denoise_tracker = tf.keras.metrics.Mean(name="denoised_loss")
 
@@ -139,8 +139,8 @@ class UnifracDenoiser(tf.keras.Model):
 
     def _embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
-        encoder_pred = tf.math.l2_normalize(self.denoiser_ff(encoder_pred), axis=1)
-        return encoder_pred
+        encoder_pred = self.denoiser_ff(encoder_pred)
+        return tf.math.l2_normalize(encoder_pred, axis=1)
 
     def _compute_unifrac_loss(self, y_true: tf.Tensor, encoder_embeddings: tf.Tensor) -> tf.Tensor:
         return self._unifrac_loss((y_true, encoder_embeddings))
@@ -175,9 +175,7 @@ class UnifracDenoiser(tf.keras.Model):
         )
         unifrac_loss = tf.reduce_mean(unifrac_loss)
 
-        denoised_embeddings = tf.unstack(tf.reshape(denoised_embeddings, shape=[groups, group_dim, self.embedding_dim]))
-        denoise_loss = self.triplet_loss(denoised_embeddings[0], denoised_embeddings[1])
-
+        denoise_loss = self.triplet_loss(denoised_embeddings)
         denoise_loss = tf.reduce_mean(denoise_loss)
 
         loss = unifrac_loss + denoise_loss
