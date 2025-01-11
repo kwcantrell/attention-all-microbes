@@ -68,6 +68,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
 @click.option("--p-normalize-outputs", default=True, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--i-model", default=None, required=False, type=str)
 def fit_asv_encoder(
     i_table: str,
     p_batch_size: int,
@@ -85,6 +86,7 @@ def fit_asv_encoder(
     p_weight_decay: float,
     p_normalize_outputs: bool,
     p_use_residual_connections: bool,
+    i_model: str,
 ):
     import tensorflow_addons as tfa
     from biom import load_table
@@ -101,18 +103,20 @@ def fit_asv_encoder(
     figure_path = os.path.join(output_dir, "figures")
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
-
-    model: tf.keras.Model = NucleotideEncoder(
-        embedding_dim=p_embedding_dim,
-        max_bp=p_max_bp,
-        dropout_rate=p_dropout,
-        intermediate_activation=p_intermediate_activation,
-        attention_heads=p_attention_heads,
-        attention_layers=p_attention_layers,
-        intermediate_size=p_intermediate_size,
-        normalize_outputs=p_normalize_outputs,
-        use_residual_connections=p_use_residual_connections,
-    )
+    if i_model is not None:
+        model = tf.keras.models.load_model(i_model, compile=False)
+    else:
+        model: tf.keras.Model = NucleotideEncoder(
+            embedding_dim=p_embedding_dim,
+            max_bp=p_max_bp,
+            dropout_rate=p_dropout,
+            intermediate_activation=p_intermediate_activation,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            normalize_outputs=p_normalize_outputs,
+            use_residual_connections=p_use_residual_connections,
+        )
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
 
