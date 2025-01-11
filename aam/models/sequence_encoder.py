@@ -41,6 +41,7 @@ class SequenceEncoder(tf.keras.Model):
         normalize_outputs=True,
         use_residual_connections=False,
         use_residual_pool=None,
+        asv_encoder=None,
         **kwargs,
     ):
         super(SequenceEncoder, self).__init__(**kwargs)
@@ -63,26 +64,11 @@ class SequenceEncoder(tf.keras.Model):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+
         if use_residual_pool is None:
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
 
-        self._get_encoder_loss()
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.encoder_tracker = tf.keras.metrics.Mean(name="encoder_loss")
-
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
-
-        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
-
-    def build(self, input_shape):
-        print(f"Input Shape in build: {input_shape}")
-        if self.built:
-            print("already built")
-            return
-        # layers used in model
         self.base_encoder = BaseSequenceEncoder(
             self.embedding_dim,
             self.max_bp,
@@ -102,8 +88,26 @@ class SequenceEncoder(tf.keras.Model):
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             use_residual_pool=self.use_residual_pool,
+            asv_encoder=asv_encoder,
             name="base_encoder",
         )
+
+        self._get_encoder_loss()
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self.encoder_tracker = tf.keras.metrics.Mean(name="encoder_loss")
+
+        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
+        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
+
+        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
+        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
+
+    def build(self, input_shape):
+        print(f"Input Shape in build: {input_shape}")
+        if self.built:
+            print("already built")
+            return
+        # layers used in model
 
         self.attention_pooling = MultiHeadAttentionPooling(
             self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_pool
@@ -326,12 +330,12 @@ class SequenceEncoder(tf.keras.Model):
 
     @property
     def train_nuc_encoder(self):
-        return self.base_encoder.trainable
+        return self.base_encoder.asv_encoder.trainable
 
     @train_nuc_encoder.setter
     def train_nuc_encoder(self, flag: bool):
         print("train nuc encoder:", flag)
-        self.base_encoder.trainable = flag
+        self.base_encoder.asv_encoder.trainable = flag
 
     def get_config(self):
         config = super(SequenceEncoder, self).get_config()

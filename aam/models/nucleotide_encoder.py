@@ -104,6 +104,20 @@ class NucleotideEncoder(tf.keras.Model):
                 "intermediate_size": self.intermediate_size,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
+                "build_input_shape": self.get_build_config(),
             }
         )
         return config
+
+    @classmethod
+    def from_config(cls, config):
+        input_shape = None
+        if "build_input_shape" in config:
+            build_input_shape = config.pop("build_input_shape")
+            input_shape = build_input_shape["input_shape"]
+
+        model = cls(**config)
+
+        if input_shape is not None:
+            model.build(input_shape)
+        return model

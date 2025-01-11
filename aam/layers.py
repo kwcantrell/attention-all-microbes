@@ -108,7 +108,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         random_mask = create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         masked_inputs = inputs
-        if include_bert_random_mask and training:
+        if include_bert_random_mask and training and self.trainable:
+            print("applying bert mask")
             # of the masked tokens, select 20% to either keep or change to
             # random token
             random_non_mask = create_random_mask(inputs_shape, percent=0.2, dtype=tf.int32) * random_mask
@@ -146,14 +147,17 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         output = self.asv_attention(asv_input, training=training)
 
-        # extract the masked nucleotides
-        unmasked_tokens = inputs + self.nucleotide_position
-        masked_nuc = tf.reshape(random_mask, shape=[-1])
-        nuc_embeddings = tf.reshape(output, shape=[-1, self.embedding_dim])
-        unmasked_tokens = tf.reshape(unmasked_tokens, shape=[-1])[masked_nuc]
-        masked_nuc = nuc_embeddings[masked_nuc]
-        nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
-        loss = self._compute_nuc_loss(unmasked_tokens, nuc_pred)
+        if self.trainable:
+            # extract the masked nucleotides
+            unmasked_tokens = inputs + self.nucleotide_position
+            masked_nuc = tf.reshape(random_mask, shape=[-1])
+            nuc_embeddings = tf.reshape(output, shape=[-1, self.embedding_dim])
+            unmasked_tokens = tf.reshape(unmasked_tokens, shape=[-1])[masked_nuc]
+            masked_nuc = nuc_embeddings[masked_nuc]
+            nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
+            loss = self._compute_nuc_loss(unmasked_tokens, nuc_pred)
+        else:
+            loss = None
         print("ASVEncoder exit...")
         return output, loss
 

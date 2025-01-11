@@ -34,6 +34,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         normalize_outputs=True,
         use_residual_connections=False,
         use_residual_pool=None,
+        asv_encoder=None,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -54,16 +55,14 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.nucleotide_encoder = nucleotide_encoder
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.asv_encoder = asv_encoder
         if use_residual_pool is None:
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
 
     def build(self, input_shape):
         # layers used in model
-        if self.is_16S:
-            # if self.nucleotide_encoder is not None:
-            #     self.asv_encoder = self.nucleotide_encoder
-            # else:
+        if self.is_16S and self.asv_encoder is None:
             self.asv_encoder = ASVEncoder(
                 self.max_bp,
                 self.nuc_attention_heads,
@@ -77,7 +76,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 use_residual_connections=self.use_residual_connections,
                 name="asv_encoder",
             )
-        else:
+        elif not self.is_16S:
             self.asv_embeddings = tf.keras.layers.Embedding(
                 self.vocab_size,
                 output_dim=self.embedding_dim,
@@ -107,7 +106,8 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
     def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
         embeddings, loss = self.asv_encoder(inputs, include_bert_random_mask=include_bert_random_mask, training=training)
-        self.add_loss(loss)
+        if self.asv_encoder.trainable:
+            self.add_loss(loss)
         asv_embeddings = self._split_asvs(embeddings, training=training)
         print("BaseSequenceEncoder exit...")
         return asv_embeddings
@@ -173,10 +173,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
     def get_config(self):
         config = super(BaseSequenceEncoder, self).get_config()
-        nucleotide_encoder = self.asv_encoder
-        if self.nucleotide_encoder is not None:
-            nucleotide_encoder = tf.keras.saving.serialize_keras_object(nucleotide_encoder)
-
         config.update(
             {
                 "embedding_dim": self.embedding_dim,
@@ -193,18 +189,16 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "is_16S": self.is_16S,
                 "vocab_size": self.vocab_size,
                 "add_token": self.add_token,
-                "nucleotide_encoder": nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "use_residual_pool": self.use_residual_pool,
+                "asv_encoder": tf.keras.saving.serialize_keras_object(self.asv_encoder),
             }
         )
         return config
 
     @classmethod
     def from_config(cls, config):
-        nucleotide_encoder = config["nucleotide_encoder"]
-        if nucleotide_encoder is not None:
-            config["nucleotide_encoder"] = None
+        config["asv_encoder"] = tf.keras.saving.deserialize_keras_object(config["asv_encoder"])
         model = cls(**config)
         return model

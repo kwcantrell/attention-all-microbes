@@ -43,6 +43,7 @@ class UnifracDenoiser(tf.keras.Model):
         unifrac_encoder=None,
         use_residual_connections=False,
         use_residual_pool=None,
+        asv_encoder=None,
         **kwargs,
     ):
         super(UnifracDenoiser, self).__init__(**kwargs)
@@ -65,6 +66,7 @@ class UnifracDenoiser(tf.keras.Model):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+
         if use_residual_pool is None:
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
@@ -92,6 +94,7 @@ class UnifracDenoiser(tf.keras.Model):
                 normalize_outputs=self.normalize_outputs,
                 use_residual_connections=self.use_residual_connections,
                 use_residual_pool=self.use_residual_pool,
+                asv_encoder=asv_encoder,
             )
 
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
@@ -195,7 +198,7 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         embeddings, denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
 
-        return unifrac_embeddings, y
+        return denoise_unifrac_embeddings, y
 
     def train_step(
         self,
