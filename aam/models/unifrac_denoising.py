@@ -181,7 +181,7 @@ class UnifracDenoiser(tf.keras.Model):
         denoise_loss = self.triplet_loss(denoised_embeddings)
         denoise_loss = tf.reduce_mean(denoise_loss)
 
-        loss = unifrac_loss + denoise_loss
+        loss = 0.75 * unifrac_loss + 0.25 * denoise_loss
 
         if self.train_nuc_encoder:
             print("add nuc loss")

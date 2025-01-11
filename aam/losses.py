@@ -133,10 +133,10 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
     valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
     triplet_loss = triplet_loss * valid_mask
 
-    hard_mask = tf.cast(non_matching_pairs < matching_pairs, dtype=tf.float32)
-    semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + margin, dtype=tf.float32) * (1 - hard_mask)
+    hard_mask = non_matching_pairs < matching_pairs
+    semi_hard_mask = (non_matching_pairs < matching_pairs + margin) * (1 - hard_mask)
 
-    semi_hard_loss = tf.math.divide_no_nan(tf.reduce_sum(triplet_loss * semi_hard_mask), tf.reduce_sum(semi_hard_mask))
+    semi_hard_loss = tf.reduce_mean(triplet_loss[semi_hard_mask])
 
     return semi_hard_loss + global_orthogonal_regulization(embeddings, non_matching_mask)
 
