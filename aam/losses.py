@@ -74,6 +74,11 @@ def _pairwise_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=
     return distances
 
 
+def _mean_distance(distance_matrix):
+    mask = distance_matrix > 0
+    return tf.reduce_mean(distance_matrix[mask])
+
+
 def _pairwise_cosine_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False):
     if y is None:
         y = x
@@ -117,8 +122,10 @@ class PairwiseLoss(tf.keras.losses.Loss):
         # mask = tf.reshape(mask, shape=[-1])
         # differences = tf.reshape(differences, shape=[-1])[mask]
 
-        # get hardest example
-        return tf.reduce_max(differences) + 0.1 * global_embedding_l2_regulization(y_pred)
+        # get hard example
+        mean_dist = tf.stop_gradient(_mean_distance(differences))
+        mean_mask = differences > mean_dist
+        return tf.reduce_mean(differences[mean_mask]) + 0.1 * global_embedding_l2_regulization(y_pred)
 
 
 def triplet_loss(embeddings, groups=2, margin=0.2):
