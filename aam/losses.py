@@ -144,7 +144,7 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
     matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
     non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
 
-    triplet_loss = matching_pairs - non_matching_pairs + margin
+    triplet_loss = matching_pairs - non_matching_pairs
     valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
     triplet_loss = triplet_loss * valid_mask
 
