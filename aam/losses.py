@@ -148,11 +148,11 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
     valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
     triplet_loss = triplet_loss * valid_mask
 
-    semi_hard_mask = non_matching_pairs < matching_pairs + margin
+    hard_mask = non_matching_pairs < matching_pairs
 
-    semi_hard_loss = tf.reduce_mean(triplet_loss[semi_hard_mask])
+    hard_loss = tf.reduce_mean(triplet_loss[hard_mask])
 
-    return semi_hard_loss + 0.1 * global_embedding_l2_regulization(embeddings)
+    return hard_loss + 0.1 * global_embedding_l2_regulization(embeddings)
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
