@@ -153,11 +153,7 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
 
     semi_hard_loss = tf.reduce_mean(triplet_loss[tf.cast(semi_hard_mask, dtype=tf.bool)])
 
-    return (
-        semi_hard_loss
-        + 0.1 * global_orthogonal_regulization(embeddings, non_matching_mask)
-        + 0.1 * global_embedding_l2_regulization(embeddings)
-    )
+    return semi_hard_loss + 0.1 * global_embedding_l2_regulization(embeddings)
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
