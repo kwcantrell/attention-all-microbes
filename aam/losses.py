@@ -152,6 +152,8 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
 
     hard_loss = tf.reduce_mean(triplet_loss[hard_mask])
 
+    hard_loss = tf.where(tf.reduce_sum(tf.cast(hard_mask, dtype=tf.float32)) > 0.0, hard_loss, 0.0)
+
     return hard_loss + 0.1 * global_embedding_l2_regulization(embeddings)
 
 
