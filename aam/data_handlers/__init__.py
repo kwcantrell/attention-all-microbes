@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .asv_generator import ASVGenerator
 from .combined_generator import CombinedGenerator
 from .generator_dataset import GeneratorDataset
 from .gotu_generator import GOTUGenerator
@@ -9,6 +10,7 @@ from .taxonomy_generator import TaxonomyGenerator
 from .unifrac_generator import UniFracGenerator
 
 __all__ = [
+    "ASVGenerator",
     "CombinedGenerator",
     "SequenceDataset",
     "TaxonomyGenerator",

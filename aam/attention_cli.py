@@ -53,65 +53,45 @@ def validate_metadata(table, metadata, missing_samples_flag):
 
 @cli.command()
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-@click.option(
-    "--m-metadata-file",
-    required=True,
-    help="Metadata description",
-    type=click.Path(exists=True),
-)
-@click.option(
-    "--m-metadata-column",
-    required=True,
-    type=str,
-    help="Numeric metadata column to use as prediction target.",
-)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=MISSING_SAMP_DESC,
-)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
-@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
-@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-attention-layers", default=8, type=int)
+@click.option("--p-intermediate-size", default=512, type=int)
+@click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
-@click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
 @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True)
-@click.option("--p-add-token", default=False, required=False, type=bool)
-@click.option("--p-is-categorical", default=False, required=False, type=bool)
-@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-normalize-outputs", default=True, type=bool)
+@click.option("--p-use-residual-connections", default=True, type=bool)
 def fit_asv_encoder(
     i_table: str,
-    m_metadata_file: str,
-    m_metadata_column: str,
-    p_missing_samples: bool,
     p_batch_size: int,
     p_epochs: int,
     p_dropout: float,
     p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
     p_intermediate_activation: str,
-    p_asv_limit: int,
-    p_gen_new_table: bool,
     p_lr: float,
-    p_warmup_steps: int,
     p_decay_steps: int,
     p_max_bp: int,
     output_dir: str,
-    p_add_token: bool,
-    p_is_categorical: bool,
-    p_rarefy_depth: int,
     p_weight_decay: float,
+    p_normalize_outputs: bool,
+    p_use_residual_connections: bool,
 ):
+    import tensorflow_addons as tfa
     from biom import load_table
 
-    from aam.data_handlers import GeneratorDataset
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    from aam.callbacks import LAMBLRScheduler
+    from aam.data_handlers import ASVGenerator
     from aam.models.nucleotide_encoder import NucleotideEncoder
     from aam.models.utils import cos_decay_with_warmup
 
@@ -127,25 +107,37 @@ def fit_asv_encoder(
         max_bp=p_max_bp,
         dropout_rate=p_dropout,
         intermediate_activation=p_intermediate_activation,
-        add_token=p_add_token,
+        attention_heads=p_attention_heads,
+        attention_layers=p_attention_layers,
+        intermediate_size=p_intermediate_size,
+        normalize_outputs=p_normalize_outputs,
+        use_residual_connections=p_use_residual_connections,
     )
 
-    optimizer = tf.keras.optimizers.AdamW(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
+
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
         weight_decay=p_weight_decay,
-    )
-    optimizer.exclude_from_weight_decay(
-        var_names=[
+        exclude_from_weight_decay=[
             "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
-            "embeddings",
-        ]
+            # "embeddings",
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            # "embeddings",
+        ],
     )
-    token_shape = tf.TensorShape([None, None, 150])
-    count_shape = tf.TensorShape([None, None, 1])
-    model.build([token_shape, count_shape])
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+
+    token_shape = tf.TensorShape([None, 150])
+    model.build(token_shape)
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
@@ -153,48 +145,35 @@ def fit_asv_encoder(
     model.summary()
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
-    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    ids = table.ids(axis="observation")
     indices = np.arange(len(ids), dtype=np.int32)
 
     np.random.shuffle(indices)
-    train_size = int(len(ids) * 0.8)
+    train_size = int(len(ids) * 0.95)
 
     train_indices = indices[:train_size]
     train_ids = ids[train_indices]
-    train_table = table.filter(train_ids, inplace=False)
+    train_table = table.filter(train_ids, axis="observation", inplace=False)
 
     val_indices = indices[train_size:]
     val_ids = ids[val_indices]
-    val_table = table.filter(val_ids, inplace=False)
+    val_table = table.filter(val_ids, axis="observation", inplace=False)
 
     common_kwargs = {
-        "metadata_column": m_metadata_column,
-        "max_token_per_sample": p_asv_limit,
-        "rarefy_depth": p_rarefy_depth,
         "batch_size": p_batch_size,
-        "is_16S": True,
-        "is_categorical": p_is_categorical,
         "max_bp": p_max_bp,
         "epochs": p_epochs,
-        "metadata": df,
     }
-    train_gen = GeneratorDataset(
+    train_gen = ASVGenerator(
         table=train_table,
         shuffle=True,
-        shift=0.0,
-        scale=1.0,
-        gen_new_tables=p_gen_new_table,
         **common_kwargs,
     )
     train_data = train_gen.get_data()
 
-    val_gen = GeneratorDataset(
+    val_gen = ASVGenerator(
         table=val_table,
         shuffle=False,
-        shift=0.0,
-        scale=1.0,
-        gen_new_tables=False,
         **common_kwargs,
     )
     val_data = val_gen.get_data()
@@ -212,7 +191,7 @@ def fit_asv_encoder(
     model.fit(
         train_data["dataset"],
         validation_data=val_data["dataset"],
-        callbacks=[*core_callbacks],
+        callbacks=[*core_callbacks, lr_scheduler],
         epochs=p_epochs,
         steps_per_epoch=train_data["steps_pre_epoch"],
         validation_steps=val_data["steps_pre_epoch"],
@@ -623,6 +602,11 @@ def fit_denoised_unifrac_regressor(
             use_residual_connections=p_use_residual_connections,
             use_residual_pool=p_use_residual_pool,
         )
+    config = model.get_config()
+    new_model = UnifracDenoiser.from_config(config)
+    new_model.unifrac_encoder.base_encoder.set_weights(model.unifrac_encoder.base_encoder.get_weights())
+    model = new_model
+    model.unifrac_encoder.train_nuc_encoder = p_train_nuc_encoder
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
 

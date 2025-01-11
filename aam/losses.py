@@ -132,47 +132,6 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
 
     return tf.reduce_mean(triplet_loss * valid_mask) + global_ortogonal_regulization(embeddings, non_matching_mask)
 
-    # distances = _pairwise_cosine_distances(embeddings_left, embeddings_right)
-    # pair_dist_l = _pairwise_cosine_distances(embeddings_left)
-    # pair_dist_r = _pairwise_cosine_distances(embeddings_right)
-
-    # mask_p = tf.linalg.band_part(tf.ones_like(distances), 0, 0)
-    # dist_p = tf.reduce_sum(distances * mask_p, axis=-1, keepdims=True)
-
-    # dist_n = distances * (1 - mask_p)
-    # pair_dist_ln = pair_dist_l * (1 - mask_p)
-    # left_neg_dist = tf.concat([dist_n, pair_dist_ln], axis=-1)
-    # semi_mask = tf.cast((dist_p + self.margin) - left_neg_dist > 0, dtype=tf.float32)
-    # trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * semi_mask
-    # left_neg_dist = left_neg_dist
-
-    # trip_loss_l = (dist_p - left_neg_dist) + self.margin
-    # trip_loss_l = tf.reduce_sum(trip_loss_l * trip_mask, axis=-1)
-    # trip_loss_l = tf.math.divide_no_nan(trip_loss_l, tf.reduce_sum(trip_mask, axis=-1))
-
-    # dist_n = tf.transpose(dist_n, perm=[1, 0])
-    # pair_dist_rn = pair_dist_r * (1 - mask_p)
-    # right_neg_dist = tf.concat([dist_n, pair_dist_rn], axis=-1)
-    # semi_mask = tf.cast((dist_p + self.margin) - right_neg_dist > 0, dtype=tf.float32)
-    # trip_mask = tf.concat([(1 - mask_p), (1 - mask_p)], axis=-1) * semi_mask
-    # right_neg_dist = right_neg_dist
-
-    # trip_loss_r = (dist_p - right_neg_dist) + self.margin
-    # trip_loss_r = tf.reduce_sum(trip_loss_r * trip_mask, axis=-1)
-    # trip_loss_r = tf.math.divide_no_nan(trip_loss_r, tf.reduce_sum(trip_mask, axis=-1))
-
-    # trip_loss = tf.concat([trip_loss_l, trip_loss_r], axis=0)
-
-    # # GOR
-    # d = tf.cast(tf.shape(embeddings_left)[-1], dtype=tf.float32)
-    # non_matching_pairs = tf.reshape(tf.concat([left_neg_dist, right_neg_dist], axis=0), shape=[-1])
-    # mask = non_matching_pairs > 0
-    # non_matching_pairs = non_matching_pairs[mask]
-    # M1 = tf.reduce_mean(non_matching_pairs)
-    # M2 = tf.reduce_mean(tf.square(non_matching_pairs))
-    # gor_loss = M1 * M1 + tf.maximum(0.0, M2 - 1.0 / d)
-    # return tf.reduce_mean(triplet_loss)
-
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
 class ImbalancedMSE(tf.keras.losses.Loss):

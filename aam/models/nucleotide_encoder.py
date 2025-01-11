@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import tensorflow as tf
 
-# from aam.models.attention_pooling import AttentionPooling
-from aam.layers import (
-    ASVEncoder,
-)
+from aam.layers import ASVEncoder
 
 
-@tf.keras.saving.register_keras_serializable(package="SequenceEncoder")
+@tf.keras.saving.register_keras_serializable(package="NucleotideEncoder")
 class NucleotideEncoder(tf.keras.Model):
     def __init__(
         self,
@@ -16,7 +13,11 @@ class NucleotideEncoder(tf.keras.Model):
         max_bp: int,
         dropout_rate: float,
         intermediate_activation: str = "gelu",
-        add_token: bool = True,
+        attention_heads: int = 4,
+        attention_layers: int = 4,
+        intermediate_size: int = 256,
+        normalize_outputs: bool = True,
+        use_residual_connections: bool = False,
         **kwargs,
     ):
         super(NucleotideEncoder, self).__init__(**kwargs)
@@ -25,78 +26,70 @@ class NucleotideEncoder(tf.keras.Model):
         self.max_bp = max_bp
         self.dropout_rate = dropout_rate
         self.intermediate_activation = intermediate_activation
-        self.add_token = add_token
+        self.attention_heads = attention_heads
+        self.attention_layers = attention_layers
+        self.intermediate_size = intermediate_size
+        self.normalize_outputs = normalize_outputs
+        self.use_residual_connections = use_residual_connections
+
+        self.loss_tracker = tf.keras.metrics.Mean()
+        self.nuc_tracker = tf.keras.metrics.Mean()
+
+    def build(self, input_shape):
+        if self.built:
+            return
 
         self.asv_encoder = ASVEncoder(
             self.max_bp,
-            4,
-            4,
+            self.attention_heads,
+            self.attention_layers,
             self.dropout_rate,
-            256,
-            add_token=self.add_token,
+            self.intermediate_size,
+            intermediate_activation=self.intermediate_activation,
             embedding_dim=self.embedding_dim,
+            normalize_outputs=self.normalize_outputs,
+            use_residual_connections=self.use_residual_connections,
             name="asv_encoder",
         )
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        self.loss_tracker = tf.keras.metrics.Mean()
+        super(NucleotideEncoder, self).build(input_shape)
 
-    def _compute_loss(
-        self,
-        model_inputs: tuple[tf.Tensor, tf.Tensor],
-        outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        nuc_tokens, _ = model_inputs
-        _, nuc_mask, nuc_pred = outputs
-
-        nuc_tokens = nuc_tokens + self.asv_encoder.nucleotide_position
-        nuc_tokens = tf.reshape(nuc_tokens, shape=[-1])
-        nuc_mask = tf.reshape(nuc_mask, shape=[-1])
-        nuc_tokens = nuc_tokens[nuc_mask]
-        nuc_tokens = tf.one_hot(nuc_tokens, tf.shape(nuc_pred)[-1])
-        nuc_loss = self.nuc_loss(nuc_tokens, nuc_pred)
-        nuc_loss = tf.reduce_mean(nuc_loss)
-        loss = nuc_loss
-        return loss
-
-    def train_step(self, data):
-        inputs, _ = data
+    def train_step(self, inputs):
         with tf.GradientTape() as tape:
-            outputs = self(inputs, training=True)
-            loss = self._compute_loss(inputs, outputs)
+            _, nuc_loss = self(inputs, training=True)
+            nuc_loss = tf.reduce_mean(nuc_loss)
+            loss = nuc_loss
 
-        gradients = tape.gradient(
-            loss,
-            self.trainable_variables,
-        )
+            if self.compute_dtype == "float16":
+                loss = self.optimizer.get_scaled_loss(loss)
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        if self.compute_dtype == "float16":
+            gradients = self.optimizer.get_unscaled_gradients(gradients)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.loss_tracker.update_state(loss)
+        self.nuc_tracker.update_state(nuc_loss)
         return {
             "loss": self.loss_tracker.result(),
+            "nuc_loss": self.nuc_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def test_step(self, data):
-        inputs, _ = data
-        outputs = self(inputs, training=False)
-        loss = self._compute_loss(inputs, outputs)
-        self.loss_tracker.update_state(loss)
+    def test_step(self, inputs):
+        _, nuc_loss = self(inputs, training=False)
+        nuc_loss = tf.reduce_mean(nuc_loss)
+        self.loss_tracker.update_state(nuc_loss)
+        self.nuc_tracker.update_state(nuc_loss)
         return {
             "loss": self.loss_tracker.result(),
+            "nuc_loss": self.nuc_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        # keras cast all input to float so we need to manually cast to expected type
-        if isinstance(inputs, (list, tuple)):
-            tokens, _ = inputs
-        else:
-            tokens = inputs
-        tokens = tf.cast(tokens, dtype=tf.int32)
-
-        asv_embeddings, nuc_mask, nuc_pred = self.asv_encoder(tokens, training=training)
-
-        return asv_embeddings, nuc_mask, nuc_pred
+        tokens = inputs
+        embeddings, loss = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
+        return embeddings, loss
 
     def get_config(self):
         config = super(NucleotideEncoder, self).get_config()
@@ -106,7 +99,11 @@ class NucleotideEncoder(tf.keras.Model):
                 "max_bp": self.max_bp,
                 "dropout_rate": self.dropout_rate,
                 "intermediate_activation": self.intermediate_activation,
-                "add_token": self.add_token,
+                "attention_heads": self.attention_heads,
+                "attention_layers": self.attention_layers,
+                "intermediate_size": self.intermediate_size,
+                "normalize_outputs": self.normalize_outputs,
+                "use_residual_connections": self.use_residual_connections,
             }
         )
         return config
