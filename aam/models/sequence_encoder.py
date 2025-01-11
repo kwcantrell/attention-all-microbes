@@ -151,7 +151,7 @@ class SequenceEncoder(tf.keras.Model):
     def _unifrac_embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
         encoder_pred = self.encoder_ff(encoder_pred)
-        return tf.math.l2_normalize(encoder_pred, axis=1)
+        return encoder_pred
 
     def _compute_unifrac_loss(
         self,

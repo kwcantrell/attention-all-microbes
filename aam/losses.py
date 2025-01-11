@@ -81,6 +81,14 @@ def _pairwise_cosine_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, s
     return 1 - cos_sim
 
 
+def global_embedding_l2_regulization(sample_embeddings):
+    # do not need to take sqrt as ||x|| == ||x||^2 when x is unit length
+    norm = tf.reduce_sum(sample_embeddings * sample_embeddings, axis=-1)
+
+    # drive embeddings towards unit length
+    return tf.reduce_mean(tf.square(1 - norm))
+
+
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
     d = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
     sample_inner_prod = tf.matmul(sample_embeddings, sample_embeddings, transpose_b=True)
@@ -110,7 +118,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         # differences = tf.reshape(differences, shape=[-1])[mask]
 
         # get hardest example
-        return tf.reduce_max(differences)
+        return tf.reduce_max(differences) + 0.1 * global_embedding_l2_regulization(y_pred)
 
 
 def triplet_loss(embeddings, groups=2, margin=0.2):
@@ -138,7 +146,11 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
 
     semi_hard_loss = tf.reduce_mean(triplet_loss[tf.cast(semi_hard_mask, dtype=tf.bool)])
 
-    return semi_hard_loss + 0.1 * global_orthogonal_regulization(embeddings, non_matching_mask)
+    return (
+        semi_hard_loss
+        + 0.1 * global_orthogonal_regulization(embeddings, non_matching_mask)
+        + 0.1 * global_embedding_l2_regulization(embeddings)
+    )
 
 
 @tf.keras.saving.register_keras_serializable(package="ImbalancedCategoricalCrossEntrop")
