@@ -139,7 +139,7 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
     non_matching_mask = tf.cast((1 - matching_mask) * off_diag, dtype=tf.bool)
     matching_mask = tf.cast(matching_mask * off_diag, dtype=tf.bool)
 
-    distances = _pairwise_cosine_distances(embeddings)
+    distances = _pairwise_distances(embeddings, squared=False)
 
     matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
     non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
