@@ -68,6 +68,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-normalize-outputs", default=False, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
 @click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-use-cached", default=False)
 def fit_asv_encoder(
     i_table: str,
     p_batch_size: int,
@@ -86,6 +87,7 @@ def fit_asv_encoder(
     p_normalize_outputs: bool,
     p_use_residual_connections: bool,
     i_model: str,
+    p_use_cached: bool,
 ):
     import tensorflow_addons as tfa
     from biom import load_table
@@ -145,34 +147,57 @@ def fit_asv_encoder(
     )
     model.summary()
 
-    asvs = []
-    with open(i_table) as f:
-        lines = f.readlines()
-        for asv in lines:
-            asvs.append(asv.strip())
+    if not p_use_cached:
+        asvs = []
+        with open(i_table) as f:
+            lines = f.readlines()
+            for asv in lines:
+                asvs.append(asv.strip())
 
-    train_size = int(len(asvs) * 0.9)
-    common_kwargs = {
-        "batch_size": p_batch_size,
-        "max_bp": p_max_bp,
-        "epochs": p_epochs,
-    }
-    train_gen = ASVGenerator(
-        asvs=asvs[:train_size],
-        shuffle=True,
-        cache="train_asv.npy",
-        **common_kwargs,
-    )
-    train_data = train_gen.get_data()
+        train_size = int(len(asvs) * 0.9)
+        common_kwargs = {
+            "batch_size": p_batch_size,
+            "max_bp": p_max_bp,
+            "epochs": p_epochs,
+        }
+        train_gen = ASVGenerator(
+            asvs=asvs[:train_size],
+            shuffle=True,
+            cache="train_asv.npy",
+            **common_kwargs,
+        )
+        train_data = train_gen.get_data()
 
-    val_gen = ASVGenerator(
-        asvs=asvs[train_size:],
-        shuffle=False,
-        cache="val_asv.npy",
-        **common_kwargs,
-    )
-    val_data = val_gen.get_data()
-    del asvs
+        val_gen = ASVGenerator(
+            asvs=asvs[train_size:],
+            shuffle=False,
+            cache="val_asv.npy",
+            **common_kwargs,
+        )
+        val_data = val_gen.get_data()
+        del asvs
+    else:
+        train_data = np.load("train_asv.npy")
+        val_data = np.load("train_asv.npy")
+        data = np.concatenate([train_data, val_data], axis=0)
+        common_kwargs = {
+            "batch_size": p_batch_size,
+            "max_bp": p_max_bp,
+            "epochs": p_epochs,
+        }
+        train_gen = ASVGenerator(
+            shuffle=True,
+            cache=data,
+            **common_kwargs,
+        )
+        train_data = train_gen.get_data()
+
+        val_gen = ASVGenerator(
+            shuffle=False,
+            cache=data[: int(p_batch_size * 10)],
+            **common_kwargs,
+        )
+        val_data = val_gen.get_data()
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)

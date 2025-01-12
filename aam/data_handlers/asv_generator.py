@@ -83,7 +83,7 @@ class ASVGenerator:
             self.size = len(self.sample_indices)
             self.steps_per_epoch = max(self.size // self.batch_size, 1)
         else:
-            self.obs_encodings = np.load(cache)
+            self.obs_encodings = cache
 
             self.shuffle = shuffle
             self.epochs = epochs
@@ -93,8 +93,8 @@ class ASVGenerator:
             self.max_bp = max_bp
             self.seed = seed
 
-            self.sample_indices = np.arange(len(self.obs_encodings))
-            self.size = len(self.sample_indices)
+            # self.sample_indices = np.arange(len(self.obs_encodings))
+            self.size = len(self.obs_encodings)
             self.steps_per_epoch = max(self.size // self.batch_size, 1)
         print("Number of sequences:", self.size)
 
@@ -124,7 +124,7 @@ class ASVGenerator:
     def _create_epoch_generator(self):
         def generator():
             processed = 0
-            sample_indices = self.sample_indices
+            sample_indices = np.arange(len(self.obs_encodings))
             for epoch in range(self.epochs):
                 print(f"Finished epcoh: {epoch} processed {processed}")
                 processed = 0
