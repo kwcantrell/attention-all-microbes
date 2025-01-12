@@ -178,7 +178,7 @@ def fit_asv_encoder(
         del asvs
     else:
         train_data = np.load("train_asv.npy")
-        val_data = np.load("train_asv.npy")
+        val_data = np.load("val_asv.npy")
         data = np.concatenate([train_data, val_data], axis=0)
         common_kwargs = {
             "batch_size": p_batch_size,

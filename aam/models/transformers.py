@@ -1,6 +1,8 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
+from aam.models.rezero_transformer_with_linear_biases import ReZeroTransformer
+
 
 class TransformerEncoder(tf.keras.layers.Layer):
     def __init__(
