@@ -198,7 +198,7 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         embeddings, denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
 
-        return unifrac_embeddings, y
+        return denoise_unifrac_embeddings, y
 
     def train_step(
         self,

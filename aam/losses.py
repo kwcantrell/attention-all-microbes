@@ -117,15 +117,11 @@ class PairwiseLoss(tf.keras.losses.Loss):
         elif self.loss_type == "msle":
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
 
-        # extract just the upper triangle of distance matrix
-        # mask = tf.linalg.band_part(y_true, 0, -1) > 0
-        # mask = tf.reshape(mask, shape=[-1])
-        # differences = tf.reshape(differences, shape=[-1])[mask]
-
-        # get hard example
-        mean_dist = tf.stop_gradient(_mean_distance(differences))
-        mean_mask = differences > mean_dist
-        return tf.reduce_mean(differences[mean_mask]) + 0.1 * global_embedding_l2_regulization(y_pred)
+        num_samples = tf.shape(y_pred)[0]
+        matching_mask = tf.linalg.diag(tf.ones(shape=[num_samples])) == 0
+        differences = tf.reshape(differences[matching_mask], shape=[num_samples, num_samples - 1])
+        differences = tf.reduce_mean(differences, axis=-1)
+        return tf.reduce_mean(differences) + 0.1 * global_embedding_l2_regulization(y_pred)
 
 
 def triplet_loss(embeddings, groups=2, margin=0.2):
