@@ -55,8 +55,8 @@ class NucleotideEncoder(tf.keras.Model):
 
     def train_step(self, inputs):
         with tf.GradientTape() as tape:
-            _, nuc_loss = self(inputs, training=True)
-            nuc_loss = tf.reduce_mean(nuc_loss)
+            embeddings = self(inputs, training=True)
+            nuc_loss = tf.reduce_sum(self.losses)
             loss = nuc_loss
 
             if self.compute_dtype == "float16":
@@ -76,8 +76,8 @@ class NucleotideEncoder(tf.keras.Model):
         }
 
     def test_step(self, inputs):
-        _, nuc_loss = self(inputs, training=False)
-        nuc_loss = tf.reduce_mean(nuc_loss)
+        embeddings = self(inputs, training=False)
+        nuc_loss = tf.reduce_sum(self.losses)
         self.loss_tracker.update_state(nuc_loss)
         self.nuc_tracker.update_state(nuc_loss)
         return {
@@ -88,8 +88,8 @@ class NucleotideEncoder(tf.keras.Model):
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         tokens = inputs
-        embeddings, loss = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
-        return embeddings, loss
+        embeddings = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
+        return embeddings
 
     def get_config(self):
         config = super(NucleotideEncoder, self).get_config()

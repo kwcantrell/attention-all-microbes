@@ -18,7 +18,6 @@ from aam.callbacks import (
     _mean_absolute_error,
 )
 from aam.cv_utils import CVModel, EnsembleModel
-from aam.losses import ImbalancedCategoricalCrossEntropy
 
 
 @click.group()
@@ -66,7 +65,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
-@click.option("--p-normalize-outputs", default=True, type=bool)
+@click.option("--p-normalize-outputs", default=False, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
 @click.option("--i-model", default=None, required=False, type=str)
 def fit_asv_encoder(
@@ -128,14 +127,12 @@ def fit_asv_encoder(
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
-            # "embeddings",
         ],
         exclude_from_layer_adaptation=[
             "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
-            # "embeddings",
         ],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
@@ -148,39 +145,34 @@ def fit_asv_encoder(
     )
     model.summary()
 
-    table = load_table(i_table)
-    ids = table.ids(axis="observation")
-    indices = np.arange(len(ids), dtype=np.int32)
+    asvs = []
+    with open(i_table) as f:
+        lines = f.readlines()
+        for asv in lines:
+            asvs.append(asv.strip())
 
-    np.random.shuffle(indices)
-    train_size = int(len(ids) * 0.95)
-
-    train_indices = indices[:train_size]
-    train_ids = ids[train_indices]
-    train_table = table.filter(train_ids, axis="observation", inplace=False)
-
-    val_indices = indices[train_size:]
-    val_ids = ids[val_indices]
-    val_table = table.filter(val_ids, axis="observation", inplace=False)
-
+    train_size = int(len(asvs) * 0.9)
     common_kwargs = {
         "batch_size": p_batch_size,
         "max_bp": p_max_bp,
         "epochs": p_epochs,
     }
     train_gen = ASVGenerator(
-        table=train_table,
+        asvs=asvs[:train_size],
         shuffle=True,
+        cache="train_asv.npy",
         **common_kwargs,
     )
     train_data = train_gen.get_data()
 
     val_gen = ASVGenerator(
-        table=val_table,
+        asvs=asvs[train_size:],
         shuffle=False,
+        cache="val_asv.npy",
         **common_kwargs,
     )
     val_data = val_gen.get_data()
+    del asvs
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)

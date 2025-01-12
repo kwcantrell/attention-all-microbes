@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_models as tfm
 
+from aam.losses import global_embedding_l2_regulization
 from aam.models.transformers import TransformerEncoder
 from aam.utils import create_random_mask, float_mask
 
@@ -43,6 +44,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         embedding_dim=128,
         normalize_outputs=True,
         use_residual_connections=False,
+        regularize_embeddings=False,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -58,6 +60,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.num_tokens = self.base_tokens * self.max_bp + 2
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.regularize_embeddings = regularize_embeddings
 
         self.asv_token = self.num_tokens - 1
         self.nucleotide_position = tf.range(0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32)
@@ -89,7 +92,10 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # nuc postions start at 1 as 0 is used for mask token
         # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
-        self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True)
+        if self.regularize_embeddings:
+            self.nuc_ff = tf.keras.layers.Dense(self.embedding_dim, use_bias=True)
+
+        self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32)
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         self._softmax.build(input_shape)
         super().build(input_shape)
@@ -149,24 +155,24 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         if self.trainable:
             # extract the masked nucleotides
-            unmasked_tokens = inputs + self.nucleotide_position
-            masked_nuc = tf.reshape(random_mask, shape=[-1])
-            nuc_embeddings = tf.reshape(output, shape=[-1, self.embedding_dim])
-            unmasked_tokens = tf.reshape(unmasked_tokens, shape=[-1])[masked_nuc]
-            masked_nuc = nuc_embeddings[masked_nuc]
-            nuc_pred = self._softmax(self.nuc_pred(masked_nuc))
-            loss = self._compute_nuc_loss(unmasked_tokens, nuc_pred)
-        else:
-            loss = None
-        print("ASVEncoder exit...")
-        return output, loss
+            random_mask = tf.reshape(random_mask, shape=[-1])
+            asv_tokens = tf.reshape(inputs + self.nucleotide_position, shape=[-1])[random_mask]
 
-    def _compute_nuc_loss(self, tokens, pred):
-        tokens = tf.one_hot(tokens, tf.shape(pred)[-1])
-        nuc_loss = self.nuc_loss(tokens, pred)
-        nuc_loss = tf.reduce_mean(nuc_loss)
-        nuc_loss = tf.reduce_mean(nuc_loss)
-        return nuc_loss
+            masked_embeddings = tf.cast(tf.reshape(output, shape=[-1, self.embedding_dim]), dtype=tf.float32)
+            if self.regularize_embeddings:
+                masked_embeddings = self.nuc_ff(masked_embeddings)
+                l2_loss = global_embedding_l2_regulization(masked_embeddings)
+            nuc_pred = self._softmax(self.nuc_pred(masked_embeddings[random_mask]))
+            asv_tokens = tf.one_hot(asv_tokens, self.base_tokens * self.max_bp)
+            loss = self.nuc_loss(asv_tokens, nuc_pred)
+
+            loss = tf.reduce_mean(loss)
+            if self.regularize_embeddings:
+                loss += tf.reduce_mean(l2_loss)
+            self.add_loss(loss)
+
+        print("ASVEncoder exit...")
+        return output
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()
@@ -182,6 +188,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "embedding_dim": self.embedding_dim,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
+                "regularize_embeddings": self.regularize_embeddings,
             }
         )
         return config

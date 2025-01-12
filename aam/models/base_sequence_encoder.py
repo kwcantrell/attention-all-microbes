@@ -105,9 +105,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         return embeddings
 
     def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
-        embeddings, loss = self.asv_encoder(inputs, include_bert_random_mask=include_bert_random_mask, training=training)
-        if self.asv_encoder.trainable:
-            self.add_loss(loss)
+        embeddings = self.asv_encoder(inputs, include_bert_random_mask=include_bert_random_mask, training=training)
         asv_embeddings = self._split_asvs(embeddings, training=training)
         print("BaseSequenceEncoder exit...")
         return asv_embeddings

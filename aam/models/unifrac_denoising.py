@@ -163,7 +163,7 @@ class UnifracDenoiser(tf.keras.Model):
         batch_counts, nuc_tokens, indicies, counts = model_inputs
         _, denoised_embeddings, unifrac_embeddings = outputs
 
-        nuc_loss = tf.reduce_sum(self.unifrac_encoder.base_encoder.losses)
+        nuc_loss = tf.reduce_sum(self.losses)
 
         shape = tf.shape(y_true)
         batch_dim = shape[0]
