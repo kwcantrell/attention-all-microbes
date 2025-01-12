@@ -97,7 +97,7 @@ def fit_asv_encoder(
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import ASVGenerator
     from aam.data_handlers.asv_generator import distance_to_parent_node
-    from aam.models.nucleotide_encoder import NucleotideEncoder
+    from aam.models import NucleotideEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
@@ -107,21 +107,13 @@ def fit_asv_encoder(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
     if i_model is not None:
-        asv_encoder = tf.keras.models.load_model(i_model, compile=False)
-        model: tf.keras.Model = NucleotideEncoder(
-            embedding_dim=p_embedding_dim,
-            max_bp=p_max_bp,
-            dropout_rate=p_dropout,
-            intermediate_activation=p_intermediate_activation,
-            attention_heads=p_attention_heads,
-            attention_layers=p_attention_layers,
-            intermediate_size=p_intermediate_size,
-            normalize_outputs=p_normalize_outputs,
-            use_residual_connections=p_use_residual_connections,
-            asv_encoder=asv_encoder.asv_encoder,
-        )
+        old_model = tf.keras.models.load_model(i_model, compile=False)
+        config = old_model.get_config()
+        config["asv_encoder"] = old_model.asv_encoder
+        config.pop("build_input_shape")
+        model: tf.keras.Model = NucleotideEncoderV2(**config)
     else:
-        model: tf.keras.Model = NucleotideEncoder(
+        model: tf.keras.Model = NucleotideEncoderV2(
             embedding_dim=p_embedding_dim,
             max_bp=p_max_bp,
             dropout_rate=p_dropout,
@@ -163,34 +155,33 @@ def fit_asv_encoder(
 
     cache = "temp"
     tree = parse_newick(open(i_tree).read())
-    # asvs = []
-    # nodes = []
-    # distance_to_root = []
-    # for i in range(tree.B.size):
-    #     name = tree.name(i)
-    #     if name is not None:
-    #         if len(name) == 150:
-    #             nodes.append(i)
-    #             asvs.append(name)
-    #             distance_to_root.append(distance_to_parent_node(tree, i, tree.root()))
+    asvs = []
+    nodes = []
+    distance_to_root = []
+    for i in range(tree.B.size):
+        name = tree.name(i)
+        if name is not None:
+            if len(name) == 150:
+                nodes.append(i)
+                asvs.append(name)
+                distance_to_root.append(distance_to_parent_node(tree, i, tree.root()))
 
-    # distance_to_root = np.array(distance_to_root)
-    # max_tip_root_dist = np.max(distance_to_root)
-    # print(f"found {len(asvs)} in tree and {len(distance_to_root)}, {distance_to_root[:10]}")
+    distance_to_root = np.array(distance_to_root)
+    max_tip_root_dist = np.max(distance_to_root)
+    print(f"found {len(asvs)} in tree and {len(distance_to_root)}, {distance_to_root[:10]}")
 
-    # asvs = asvs[:2048]
-    # distance_to_root = distance_to_root[:2048]
-    # obs_encodings = np.array([[ord(char) for char in string] for string in asvs])
-    # obs_encodings = ASVGenerator.lookup_table(obs_encodings)
-    # nodes = np.array(nodes)
-    # np.save(f"{cache}-encodings.npy", obs_encodings)
-    # np.save(f"{cache}-max-tip-root-dist.npy", max_tip_root_dist)
-    # np.save(f"{cache}-nodes.npy", nodes)
-    obs_encodings = np.load(f"{cache}-encodings.npy")
-    max_tip_root_dist = np.load(f"{cache}-max-tip-root-dist.npy")
-    nodes = np.load(f"{cache}-nodes.npy")
+    print("generating")
+    obs_encodings = np.array([[ord(char) for char in string] for string in asvs])
+    obs_encodings = ASVGenerator.lookup_table(obs_encodings)
+    nodes = np.array(nodes)
+    np.save(f"{cache}-encodings.npy", obs_encodings)
+    np.save(f"{cache}-max-tip-root-dist.npy", max_tip_root_dist)
+    np.save(f"{cache}-nodes.npy", nodes)
+    # obs_encodings = np.load(f"{cache}-encodings.npy")
+    # max_tip_root_dist = np.load(f"{cache}-max-tip-root-dist.npy")
+    # nodes = np.load(f"{cache}-nodes.npy")
     common_kwargs = {
-        "batch_size": 32,
+        "batch_size": 1024,
         "max_bp": p_max_bp,
         "epochs": p_epochs,
     }

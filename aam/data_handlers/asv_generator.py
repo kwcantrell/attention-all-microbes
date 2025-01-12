@@ -190,12 +190,14 @@ if __name__ == "__main__":
     #             asvs.append(name)
     #             distance_to_root.append(distance_to_parent_node(tree, i, tree.root()))
 
+    # nodes = np.array(nodes)
     # distance_to_root = np.array(distance_to_root)
     # max_tip_root_dist = np.max(distance_to_root)
     # print(f"found {len(asvs)} in tree and {len(distance_to_root)}, {distance_to_root[:10]}")
 
     # asvs = asvs[:2048]
     # distance_to_root = distance_to_root[:2048]
+    # nodes = nodes[:2048]
     # obs_encodings = np.array([[ord(char) for char in string] for string in asvs])
     # obs_encodings = ASVGenerator.lookup_table(obs_encodings)
 

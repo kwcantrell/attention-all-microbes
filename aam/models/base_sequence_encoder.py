@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import tensorflow as tf
 
-from aam.layers import (
-    ASVEncoder,
-)
+from aam.layers import ASVEncoder
 
 # from aam.models.attention_pooling import AttentionPooling
 from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
