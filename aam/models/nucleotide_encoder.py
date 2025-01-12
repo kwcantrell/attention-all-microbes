@@ -3,6 +3,8 @@ from __future__ import annotations
 import tensorflow as tf
 
 from aam.layers import ASVEncoder
+from aam.losses import PairwiseLoss, _pairwise_distances
+from aam.models import BaseSequenceEncoder
 
 
 @tf.keras.saving.register_keras_serializable(package="NucleotideEncoder")
@@ -18,6 +20,8 @@ class NucleotideEncoder(tf.keras.Model):
         intermediate_size: int = 256,
         normalize_outputs: bool = True,
         use_residual_connections: bool = False,
+        regularize_embeddings=False,
+        asv_encoder=None,
         **kwargs,
     ):
         super(NucleotideEncoder, self).__init__(**kwargs)
@@ -31,14 +35,35 @@ class NucleotideEncoder(tf.keras.Model):
         self.intermediate_size = intermediate_size
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.regularize_embeddings = regularize_embeddings
 
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
+
+        # self.asv_loss = PairwiseLoss()
+        # self.asv_tracker = tf.keras.metrics.Mean()
 
     def build(self, input_shape):
         if self.built:
             return
 
+        # self.asv_encoder = BaseSequenceEncoder(
+        #     embedding_dim=self.embedding_dim,
+        #     max_bp=self.max_bp,
+        #     token_limit=2048,  # unused
+        #     sample_attention_heads=self.attention_heads,
+        #     sample_attention_layers=self.attention_layers,
+        #     sample_intermediate_size=self.intermediate_size,
+        #     dropout_rate=self.dropout_rate,
+        #     nuc_attention_heads=self.attention_heads,
+        #     nuc_attention_layers=self.attention_layers,
+        #     nuc_intermediate_size=self.intermediate_size,
+        #     intermediate_activation=self.intermediate_activation,
+        #     is_16S=True,
+        #     nucleotide_encoder=None,
+        #     normalize_outputs=self.normalize_outputs,
+        #     use_residual_connections=self.use_residual_connections,
+        # )
         self.asv_encoder = ASVEncoder(
             self.max_bp,
             self.attention_heads,
@@ -51,13 +76,19 @@ class NucleotideEncoder(tf.keras.Model):
             use_residual_connections=self.use_residual_connections,
             name="asv_encoder",
         )
+        self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(NucleotideEncoder, self).build(input_shape)
 
-    def train_step(self, inputs):
+    def _compute_loss(self, y_true, embeddings):
+        return self.asv_loss(y_true, embeddings)
+
+    def train_step(self, data):
+        inputs, y_true = data
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
+            # asv_loss = self._compute_loss(y_true, embeddings)
             nuc_loss = tf.reduce_sum(self.losses)
-            loss = nuc_loss
+            loss = nuc_loss  # + asv_loss
 
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
@@ -69,27 +100,37 @@ class NucleotideEncoder(tf.keras.Model):
 
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)
+        # self.asv_tracker.update_state(asv_loss)
         return {
             "loss": self.loss_tracker.result(),
             "nuc_loss": self.nuc_tracker.result(),
+            # "asv_loss": self.asv_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def test_step(self, inputs):
+    def test_step(self, data):
+        inputs, y_true = data
         embeddings = self(inputs, training=False)
+        # asv_loss = self._compute_loss(y_true, embeddings)
         nuc_loss = tf.reduce_sum(self.losses)
+        loss = nuc_loss
         self.loss_tracker.update_state(nuc_loss)
         self.nuc_tracker.update_state(nuc_loss)
+
+        self.loss_tracker.update_state(loss)
+        self.nuc_tracker.update_state(nuc_loss)
+        # self.asv_tracker.update_state(asv_loss)
         return {
             "loss": self.loss_tracker.result(),
             "nuc_loss": self.nuc_tracker.result(),
+            # "asv_loss": self.asv_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         tokens = inputs
         embeddings = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
-        return embeddings
+        return self.output_activation(embeddings)
 
     def get_config(self):
         config = super(NucleotideEncoder, self).get_config()
@@ -105,6 +146,7 @@ class NucleotideEncoder(tf.keras.Model):
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "build_input_shape": self.get_build_config(),
+                "regularize_embeddings": self.regularize_embeddings,
             }
         )
         return config

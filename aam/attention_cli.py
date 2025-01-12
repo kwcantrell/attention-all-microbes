@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import load_table
+from bp import parse_newick, to_skbio_treenode
 from sklearn.model_selection import KFold, StratifiedKFold
 
 from aam.callbacks import (
@@ -51,7 +52,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 
 
 @cli.command()
-@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
@@ -70,7 +71,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--i-model", default=None, required=False, type=str)
 @click.option("--p-use-cached", default=False)
 def fit_asv_encoder(
-    i_table: str,
+    i_tree: str,
     p_batch_size: int,
     p_epochs: int,
     p_dropout: float,
@@ -95,6 +96,7 @@ def fit_asv_encoder(
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import ASVGenerator
+    from aam.data_handlers.asv_generator import distance_to_parent_node
     from aam.models.nucleotide_encoder import NucleotideEncoder
     from aam.models.utils import cos_decay_with_warmup
 
@@ -105,7 +107,19 @@ def fit_asv_encoder(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
     if i_model is not None:
-        model = tf.keras.models.load_model(i_model, compile=False)
+        asv_encoder = tf.keras.models.load_model(i_model, compile=False)
+        model: tf.keras.Model = NucleotideEncoder(
+            embedding_dim=p_embedding_dim,
+            max_bp=p_max_bp,
+            dropout_rate=p_dropout,
+            intermediate_activation=p_intermediate_activation,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            normalize_outputs=p_normalize_outputs,
+            use_residual_connections=p_use_residual_connections,
+            asv_encoder=asv_encoder.asv_encoder,
+        )
     else:
         model: tf.keras.Model = NucleotideEncoder(
             embedding_dim=p_embedding_dim,
@@ -147,57 +161,60 @@ def fit_asv_encoder(
     )
     model.summary()
 
-    if not p_use_cached:
-        asvs = []
-        with open(i_table) as f:
-            lines = f.readlines()
-            for asv in lines:
-                asvs.append(asv.strip())
+    cache = "temp"
+    tree = parse_newick(open(i_tree).read())
+    # asvs = []
+    # nodes = []
+    # distance_to_root = []
+    # for i in range(tree.B.size):
+    #     name = tree.name(i)
+    #     if name is not None:
+    #         if len(name) == 150:
+    #             nodes.append(i)
+    #             asvs.append(name)
+    #             distance_to_root.append(distance_to_parent_node(tree, i, tree.root()))
 
-        train_size = int(len(asvs) * 0.9)
-        common_kwargs = {
-            "batch_size": p_batch_size,
-            "max_bp": p_max_bp,
-            "epochs": p_epochs,
-        }
-        train_gen = ASVGenerator(
-            asvs=asvs[:train_size],
-            shuffle=True,
-            cache="train_asv.npy",
-            **common_kwargs,
-        )
-        train_data = train_gen.get_data()
+    # distance_to_root = np.array(distance_to_root)
+    # max_tip_root_dist = np.max(distance_to_root)
+    # print(f"found {len(asvs)} in tree and {len(distance_to_root)}, {distance_to_root[:10]}")
 
-        val_gen = ASVGenerator(
-            asvs=asvs[train_size:],
-            shuffle=False,
-            cache="val_asv.npy",
-            **common_kwargs,
-        )
-        val_data = val_gen.get_data()
-        del asvs
-    else:
-        train_data = np.load("train_asv.npy")
-        val_data = np.load("val_asv.npy")
-        data = np.concatenate([train_data, val_data], axis=0)
-        common_kwargs = {
-            "batch_size": p_batch_size,
-            "max_bp": p_max_bp,
-            "epochs": p_epochs,
-        }
-        train_gen = ASVGenerator(
-            shuffle=True,
-            cache=data,
-            **common_kwargs,
-        )
-        train_data = train_gen.get_data()
+    # asvs = asvs[:2048]
+    # distance_to_root = distance_to_root[:2048]
+    # obs_encodings = np.array([[ord(char) for char in string] for string in asvs])
+    # obs_encodings = ASVGenerator.lookup_table(obs_encodings)
+    # nodes = np.array(nodes)
+    # np.save(f"{cache}-encodings.npy", obs_encodings)
+    # np.save(f"{cache}-max-tip-root-dist.npy", max_tip_root_dist)
+    # np.save(f"{cache}-nodes.npy", nodes)
+    obs_encodings = np.load(f"{cache}-encodings.npy")
+    max_tip_root_dist = np.load(f"{cache}-max-tip-root-dist.npy")
+    nodes = np.load(f"{cache}-nodes.npy")
+    common_kwargs = {
+        "batch_size": 32,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+    }
+    train_gen = ASVGenerator(
+        tree=tree,
+        obs_encodings=obs_encodings[:2000],
+        nodes=nodes[:2000],
+        max_tip_root_dist=max_tip_root_dist,
+        shuffle=False,
+        cache="train_asv.npy",
+        **common_kwargs,
+    )
+    train_data = train_gen.get_data()
 
-        val_gen = ASVGenerator(
-            shuffle=False,
-            cache=data[: int(p_batch_size * 10)],
-            **common_kwargs,
-        )
-        val_data = val_gen.get_data()
+    val_gen = ASVGenerator(
+        tree=tree,
+        obs_encodings=obs_encodings[2000:2028],
+        nodes=nodes[2000:2028],
+        max_tip_root_dist=max_tip_root_dist,
+        shuffle=False,
+        cache="val_asv.npy",
+        **common_kwargs,
+    )
+    val_data = val_gen.get_data()
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)

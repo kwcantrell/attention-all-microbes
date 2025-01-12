@@ -35,6 +35,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         use_residual_connections=False,
         use_residual_pool=None,
         asv_encoder=None,
+        regularize_embeddings=False,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -56,6 +57,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
         self.asv_encoder = asv_encoder
+        self.regularize_embeddings = regularize_embeddings
         if use_residual_pool is None:
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
@@ -74,6 +76,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 embedding_dim=self.embedding_dim,
                 normalize_outputs=self.normalize_outputs,
                 use_residual_connections=self.use_residual_connections,
+                regularize_embeddings=self.regularize_embeddings,
                 name="asv_encoder",
             )
         elif not self.is_16S:
@@ -191,6 +194,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "use_residual_connections": self.use_residual_connections,
                 "use_residual_pool": self.use_residual_pool,
                 "asv_encoder": tf.keras.saving.serialize_keras_object(self.asv_encoder),
+                "regularize_embeddings": self.regularize_embeddings,
             }
         )
         return config

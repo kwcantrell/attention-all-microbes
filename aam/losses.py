@@ -59,11 +59,9 @@ class PairwiseLoss(tf.keras.losses.Loss):
         elif self.loss_type == "msle":
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
 
-        num_samples = tf.shape(y_pred)[0]
-        matching_mask = tf.linalg.diag(tf.ones(shape=[num_samples])) == 0
-        differences = tf.reshape(differences[matching_mask], shape=[num_samples, num_samples - 1])
-        differences = tf.reduce_mean(differences, axis=-1)
-        return tf.reduce_mean(differences) + 0.1 * global_embedding_l2_regulization(y_pred)
+        mask = tf.cast(y_true > 0, dtype=tf.float32)
+        differences = tf.math.divide_no_nan(tf.reduce_sum(differences * mask, axis=-1), tf.reduce_sum(mask, axis=-1))
+        return tf.reduce_mean(differences)  # + 0.1 * global_embedding_l2_regulization(y_pred)
 
 
 def triplet_loss(embeddings, groups=2, margin=0.2):
@@ -92,4 +90,4 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
 
     hard_loss = tf.where(tf.reduce_sum(tf.cast(hard_mask, dtype=tf.float32)) > 0.0, hard_loss, 0.0)
 
-    return hard_loss + 0.1 * global_embedding_l2_regulization(embeddings)
+    return hard_loss  # + 0.1 * global_embedding_l2_regulization(embeddings)
