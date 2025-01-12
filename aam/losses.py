@@ -62,7 +62,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         num_samples = tf.shape(y_pred)[0]
         matching_mask = tf.linalg.diag(tf.ones(shape=[num_samples])) == 0
         differences = tf.reshape(differences[matching_mask], shape=[num_samples, num_samples - 1])
-        differences = tf.reduce_mean(differences, axis=-1)
+        differences = tf.reduce_sum(differences, axis=-1)
         return tf.reduce_mean(differences) + 0.1 * global_embedding_l2_regulization(y_pred)
 
 
