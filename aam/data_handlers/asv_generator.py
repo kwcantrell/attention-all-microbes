@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from functools import wraps
 from typing import Iterable, Optional, Union
 
@@ -9,45 +8,6 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 from bp import parse_newick, to_skbio_treenode
-
-
-def add_lock(func):
-    lock = f"_{func.__name__}_lock"
-
-    @wraps(func)
-    def wrapper(obj, *args, **kwargs):
-        if not hasattr(obj, lock):
-            setattr(obj, lock, True)
-            return func(obj, *args, **kwargs)
-
-        if getattr(obj, lock):
-            raise Exception(f"Attempting to modify locked property '{func.__name__}'")
-
-        setattr(obj, lock, True)
-        return func(obj, *args, **kwargs)
-
-    return wrapper
-
-
-def distance_to_parent_node(tree, i, j):
-    dist_to_parent = tree.length(i)
-    parent = tree.parent(i)
-    while parent != j:
-        dist_to_parent += tree.length(parent)
-        parent = tree.parent(parent)
-    return dist_to_parent
-
-
-def distance_from_i_to_j(tree, i, j):
-    lca = tree.lca(i, j)
-    if lca == i:
-        return distance_to_parent_node(tree, j, i)
-
-    if lca == j:
-        return distance_to_parent_node(tree, i, j)
-
-    return distance_to_parent_node(tree, i, lca) + distance_to_parent_node(tree, j, lca)
-
 
 # Unicode mapping dictionary
 mapping = {65: 1, 67: 2, 71: 3, 84: 4}  # Maps Unicode numbers to specific values
@@ -59,55 +19,121 @@ def map_unicode(val):
 
 
 class ASVGenerator:
-    table_fn = "table.biom"
-    taxonomy_fn = "taxonomy.tsv"
-    axes = np.array(["counts", "tokens", "y", "encoder"])
-    # # These are the UTF-8 encodings of A, C, T, G respectively
-    # # lookup table converts utf-8 encodings to token
-    # # tokens start at 1 to make room for pad token
-    lookup_table = np.vectorize(map_unicode)
-
     def __init__(
         self,
         tree,
-        obs_encodings,
-        max_tip_root_dist,
-        nodes,
         shuffle: bool = False,
         epochs: int = 1000,
-        batch_size: int = 8,
+        sequence_batch_size: int = 8,
+        pairwise_batch_size: int = 8,
         max_bp: int = 150,
-        cache=None,
+        subsample: float = 1.0,
         seed=None,
     ):
-        self.tree = tree
-        self.obs_encodings = obs_encodings
-        self.max_tip_root_dist = max_tip_root_dist
-        self.nodes = nodes
+        tree = parse_newick(open(tree).read())
+        self.tree_node = to_skbio_treenode(tree)
+
+        # extracting ASV tokens
+        # step 1: find which nodes represent 150bp ASVs
+        print("Data pipeline initialization...")
+        print("step 1: find which nodes represent 150bp ASVs")
+        preoderposition = np.arange(0, int(tree.B.size / 2), 1, dtype=np.int32)
+
+        def is_150bp(pre_pos):
+            name = tree.name(tree.preorderselect(pre_pos))
+            if name is not None:
+                if len(name) == 150:
+                    return True
+                return False
+            return False
+
+        vfunc_is_150bp = np.vectorize(lambda x: is_150bp(x), otypes=[bool])
+        is_150bp_mask = vfunc_is_150bp(preoderposition)
+        print(f"found {np.sum(is_150bp_mask)} ASVs")
+        asv_preorder = preoderposition[is_150bp_mask]
+
+        # step 2: extract ASV tokens
+        print("step 2: extract ASV tokens")
+        mapping = {65: 1, 67: 2, 71: 3, 84: 4}
+
+        def get_tokens(pre_pos):
+            asv = tree.name(tree.preorderselect(pre_pos))
+            return np.array([mapping[ord(c)] for c in asv], dtype=np.int32)
+
+        vfunc_tokens = np.vectorize(get_tokens, otypes=[np.int32], signature="()->(n)")
+
+        self.obs_encodings = vfunc_tokens(asv_preorder)
+        self.asv_preorderpos = asv_preorder
+
+        # step 3: cache node info
+        print("step 3: cache node info")
+        self.preorder_nodes = []
+        for n in self.tree_node.preorder(include_self=True):
+            if n.length is None:
+                n.length = 0.0
+
+            if not n.is_root():
+                n.length += n.parent.length
+            self.preorder_nodes.append(n)
+
+        # step 4: find distance from node to root
+        print("step 4: find distance from node to root")
+
+        def dist_to_root(preorder_index):
+            return self.preorder_nodes[preorder_index].length
+
+        vfunc_dist_to_root = np.vectorize(dist_to_root, otypes=[np.float32])
+        self.max_dist_to_root = np.max(vfunc_dist_to_root(self.asv_preorderpos))
+        print(f"max tip to root distance is {self.max_dist_to_root}")
+
+        # step 5: find distance from node to lca
+        print("step 5: find distance from node to lca")
+
         self.shuffle = shuffle
         self.epochs = epochs
-        self.samples_per_minibatch = batch_size
-
-        self.batch_size = batch_size
+        self.samples_per_minibatch = sequence_batch_size
+        self.pairwise_batch_size = pairwise_batch_size
         self.max_bp = max_bp
         self.seed = seed
 
-        self.size = len(self.obs_encodings)
-        self.steps_per_epoch = max(self.size // self.batch_size, 1)
+        self.size = int(len(self.obs_encodings) * subsample)
+        self.steps_per_epoch = max(self.size // self.samples_per_minibatch, 1)
         print("Number of sequences:", self.size)
 
     def _sample_data(self, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tokens = self.obs_encodings[samples]
 
-        num_asvs = len(samples)
-        distances = np.zeros(shape=(num_asvs, num_asvs), dtype=np.float32)
-        nodes = self.nodes[samples]
-        for i in range(len(samples)):
-            for j in range(i + 1, len(samples)):
-                dist = distance_from_i_to_j(self.tree, nodes[i], nodes[j])
-                distances[i, j] = dist
-                distances[j, i] = dist
-        return tokens, distances / self.max_tip_root_dist
+        asv_pos = self.asv_preorderpos[samples]
+        num_asvs = self.pairwise_batch_size
+
+        def pair_dist(i):
+            dists = np.zeros(num_asvs)
+            pre_i = asv_pos[i]
+
+            # get leaf i
+            leaf_i = self.preorder_nodes[pre_i]
+
+            for j in range(i + 1, num_asvs, 1):
+                # get leaf_j
+                pre_j = asv_pos[j]
+                leaf_j = self.preorder_nodes[pre_j]
+
+                # get length of i, j, and lca to root
+                i_to_root = leaf_i.length
+                j_to_root = leaf_j.length
+                lca_to_root = self.tree_node.lca([leaf_i, leaf_j]).length
+
+                # distance from i to j
+                pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
+                dists[j] = pairwise_distance / self.max_dist_to_root
+
+            return dists
+
+        self.vfunc_pair_dist = np.vectorize(pair_dist, otypes=[np.float32], signature="()->(n)")
+
+        # get preorder position of asvs
+        pair_distances = self.vfunc_pair_dist(np.arange(num_asvs, dtype=np.int32))
+        return tokens, pair_distances + pair_distances.T
 
     def _epoch_complete(self, processed):
         if processed < self.steps_per_epoch:
@@ -115,41 +141,28 @@ class ASVGenerator:
         return True
 
     def _minibatch_indices(self, minibatch, sample_indices):
-        start = (minibatch * self.samples_per_minibatch) % len(sample_indices)
-        end = (start + self.samples_per_minibatch) % len(sample_indices)
-        if start > end:
-            start = 0
-            end = self.samples_per_minibatch
+        start = minibatch * self.samples_per_minibatch
+        end = start + self.samples_per_minibatch
         return sample_indices[start:end]
-
-    def _epoch_samples(self, sample_indices):
-        if self.shuffle:
-            print("shuffling...")
-            np.random.shuffle(sample_indices)
-
-        return sample_indices
 
     def _create_epoch_generator(self):
         def generator():
-            processed = 0
-            sample_indices = np.arange(len(self.obs_encodings))
             for epoch in range(self.epochs):
-                print(f"Finished epcoh: {epoch} processed {processed}")
+                print(f"Starting epcoh: {epoch}")
                 processed = 0
                 minibatch = 0
-                sample_indices = self._epoch_samples(sample_indices)
+                sample_indices = np.arange(len(self.obs_encodings), dtype=np.int32)
 
-                def sample_data(minibatch):
-                    samples = self._minibatch_indices(minibatch, sample_indices)
-                    return self._sample_data(samples)
+                if self.shuffle:
+                    print("shuffling...")
+                    np.random.shuffle(sample_indices)
 
                 while not self._epoch_complete(processed):
-                    tokens, distances = sample_data(minibatch)
-
-                    tokens = tokens.astype(np.int32)
-                    yield (tokens, distances)
+                    samples = self._minibatch_indices(minibatch, sample_indices)
                     processed += 1
                     minibatch += 1
+
+                    yield self._sample_data(samples)
 
         return generator
 
@@ -157,11 +170,9 @@ class ASVGenerator:
         generator = self._create_epoch_generator()
 
         token_sig = tf.TensorSpec(shape=[None, self.max_bp], dtype=tf.int32)
-        length_sig = tf.TensorSpec(shape=[None, None], dtype=tf.float32)
-        dataset: tf.data.Dataset = tf.data.Dataset.from_generator(
-            generator,
-            output_signature=(token_sig, length_sig),
-        )
+        pair_dist_sig = tf.TensorSpec(shape=[None, None], dtype=tf.float32)
+        dataset: tf.data.Dataset = tf.data.Dataset.from_generator(generator, output_signature=(token_sig, pair_dist_sig))
+        dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
         data_obj = {
             "dataset": dataset,
@@ -177,39 +188,8 @@ if __name__ == "__main__":
     from aam.data_handlers import ASVGenerator
 
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
-    cache = "temp"
-    tree = parse_newick(open(tree_path).read())
-    # asvs = []
-    # nodes = []
-    # distance_to_root = []
-    # for i in range(tree.B.size):
-    #     name = tree.name(i)
-    #     if name is not None:
-    #         if len(name) == 150:
-    #             nodes.append(i)
-    #             asvs.append(name)
-    #             distance_to_root.append(distance_to_parent_node(tree, i, tree.root()))
 
-    # nodes = np.array(nodes)
-    # distance_to_root = np.array(distance_to_root)
-    # max_tip_root_dist = np.max(distance_to_root)
-    # print(f"found {len(asvs)} in tree and {len(distance_to_root)}, {distance_to_root[:10]}")
-
-    # asvs = asvs[:2048]
-    # distance_to_root = distance_to_root[:2048]
-    # nodes = nodes[:2048]
-    # obs_encodings = np.array([[ord(char) for char in string] for string in asvs])
-    # obs_encodings = ASVGenerator.lookup_table(obs_encodings)
-
-    obs_encodings = np.load(f"{cache}-encodings.npy")
-    max_tip_root_dist = np.load(f"{cache}-max-tip-root-dist.npy")
-    nodes = np.load(f"{cache}-nodes.npy")
-    # np.save(f"{cache}-encodings.npy", obs_encodings)
-    # np.save(f"{cache}-max-tip-root-dist.npy", max_tip_root_dist)
-    # np.save(f"{cache}-nodes.npy", nodes)
-
-    ug = ASVGenerator(tree=tree, obs_encodings=obs_encodings, max_tip_root_dist=max_tip_root_dist, nodes=nodes, batch_size=128)
+    ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
     data = ug.get_data()
-    for i, tokens in enumerate(data["dataset"]):
-        print(tokens)
-        break
+    for x in data["dataset"].take(1):
+        print(x)

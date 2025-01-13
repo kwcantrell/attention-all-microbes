@@ -61,7 +61,7 @@ class NucleotideEncoder(tf.keras.Model):
         return self.asv_loss(y_true, embeddings)
 
     def train_step(self, data):
-        inputs, y_true = data
+        inputs = data
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
             nuc_loss = tf.reduce_sum(self.losses)
@@ -84,7 +84,7 @@ class NucleotideEncoder(tf.keras.Model):
         }
 
     def test_step(self, data):
-        inputs, y_true = data
+        inputs = data
         embeddings = self(inputs, training=False)
         nuc_loss = tf.reduce_sum(self.losses)
         loss = nuc_loss

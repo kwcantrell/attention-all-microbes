@@ -17,7 +17,7 @@ class NucleotideEncoderV2(tf.keras.Model):
         attention_heads: int = 4,
         attention_layers: int = 4,
         intermediate_size: int = 256,
-        normalize_outputs: bool = True,
+        normalize_outputs: bool = False,
         use_residual_connections: bool = False,
         regularize_embeddings=False,
         asv_encoder=None,
@@ -69,6 +69,8 @@ class NucleotideEncoderV2(tf.keras.Model):
         super(NucleotideEncoderV2, self).build(input_shape)
 
     def _compute_loss(self, y_true, embeddings):
+        num_pairs = tf.shape(y_true)[-1]
+        embeddings = embeddings[:num_pairs]
         return self.asv_loss(y_true, embeddings)
 
     def train_step(self, data):

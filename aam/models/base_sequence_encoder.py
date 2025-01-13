@@ -62,7 +62,10 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         # layers used in model
-        if self.is_16S and self.asv_encoder is None:
+        if self.asv_encoder is not None:
+            if not isinstance(self.asv_encoder, ASVEncoder):
+                raise Exception(f"{type(self.asv_encoder)} is not an ASVEncoder")
+        else:
             self.asv_encoder = ASVEncoder(
                 self.max_bp,
                 self.nuc_attention_heads,
@@ -76,20 +79,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 use_residual_connections=self.use_residual_connections,
                 regularize_embeddings=self.regularize_embeddings,
                 name="asv_encoder",
-            )
-        elif not self.is_16S:
-            self.asv_embeddings = tf.keras.layers.Embedding(
-                self.vocab_size,
-                output_dim=self.embedding_dim,
-                embeddings_initializer=tf.keras.initializers.RandomNormal(mean=0, stddev=self.embedding_dim**0.5),
-            )
-            self.asv_encoder = TransformerEncoder(
-                num_layers=self.sample_attention_layers,
-                num_attention_heads=self.sample_attention_heads,
-                intermediate_size=self.sample_intermediate_size,
-                activation=self.intermediate_activation,
-                dropout_rate=self.dropout_rate,
-                normalize_outputs=self.normalize_outputs,
             )
 
         self.attention_pool = MultiHeadAttentionPooling(

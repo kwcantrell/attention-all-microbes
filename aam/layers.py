@@ -160,6 +160,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
             masked_embeddings = tf.cast(tf.reshape(output, shape=[-1, self.embedding_dim]), dtype=tf.float32)
             if self.regularize_embeddings:
+                print("Normalizing nucleotide embeddings...")
                 masked_embeddings = self.nuc_ff(masked_embeddings)
                 l2_loss = global_embedding_l2_regulization(masked_embeddings)
             nuc_pred = self._softmax(self.nuc_pred(masked_embeddings[random_mask]))
