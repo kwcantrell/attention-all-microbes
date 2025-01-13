@@ -6,16 +6,11 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss, triplet_loss
-from aam.models import SequenceEncoder
-
-# from aam.models.attention_pooling import AttentionPooling
-from aam.models.base_sequence_encoder import BaseSequenceEncoder
 from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
-from aam.models.utils import sort_using_counts, to_batch
+from aam.models.unifrac_encoder import UnifracEncoder
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
-from aam.utils import float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracDenoiser")
@@ -73,7 +68,7 @@ class UnifracDenoiser(tf.keras.Model):
 
         self.unifrac_encoder = unifrac_encoder
         if self.unifrac_encoder is None:
-            self.unifrac_encoder = SequenceEncoder(
+            self.unifrac_encoder = UnifracEncoder(
                 output_dim=self.output_dim,
                 token_limit=self.token_limit,
                 encoder_type=self.encoder_type,
@@ -278,7 +273,7 @@ class UnifracDenoiser(tf.keras.Model):
         count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
         denoised_sample_embeddings = self.denoise_encoder(sample_embeddings, mask=count_mask, training=training)
         denoised_pred = self._embeddings(denoised_sample_embeddings, count_mask, training=training)
-        print("UniFracDenoiser exit...")
+        print("UniFracDenoiser exit...", self.trainable)
         if return_unifrac_pred:
             if not return_counts:
                 return denoised_sample_embeddings, denoised_pred, unifrac_pred

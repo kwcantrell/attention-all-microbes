@@ -226,10 +226,8 @@ if __name__ == "__main__":
     #     compile=False,
     # )
     print(data_obj)
-    for x, y in data_obj["dataset"].take(1):
-        print("!!!!!!!!!")
-        y_target, encoder_target = y
-        print(y_target)
+    for data in data_obj["dataset"].take(1):
+        print(data)
     # print(encoder_target)
     # shape = tf.shape(encoder_target)
     # batch_dim = shape[0]

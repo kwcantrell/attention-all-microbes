@@ -172,7 +172,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 loss += tf.reduce_mean(l2_loss)
             self.add_loss(loss)
 
-        print("ASVEncoder exit...")
+        print("ASVEncoder exit...", self.trainable)
         return output
 
     def get_config(self):

@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 import inspect
 
 import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
-from aam.models.sequence_encoder import SequenceEncoder
 from aam.models.transformer_decoder import TransformerDecoder
+from aam.models.unifrac_encoder import UnifracEncoder
 from aam.models.utils import sort_using_counts, to_batch
 
 
+@tf.keras.saving.register_keras_serializable(package="GOTUModel")
 class GOTUModel(tf.keras.Model):
     def __init__(
         self,
@@ -76,7 +79,7 @@ class GOTUModel(tf.keras.Model):
 
         self.gotu_pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_gotu + 3, seq_axis=1, initializer="zeros")
         if self.asv_embedding_layer is None:
-            self.asv_embedding_layer = SequenceEncoder(
+            self.asv_embedding_layer = UnifracEncoder(
                 output_dim=self.output_dim,
                 token_limit=self.token_limit,
                 encoder_type=self.encoder_type,
@@ -163,7 +166,7 @@ class GOTUModel(tf.keras.Model):
     @classmethod
     def from_config(cls, config):
         asv_embedding_layer_config = config.pop("asv_embedding_layer")
-        asv_embedding_layer = SequenceEncoder.from_config(asv_embedding_layer_config)
+        asv_embedding_layer = UnifracEncoder.from_config(asv_embedding_layer_config)
         model = cls(asv_embedding_layer=asv_embedding_layer, **config)
         return model
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
-from aam.models import BaseSequenceEncoder
+from aam.models.base_sequence_encoder import BaseSequenceEncoder
 
 
 @tf.keras.saving.register_keras_serializable(package="NucleotideEncoderV2")
@@ -67,6 +67,10 @@ class NucleotideEncoderV2(tf.keras.Model):
 
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(NucleotideEncoderV2, self).build(input_shape)
+
+    def predict_step(self, data):
+        inputs, asv_ids = data
+        return [self(inputs, training=False), asv_ids]
 
     def _compute_loss(self, y_true, embeddings):
         num_pairs = tf.shape(y_true)[-1]

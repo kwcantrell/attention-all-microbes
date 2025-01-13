@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import tensorflow as tf
 import tensorflow_models as tfm
 
 
+@tf.keras.saving.register_keras_serializable(package="TransformerEncoder")
 class TransformerEncoder(tf.keras.layers.Layer):
     def __init__(
         self,
@@ -108,4 +111,5 @@ class TransformerEncoder(tf.keras.layers.Layer):
             # output_tensor will always be float32
             # so we need to cast it back to float16
             output_tensor = tf.cast(output_tensor, dtype=tf.float16)
+        print("Encoder exit...", self.trainable)
         return output_tensor

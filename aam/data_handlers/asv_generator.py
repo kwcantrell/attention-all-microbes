@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from functools import wraps
-from typing import Iterable, Optional, Union
-
 import numpy as np
-import pandas as pd
 import tensorflow as tf
-from biom import Table, load_table
 from bp import parse_newick, to_skbio_treenode
 
 # Unicode mapping dictionary
@@ -100,7 +95,7 @@ class ASVGenerator:
         self.steps_per_epoch = max(self.size // self.samples_per_minibatch, 1)
         print("Number of sequences:", self.size)
 
-    def _sample_data(self, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _sample_data(self, samples: np.ndarray, return_asv_ids) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tokens = self.obs_encodings[samples]
 
         asv_pos = self.asv_preorderpos[samples]
@@ -133,7 +128,11 @@ class ASVGenerator:
 
         # get preorder position of asvs
         pair_distances = self.vfunc_pair_dist(np.arange(num_asvs, dtype=np.int32))
-        return tokens, pair_distances + pair_distances.T
+
+        if not return_asv_ids:
+            return tokens, pair_distances + pair_distances.T
+        else:
+            return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
 
     def _epoch_complete(self, processed):
         if processed < self.steps_per_epoch:
@@ -145,7 +144,7 @@ class ASVGenerator:
         end = start + self.samples_per_minibatch
         return sample_indices[start:end]
 
-    def _create_epoch_generator(self):
+    def _create_epoch_generator(self, return_asv_ids):
         def generator():
             for epoch in range(self.epochs):
                 print(f"Starting epcoh: {epoch}")
@@ -162,15 +161,18 @@ class ASVGenerator:
                     processed += 1
                     minibatch += 1
 
-                    yield self._sample_data(samples)
+                    yield self._sample_data(samples, return_asv_ids)
 
         return generator
 
-    def get_data(self):
-        generator = self._create_epoch_generator()
+    def get_data(self, return_asv_ids=False):
+        generator = self._create_epoch_generator(return_asv_ids)
 
         token_sig = tf.TensorSpec(shape=[None, self.max_bp], dtype=tf.int32)
-        pair_dist_sig = tf.TensorSpec(shape=[None, None], dtype=tf.float32)
+        if not return_asv_ids:
+            pair_dist_sig = tf.TensorSpec(shape=[None, None], dtype=tf.float32)
+        else:
+            pair_dist_sig = tf.TensorSpec(shape=[None], dtype=tf.string)
         dataset: tf.data.Dataset = tf.data.Dataset.from_generator(generator, output_signature=(token_sig, pair_dist_sig))
         dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
@@ -190,6 +192,6 @@ if __name__ == "__main__":
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
 
     ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
-    data = ug.get_data()
+    data = ug.get_data(return_asv_ids=True)
     for x in data["dataset"].take(1):
         print(x)

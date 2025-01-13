@@ -6,10 +6,6 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
-
-# from aam.models.attention_pooling import AttentionPooling
-from aam.models.base_sequence_encoder import BaseSequenceEncoder
-from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
 from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator

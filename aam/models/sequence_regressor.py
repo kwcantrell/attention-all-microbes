@@ -5,14 +5,7 @@ from typing import Optional, Union
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from aam.models.count_encoder import CountEncoder
-
-# from aam.models.attention_pooling import AttentionPooling
-from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
-
-# from aam.models.unifrac_encoder import UniFracEncoder
-from aam.models.sequence_encoder import SequenceEncoder
-from aam.models.transformers import TransformerEncoder
+from aam.models import CountEncoder, MultiHeadAttentionPooling, TransformerEncoder, UnifracEncoder
 from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
@@ -138,7 +131,7 @@ class SequenceRegressor(tf.keras.Model):
             return
 
         if isinstance(self.base_model, str):
-            self.base_model = SequenceEncoder(
+            self.base_model = UnifracEncoder(
                 output_dim=self.base_output_dim,
                 token_limit=self.token_limit,
                 encoder_type=self.base_model,

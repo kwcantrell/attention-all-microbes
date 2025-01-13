@@ -96,8 +96,8 @@ def fit_asv_encoder(
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import ASVGenerator
-    from aam.data_handlers.asv_generator import distance_to_parent_node
-    from aam.models import NucleotideEncoder, NucleotideEncoderV2
+    from aam.models.nucleotide_encoder import NucleotideEncoder
+    from aam.models.nucleotide_encoder_v2 import NucleotideEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
@@ -291,7 +291,8 @@ def fit_unifrac_regressor(
 
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import MultiDepthGenerator, UniFracGenerator
-    from aam.models import SequenceEncoder, UnifracDenoiser
+    from aam.models.unifrac_denoising import UnifracDenoiser
+    from aam.models.unifrac_encoder import UnifracEncoder
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.models.utils import cos_decay_with_warmup
@@ -315,7 +316,7 @@ def fit_unifrac_regressor(
     else:
         if i_nucleotide_encoder is not None:
             i_nucleotide_encoder = tf.keras.models.load_model(i_nucleotide_encoder, compile=False)
-        model: tf.keras.Model = SequenceEncoder(
+        model: tf.keras.Model = UnifracEncoder(
             output_dim,
             p_asv_limit,
             p_unifrac_metric,
@@ -550,7 +551,7 @@ def fit_denoised_unifrac_regressor(
 
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import MultiDepthGenerator
-    from aam.models import UnifracDenoiser
+    from aam.models.unifrac_denoising import UnifracDenoiser
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.models.utils import cos_decay_with_warmup
@@ -802,7 +803,7 @@ def fit_taxonomy_regressor(
     from biom import load_table
 
     from aam.data_handlers import TaxonomyGenerator
-    from aam.models import SequenceEncoder
+    from aam.models.unifrac_encoder import UnifracEncoder
     from aam.models.utils import cos_decay_with_warmup
 
     if not os.path.exists(output_dir):
@@ -878,7 +879,7 @@ def fit_taxonomy_regressor(
     if i_model is not None:
         model: tf.keras.Model = tf.keras.models.load_model(i_model)
     else:
-        model: tf.keras.Model = SequenceEncoder(
+        model: tf.keras.Model = UnifracEncoder(
             train_gen.num_tokens,
             p_asv_limit,
             "taxonomy",
@@ -1048,7 +1049,7 @@ def fit_sample_regressor(
 ):
     from aam.callbacks import ConfusionMatrx
     from aam.data_handlers import CombinedGenerator, MultiDepthGenerator, TaxonomyGenerator, UniFracGenerator
-    from aam.models import SequenceRegressor
+    from aam.models.sequence_regressor import SequenceRegressor
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
@@ -1725,7 +1726,8 @@ def fit_gotu(
     p_normalize_outputs: bool,
 ):
     from aam.data_handlers import GOTUGenerator
-    from aam.models import GOTUModel, SequenceEncoder
+    from aam.models.gotu_model import GOTUModel
+    from aam.models.unifrac_encoder import UnifracEncoder
     from aam.models.utils import cos_decay_with_warmup
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -1829,7 +1831,7 @@ def fit_gotu(
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         base_model.accumulation_steps = p_accumulation_steps
     else:
-        base_model = SequenceEncoder(
+        base_model = UnifracEncoder(
             p_output_dim,
             p_asv_limit,
             "unifrac",

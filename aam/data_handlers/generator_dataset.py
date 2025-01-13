@@ -229,8 +229,12 @@ class GeneratorDataset:
 
         obs_encodings = None
         if self.is_16S:
-            obs_encodings = np.array([[ord(char) for char in string] for string in obs_ids])
-            obs_encodings = self.lookup_table(obs_encodings)
+
+            def get_tokens(asv):
+                return np.array([mapping[ord(c)] for c in asv], dtype=np.int32)
+
+            vfunc_tokens = np.vectorize(get_tokens, otypes=[np.int32], signature="()->(n)")
+            obs_encodings = vfunc_tokens(obs_ids)
 
         table_data, row, col, shape = self._table_data(table)
         # only keep observations with count > 0

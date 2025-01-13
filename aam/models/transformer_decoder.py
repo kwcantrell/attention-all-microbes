@@ -4,6 +4,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 
+@tf.keras.saving.register_keras_serializable(package="TransformerDecoder")
 class TransformerDecoder(tf.keras.layers.Layer):
     def __init__(
         self,

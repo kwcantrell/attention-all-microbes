@@ -6,8 +6,6 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss
-
-# from aam.models.attention_pooling import AttentionPooling
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
 from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
@@ -17,8 +15,8 @@ from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import float_mask
 
 
-@tf.keras.saving.register_keras_serializable(package="SequenceEncoder")
-class SequenceEncoder(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="UnifracEncoder")
+class UnifracEncoder(tf.keras.Model):
     def __init__(
         self,
         output_dim: int,
@@ -44,7 +42,7 @@ class SequenceEncoder(tf.keras.Model):
         asv_encoder=None,
         **kwargs,
     ):
-        super(SequenceEncoder, self).__init__(**kwargs)
+        super(UnifracEncoder, self).__init__(**kwargs)
         self.output_dim = output_dim
         self.token_limit = token_limit
         self.encoder_type = encoder_type
@@ -69,28 +67,31 @@ class SequenceEncoder(tf.keras.Model):
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
 
-        self.base_encoder = BaseSequenceEncoder(
-            self.embedding_dim,
-            self.max_bp,
-            self.token_limit,
-            sample_attention_heads=self.attention_heads,
-            sample_attention_layers=self.attention_layers,
-            sample_intermediate_size=self.intermediate_size,
-            dropout_rate=self.dropout_rate,
-            nuc_attention_heads=4,
-            nuc_attention_layers=4,
-            nuc_intermediate_size=512,
-            intermediate_activation=self.intermediate_activation,
-            is_16S=self.is_16S,
-            vocab_size=self.vocab_size,
-            add_token=self.add_token,
-            nucleotide_encoder=self.nucleotide_encoder,
-            normalize_outputs=self.normalize_outputs,
-            use_residual_connections=self.use_residual_connections,
-            use_residual_pool=self.use_residual_pool,
-            asv_encoder=asv_encoder,
-            name="base_encoder",
-        )
+        if asv_encoder is None:
+            self.base_encoder = BaseSequenceEncoder(
+                self.embedding_dim,
+                self.max_bp,
+                self.token_limit,
+                sample_attention_heads=self.attention_heads,
+                sample_attention_layers=self.attention_layers,
+                sample_intermediate_size=self.intermediate_size,
+                dropout_rate=self.dropout_rate,
+                nuc_attention_heads=4,
+                nuc_attention_layers=4,
+                nuc_intermediate_size=512,
+                intermediate_activation=self.intermediate_activation,
+                is_16S=self.is_16S,
+                vocab_size=self.vocab_size,
+                add_token=self.add_token,
+                nucleotide_encoder=self.nucleotide_encoder,
+                normalize_outputs=self.normalize_outputs,
+                use_residual_connections=self.use_residual_connections,
+                use_residual_pool=self.use_residual_pool,
+                asv_encoder=asv_encoder,
+                name="base_encoder",
+            )
+        else:
+            self.base_encoder = asv_encoder
 
         self._get_encoder_loss()
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
@@ -132,7 +133,7 @@ class SequenceEncoder(tf.keras.Model):
         )
 
         self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
-        super(SequenceEncoder, self).build(input_shape)
+        super(UnifracEncoder, self).build(input_shape)
 
     @property
     def accumulation_steps(self):
@@ -269,7 +270,7 @@ class SequenceEncoder(tf.keras.Model):
         sample_embeddings = self.encoder(sample_embeddings, mask=count_mask, training=training)
         encoder_pred = self.extract_encoder_pred(sample_embeddings, count_mask, training=training)
 
-        print("SequenceEncoder exit...")
+        print("UnifracEncoder exit...", self.trainable)
         if not return_counts:
             return sample_embeddings, encoder_pred
         else:
@@ -325,20 +326,17 @@ class SequenceEncoder(tf.keras.Model):
 
         return unifrac_embeddings
 
-    def set_nucleotide_encoder(self, nucleotide_encoder):
-        self.base_encoder.asv_encoder = nucleotide_encoder
-
     @property
     def train_nuc_encoder(self):
-        return self.base_encoder.asv_encoder.trainable
+        return self.base_encoder.trainable
 
     @train_nuc_encoder.setter
     def train_nuc_encoder(self, flag: bool):
         print("train nuc encoder:", flag)
-        self.base_encoder.asv_encoder.trainable = flag
+        self.base_encoder.trainable = flag
 
     def get_config(self):
-        config = super(SequenceEncoder, self).get_config()
+        config = super(UnifracEncoder, self).get_config()
         config.update(
             {
                 "output_dim": self.output_dim,
@@ -356,7 +354,7 @@ class SequenceEncoder(tf.keras.Model):
                 "add_token": self.add_token,
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
-                "nucleotide_encoder": self.nucleotide_encoder,
+                "asv_encoder": None if self.base_encoder is None else tf.keras.saving.serialize_keras_object(self.base_encoder),
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "use_residual_pool": self.use_residual_pool,
@@ -372,6 +370,9 @@ class SequenceEncoder(tf.keras.Model):
             build_input_shape = config.pop("build_input_shape")
             input_shape = build_input_shape["input_shape"]
 
+        base_encoder = config["asv_encoder"]
+        if base_encoder is not None:
+            config["asv_encoder"] = tf.keras.saving.deserialize_keras_object(base_encoder)
         model = cls(**config)
 
         if input_shape is not None:
