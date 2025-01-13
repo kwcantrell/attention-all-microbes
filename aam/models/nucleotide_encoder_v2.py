@@ -70,7 +70,7 @@ class NucleotideEncoderV2(tf.keras.Model):
 
     def predict_step(self, data):
         inputs, asv_ids = data
-        return [self(inputs, training=False), asv_ids]
+        return self(inputs, training=False), asv_ids
 
     def _compute_loss(self, y_true, embeddings):
         num_pairs = tf.shape(y_true)[-1]

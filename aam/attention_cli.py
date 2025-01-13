@@ -91,12 +91,10 @@ def fit_asv_encoder(
     i_model: str,
 ):
     import tensorflow_addons as tfa
-    from biom import load_table
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers import ASVGenerator
-    from aam.models.nucleotide_encoder import NucleotideEncoder
     from aam.models.nucleotide_encoder_v2 import NucleotideEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
@@ -108,12 +106,7 @@ def fit_asv_encoder(
         os.makedirs(figure_path)
     if i_model is not None:
         print("loading existing model...")
-        old_model = tf.keras.models.load_model(i_model, compile=False)
-        print(f"model is {type(old_model)}")
-        config = old_model.get_config()
-        config["asv_encoder"] = old_model.asv_encoder
-        config.pop("build_input_shape")
-        model: tf.keras.Model = NucleotideEncoderV2(**config)
+        model = tf.keras.models.load_model(i_model, compile=False)
     else:
         model: tf.keras.Model = NucleotideEncoderV2(
             embedding_dim=p_embedding_dim,
@@ -498,7 +491,6 @@ def fit_unifrac_regressor(
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
-@click.option("--i-nucleotide-encoder", default=None, required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
 @click.option("--p-normalize-outputs", default=True, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
@@ -538,7 +530,6 @@ def fit_denoised_unifrac_regressor(
     p_weight_decay: float,
     p_accumulation_steps,
     p_unifrac_metric: str,
-    i_nucleotide_encoder: str,
     p_loss_type: str,
     p_normalize_outputs,
     p_use_residual_connections: bool,
@@ -574,8 +565,6 @@ def fit_denoised_unifrac_regressor(
         model.train_nuc_encoder = p_train_nuc_encoder
 
     else:
-        if i_nucleotide_encoder is not None:
-            i_nucleotide_encoder = tf.keras.models.load_model(i_nucleotide_encoder, compile=False)
         if i_unifrac_model is not None:
             i_unifrac_model = tf.keras.models.load_model(i_unifrac_model, compile=False)
 
@@ -599,7 +588,6 @@ def fit_denoised_unifrac_regressor(
             add_token=p_add_token,
             asv_dropout_rate=p_asv_dropout,
             accumulation_steps=p_accumulation_steps,
-            nucleotide_encoder=i_nucleotide_encoder,
             pairwise_loss_type=p_loss_type,
             normalize_outputs=p_normalize_outputs,
             unifrac_encoder=i_unifrac_model,
@@ -1047,7 +1035,6 @@ def fit_sample_regressor(
     p_train_nuc_encoder: bool,
     p_include_count_encoder: bool,
 ):
-    from aam.callbacks import ConfusionMatrx
     from aam.data_handlers import CombinedGenerator, MultiDepthGenerator, TaxonomyGenerator, UniFracGenerator
     from aam.models.sequence_regressor import SequenceRegressor
 
@@ -1418,187 +1405,6 @@ def predict_sample_regressor(
 
     y_pred, y_true = model.predict(data["dataset"])
     _mean_absolute_error(y_pred, y_true, os.path.join(output_dir, "mae.png"))
-
-
-@cli.command()
-@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-@click.option("--i-base-model-path", required=True, type=click.Path(exists=True))
-@click.option(
-    "--p-freeze-base-weights / --p-no-freeze-base-weights",
-    default=True,
-    required=False,
-)
-@click.option(
-    "--m-metadata-file",
-    required=True,
-    help="Metadata description",
-    type=click.Path(exists=True),
-)
-@click.option("--m-metadata-column", required=True, type=str)
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=MISSING_SAMP_DESC,
-)
-@click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-mask-percent", default=25, show_default=True, type=int)
-@click.option("--p-penalty", default=1, type=float)
-@click.option("--p-cv", default=5, type=int, help=CV_DESC)
-@click.option(
-    "--p-test-size",
-    default=0.2,
-    show_default=True,
-    type=click.FloatRange(0, 1),
-    help=TEST_SIZE_DESC,
-)
-@click.option("--p-stratify / --p-no-stratify", default=False, show_default=True, help=STRAT_DESC)
-@click.option("--p-patience", default=10, show_default=True, type=int)
-@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-report-back", default=5, show_default=True, type=int)
-@click.option("--p-asv-limit", default=512, show_default=True, type=int)
-@click.option("--p-mixed-precision / --p-no-mixed-precision", default=True, required=False)
-@click.option("--output-dir", required=True, type=click.Path(exists=False))
-def fit_sample_classifier(
-    i_table: str,
-    i_base_model_path: str,
-    p_freeze_base_weights: bool,
-    m_metadata_file: str,
-    m_metadata_column: str,
-    p_missing_samples: str,
-    p_epochs: int,
-    p_mask_percent: int,
-    p_penalty: float,
-    p_cv: int,
-    p_test_size: float,
-    p_stratify: bool,
-    p_patience: int,
-    p_early_stop_warmup: int,
-    p_batch_size: int,
-    p_dropout: float,
-    p_report_back: int,
-    p_asv_limit: int,
-    p_mixed_precision: bool,
-    output_dir: str,
-):
-    from aam.transfer_data_utils import (
-        load_data,
-        shuffle,
-        validate_metadata,
-    )
-    from aam.transfer_nuc_model import TransferLearnNucleotideModel
-
-    if p_mixed_precision:
-        print("\nUsing mixed precision\n")
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
-
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    figure_path = os.path.join(output_dir, "figures")
-    if not os.path.exists(figure_path):
-        os.makedirs(figure_path)
-
-    model_path = os.path.join(output_dir, "cv-models")
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
-
-    table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
-    print(df)
-    ids, table, df = validate_metadata(table, df, p_missing_samples)
-    table, df = shuffle(table, df)
-    num_ids = len(ids)
-    categories = df[m_metadata_column].astype("category").cat.categories
-    print("int", categories)
-    fold_indices = list(range(num_ids))
-    if p_test_size > 0:
-        test_size = int(num_ids * p_test_size)
-        train_size = num_ids - test_size
-        test_indices = fold_indices[train_size:]
-        fold_indices = fold_indices[:train_size]
-    print(len(test_indices), len(fold_indices))
-
-    def _get_fold(indices, shuffle):
-        fold_ids = ids[indices]
-        table_fold = table.filter(fold_ids, axis="sample", inplace=False)
-        df_fold = df[df.index.isin(fold_ids)]
-        data = load_data(
-            table_fold,
-            True,
-            df_fold,
-            m_metadata_column,
-            shuffle_samples=shuffle,
-            batch_size=p_batch_size,
-            max_token_per_sample=p_asv_limit,
-        )
-        return data
-
-    models = []
-    if p_stratify:
-        kfolds = StratifiedKFold(p_cv)
-    else:
-        kfolds = KFold(p_cv)
-
-    cv_sample_ids = ids[fold_indices]
-    sample_classes = df[df.index.isin(cv_sample_ids)][m_metadata_column]
-
-    for i, (train_ind, val_ind) in enumerate(kfolds.split(fold_indices, sample_classes)):
-        train_data = _get_fold(train_ind, shuffle=True)
-        val_data = _get_fold(val_ind, shuffle=False)
-
-        base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
-        model = TransferLearnNucleotideModel(
-            base_model,
-            p_freeze_base_weights,
-            mask_percent=p_mask_percent,
-            shift=train_data["shift"],
-            scale=train_data["scale"],
-            penalty=p_penalty,
-            num_classes=train_data["num_classes"],
-            dropout=p_dropout,
-        )
-        loss = ImbalancedCategoricalCrossEntropy(train_data["cat_counts"])
-        fold_label = i + 1
-        model_cv = CVModel(
-            model,
-            train_data,
-            val_data,
-            output_dir,
-            fold_label,
-        )
-        model_cv.fit_fold(
-            loss,
-            p_epochs,
-            os.path.join(model_path, f"model_f{fold_label}.keras"),
-            metric="target_loss",
-            patience=p_patience,
-            early_stop_warmup=p_early_stop_warmup,
-            callbacks=[
-                ConfusionMatrx(
-                    dataset=val_data["dataset"],
-                    output_dir=os.path.join(figure_path, f"model-f{fold_label}-val.png"),
-                    report_back=p_report_back,
-                    labels=categories,
-                )
-            ],
-        )
-        models.append(model_cv)
-
-    best_model_path = os.path.join(output_dir, "best-model.keras")
-    model_ensemble = EnsembleModel(models)
-    model_ensemble.save_best_model(best_model_path)
-    model_ensemble.val_maes()
-
-    test_data = _get_fold(test_indices, shuffle=False)
-    model_ensemble.plot_fn(
-        _confusion_matrix,
-        test_data["dataset"],
-        figure_path,
-        labels=train_data["cat_labels"],
-    )
 
 
 @cli.command()

@@ -34,7 +34,6 @@ class UnifracEncoder(tf.keras.Model):
         add_token: bool = True,
         asv_dropout_rate: float = 0.0,
         accumulation_steps: int = 1,
-        nucleotide_encoder=None,
         pairwise_loss_type="mse",
         normalize_outputs=True,
         use_residual_connections=False,
@@ -58,7 +57,6 @@ class UnifracEncoder(tf.keras.Model):
         self.add_token = add_token
         self.asv_dropout_rate = asv_dropout_rate
         self.accumulation_steps = accumulation_steps
-        self.nucleotide_encoder = nucleotide_encoder
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
@@ -83,7 +81,6 @@ class UnifracEncoder(tf.keras.Model):
                 is_16S=self.is_16S,
                 vocab_size=self.vocab_size,
                 add_token=self.add_token,
-                nucleotide_encoder=self.nucleotide_encoder,
                 normalize_outputs=self.normalize_outputs,
                 use_residual_connections=self.use_residual_connections,
                 use_residual_pool=self.use_residual_pool,
@@ -354,7 +351,7 @@ class UnifracEncoder(tf.keras.Model):
                 "add_token": self.add_token,
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
-                "asv_encoder": None if self.base_encoder is None else tf.keras.saving.serialize_keras_object(self.base_encoder),
+                "asv_encoder": tf.keras.saving.serialize_keras_object(self.base_encoder),
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "use_residual_pool": self.use_residual_pool,
@@ -371,8 +368,7 @@ class UnifracEncoder(tf.keras.Model):
             input_shape = build_input_shape["input_shape"]
 
         base_encoder = config["asv_encoder"]
-        if base_encoder is not None:
-            config["asv_encoder"] = tf.keras.saving.deserialize_keras_object(base_encoder)
+        config["asv_encoder"] = tf.keras.saving.deserialize_keras_object(base_encoder)
         model = cls(**config)
 
         if input_shape is not None:

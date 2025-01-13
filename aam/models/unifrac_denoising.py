@@ -32,7 +32,6 @@ class UnifracDenoiser(tf.keras.Model):
         add_token: bool = True,
         asv_dropout_rate: float = 0.0,
         accumulation_steps: int = 1,
-        nucleotide_encoder=None,
         pairwise_loss_type="mse",
         normalize_outputs=True,
         unifrac_encoder=None,
@@ -57,7 +56,6 @@ class UnifracDenoiser(tf.keras.Model):
         self.add_token = add_token
         self.asv_dropout_rate = asv_dropout_rate
         self.accumulation_steps = accumulation_steps
-        self.nucleotide_encoder = nucleotide_encoder
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
@@ -84,7 +82,6 @@ class UnifracDenoiser(tf.keras.Model):
                 add_token=self.add_token,
                 asv_dropout_rate=self.asv_dropout_rate,
                 accumulation_steps=self.accumulation_steps,
-                nucleotide_encoder=self.nucleotide_encoder,
                 pairwise_loss_type=self.pairwise_loss_type,
                 normalize_outputs=self.normalize_outputs,
                 use_residual_connections=self.use_residual_connections,
@@ -320,7 +317,6 @@ class UnifracDenoiser(tf.keras.Model):
                 "add_token": self.add_token,
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
-                "nucleotide_encoder": self.nucleotide_encoder,
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "unifrac_encoder": tf.keras.saving.serialize_keras_object(self.unifrac_encoder),
