@@ -36,6 +36,16 @@ def global_embedding_l2_regulization(sample_embeddings):
     return tf.reduce_mean(tf.square(1 - norm))
 
 
+def _pairwise_cosine_distance(embeddings):
+    """Assumes embeddings approximate unit lenth
+
+    Args:
+        embeddings (tf.Tensor): _description_
+    """
+    distances = tf.matmul(embeddings, embeddings, transpose_b=True)
+    return 1 - distances
+
+
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
     d = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
     sample_inner_prod = tf.matmul(sample_embeddings, sample_embeddings, transpose_b=True)
@@ -61,7 +71,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
 
         mask = tf.cast(y_true > 0, dtype=tf.float32)
         differences = tf.math.divide_no_nan(tf.reduce_sum(differences * mask, axis=-1), tf.reduce_sum(mask, axis=-1))
-        return tf.reduce_mean(differences)  # + 0.1 * global_embedding_l2_regulization(y_pred)
+        return tf.reduce_mean(differences)
 
 
 def triplet_loss(embeddings, groups=2, margin=0.2):
@@ -75,19 +85,18 @@ def triplet_loss(embeddings, groups=2, margin=0.2):
     non_matching_mask = tf.cast((1 - matching_mask) * off_diag, dtype=tf.bool)
     matching_mask = tf.cast(matching_mask * off_diag, dtype=tf.bool)
 
-    distances = _pairwise_distances(embeddings, squared=False)
+    distances = _pairwise_cosine_distance(embeddings)
 
     matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
     non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
 
-    triplet_loss = matching_pairs - non_matching_pairs
+    triplet_loss = (matching_pairs + margin) - non_matching_pairs
     valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
     triplet_loss = triplet_loss * valid_mask
 
-    hard_mask = non_matching_pairs < matching_pairs
+    hard_mask = tf.cast(non_matching_pairs < matching_pairs, dtype=tf.float32)
+    semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + margin, dtype=tf.float32) * (1 - hard_mask)
+    num_semi_hard_tuples = tf.reduce_sum(semi_hard_mask, axis=-1)
 
-    hard_loss = tf.reduce_mean(triplet_loss[hard_mask])
-
-    hard_loss = tf.where(tf.reduce_sum(tf.cast(hard_mask, dtype=tf.float32)) > 0.0, hard_loss, 0.0)
-
-    return hard_loss  # + 0.1 * global_embedding_l2_regulization(embeddings)
+    semi_hard_loss = tf.math.divide_no_nan(tf.reduce_sum(triplet_loss * semi_hard_mask, axis=-1), num_semi_hard_tuples)
+    return tf.reduce_mean(semi_hard_loss) + global_embedding_l2_regulization(embeddings)
