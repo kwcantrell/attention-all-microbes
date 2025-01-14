@@ -16,7 +16,7 @@ from aam.utils import float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracEncoder")
-class UnifracEncoder(tf.keras.Model):
+class UnifracEncoder(tf.keras.layers.Layer):
     def __init__(
         self,
         output_dim: int,
@@ -35,10 +35,9 @@ class UnifracEncoder(tf.keras.Model):
         asv_dropout_rate: float = 0.0,
         accumulation_steps: int = 1,
         pairwise_loss_type="mse",
-        normalize_outputs=True,
-        use_residual_connections=False,
+        normalize_outputs=False,
+        use_residual_connections=True,
         use_residual_pool=None,
-        asv_encoder=None,
         **kwargs,
     ):
         super(UnifracEncoder, self).__init__(**kwargs)
@@ -65,47 +64,21 @@ class UnifracEncoder(tf.keras.Model):
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
 
-        if asv_encoder is None:
-            self.base_encoder = BaseSequenceEncoder(
-                self.embedding_dim,
-                self.max_bp,
-                self.token_limit,
-                sample_attention_heads=self.attention_heads,
-                sample_attention_layers=self.attention_layers,
-                sample_intermediate_size=self.intermediate_size,
-                dropout_rate=self.dropout_rate,
-                nuc_attention_heads=4,
-                nuc_attention_layers=4,
-                nuc_intermediate_size=512,
-                intermediate_activation=self.intermediate_activation,
-                is_16S=self.is_16S,
-                vocab_size=self.vocab_size,
-                add_token=self.add_token,
-                normalize_outputs=self.normalize_outputs,
-                use_residual_connections=self.use_residual_connections,
-                use_residual_pool=self.use_residual_pool,
-                asv_encoder=asv_encoder,
-                name="base_encoder",
-            )
-        else:
-            self.base_encoder = asv_encoder
+        # self._get_encoder_loss()
+        # self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+        # self.encoder_tracker = tf.keras.metrics.Mean(name="encoder_loss")
 
-        self._get_encoder_loss()
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.encoder_tracker = tf.keras.metrics.Mean(name="encoder_loss")
+        # self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
+        # self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
 
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
-
-        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
+        # self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
+        # self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
 
     def build(self, input_shape):
         print(f"Input Shape in build: {input_shape}")
         if self.built:
-            print("already built")
+            print("UnifracEncoder is already built")
             return
-        # layers used in model
 
         self.attention_pooling = MultiHeadAttentionPooling(
             self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_pool
@@ -141,137 +114,122 @@ class UnifracEncoder(tf.keras.Model):
         self._accumulation_steps = steps
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
 
-    def _get_encoder_loss(self):
-        self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
-        self.encoder_loss = self._compute_unifrac_loss
-        self.extract_encoder_pred = self._unifrac_embeddings
+    # def _get_encoder_loss(self):
+    #     self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
+    #     self.encoder_loss = self._compute_unifrac_loss
+    #     self.extract_encoder_pred = self._unifrac_embeddings
 
     def _unifrac_embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
         encoder_pred = self.encoder_ff(encoder_pred)
         return encoder_pred
 
-    def _compute_unifrac_loss(
-        self,
-        y_true: tf.Tensor,
-        unifrac_embeddings: tf.Tensor,
-    ) -> tf.Tensor:
-        loss = self._unifrac_loss(y_true, unifrac_embeddings)
-        loss = tf.reduce_mean(loss)
-        return loss
+    # def _compute_unifrac_loss(
+    #     self,
+    #     y_true: tf.Tensor,
+    #     unifrac_embeddings: tf.Tensor,
+    # ) -> tf.Tensor:
+    #     loss = self._unifrac_loss(y_true, unifrac_embeddings)
+    #     loss = tf.reduce_mean(loss)
+    #     return loss
 
-    def _compute_encoder_loss(
-        self,
-        y_true: tf.Tensor,
-        encoder_embeddings: tf.Tensor,
-    ) -> tf.Tensor:
-        loss = self.encoder_loss(y_true, encoder_embeddings)
-        if self.encoder_type != "combined":
-            return tf.reduce_mean(loss)
-        else:
-            return loss
+    # def _compute_encoder_loss(
+    #     self,
+    #     y_true: tf.Tensor,
+    #     encoder_embeddings: tf.Tensor,
+    # ) -> tf.Tensor:
+    #     loss = self.encoder_loss(y_true, encoder_embeddings)
+    #     if self.encoder_type != "combined":
+    #         return tf.reduce_mean(loss)
+    #     else:
+    #         return loss
 
-    def _compute_loss(
-        self,
-        model_inputs: tuple[tf.Tensor, tf.Tensor],
-        y_true: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
-        outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        batch_counts, nuc_tokens, indicies, counts = model_inputs
-        embeddings, encoder_embeddings = outputs
+    # def _compute_loss(
+    #     self,
+    #     model_inputs: tuple[tf.Tensor, tf.Tensor],
+    #     y_true: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
+    #     outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
+    # ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    #     batch_counts, nuc_tokens, indicies, counts = model_inputs
+    #     embeddings, encoder_embeddings = outputs
 
-        nuc_loss = tf.reduce_sum(self.base_encoder.losses)
+    #     nuc_loss = tf.reduce_sum(self.base_encoder.losses)
 
-        encoder_loss = self._compute_encoder_loss(y_true, encoder_embeddings)
-        loss = nuc_loss + encoder_loss
-        return loss, nuc_loss, encoder_loss
+    #     encoder_loss = self._compute_encoder_loss(y_true, encoder_embeddings)
+    #     loss = nuc_loss + encoder_loss
+    #     return loss, nuc_loss, encoder_loss
 
-    def predict_step(
-        self,
-        data: Union[
-            tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
-            tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
-        ],
-    ):
-        inputs, y = data
-        embeddings, encoder_embeddings = self(inputs, training=False)
+    # def predict_step(
+    #     self,
+    #     data: Union[
+    #         tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
+    #         tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
+    #     ],
+    # ):
+    #     inputs, y = data
+    #     embeddings, encoder_embeddings = self(inputs, training=False)
 
-        return encoder_embeddings, y
+    #     return encoder_embeddings, y
 
-    def train_step(
-        self,
-        data: Union[
-            tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
-            tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
-        ],
-    ):
-        if not self.gradient_accumulator.built:
-            self.gradient_accumulator.build(self.optimizer, self)
-        inputs, y = data
-        y_target, encoder_target = y
-        with tf.GradientTape() as tape:
-            outputs = self(inputs, training=True)
-            loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
+    # def train_step(
+    #     self,
+    #     data: Union[
+    #         tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
+    #         tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
+    #     ],
+    # ):
+    #     if not self.gradient_accumulator.built:
+    #         self.gradient_accumulator.build(self.optimizer, self)
+    #     inputs, y = data
+    #     y_target, encoder_target = y
+    #     with tf.GradientTape() as tape:
+    #         outputs = self(inputs, training=True)
+    #         loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
 
-            if self.compute_dtype == "float16":
-                loss = self.optimizer.get_scaled_loss(loss)
+    #         if self.compute_dtype == "float16":
+    #             loss = self.optimizer.get_scaled_loss(loss)
 
-        gradients = tape.gradient(loss, self.trainable_variables)
-        if self.compute_dtype == "float16":
-            gradients = self.optimizer.get_unscaled_gradients(gradients)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+    #     gradients = tape.gradient(loss, self.trainable_variables)
+    #     if self.compute_dtype == "float16":
+    #         gradients = self.optimizer.get_unscaled_gradients(gradients)
+    #     self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(loss)
-        self.encoder_tracker.update_state(encoder_loss)
-        self.nuc_tracker.update_state(nuc_loss)
+    #     self.loss_tracker.update_state(loss)
+    #     self.encoder_tracker.update_state(encoder_loss)
+    #     self.nuc_tracker.update_state(nuc_loss)
 
-        return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
+    #     return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
 
-    def test_step(
-        self,
-        data: Union[
-            tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
-            tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
-        ],
-    ):
-        inputs, y = data
-        y_target, encoder_target = y
-        outputs = self(inputs, training=False)
-        loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
-        self.loss_tracker.update_state(loss)
-        self.encoder_tracker.update_state(encoder_loss)
-        self.nuc_tracker.update_state(nuc_loss)
-        return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
+    # def test_step(
+    #     self,
+    #     data: Union[
+    #         tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
+    #         tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
+    #     ],
+    # ):
+    #     inputs, y = data
+    #     y_target, encoder_target = y
+    #     outputs = self(inputs, training=False)
+    #     loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
+    #     self.loss_tracker.update_state(loss)
+    #     self.encoder_tracker.update_state(encoder_loss)
+    #     self.nuc_tracker.update_state(nuc_loss)
+    #     return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
 
     def call(
         self,
         inputs,
-        include_bert_random_mask=True,
-        return_counts=False,
+        attention_mask=True,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        batch_counts, tokens, indicies, counts = inputs
-        sample_embeddings = self.base_encoder(
-            tokens, include_bert_random_mask=include_bert_random_mask, training=training and self.train_nuc_encoder
-        )
-        sample_embeddings = tf.gather(sample_embeddings, tf.cast(indicies, dtype=tf.int32))
-        sample_embeddings = to_batch(sample_embeddings, batch_counts)
+        training = training and self.trainable
 
-        counts = to_batch(counts, batch_counts)
-        count_mask = float_mask(counts, dtype=self.compute_dtype)
-
-        sample_embeddings, counts = sort_using_counts(sample_embeddings, counts)
-        sample_embeddings = sample_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(
-            sample_embeddings
-        )
-        sample_embeddings = self.encoder(sample_embeddings, mask=count_mask, training=training)
-        encoder_pred = self.extract_encoder_pred(sample_embeddings, count_mask, training=training)
+        asv_embeddings = inputs + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(inputs)
+        asv_embeddings = self.encoder(asv_embeddings, mask=attention_mask, training=training)
+        unifrac_embeddings = self._unifrac_embeddings(asv_embeddings, attention_mask, training=training)
 
         print("UnifracEncoder exit...", self.trainable)
-        if not return_counts:
-            return sample_embeddings, encoder_pred
-        else:
-            return sample_embeddings, counts, encoder_pred
+        return asv_embeddings, unifrac_embeddings
 
     def base_embeddings(self, inputs: tuple[tf.Tensor, tf.Tensor]) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         # keras cast all input to float so we need to manually cast to expected type
@@ -351,26 +309,9 @@ class UnifracEncoder(tf.keras.Model):
                 "add_token": self.add_token,
                 "asv_dropout_rate": self.asv_dropout_rate,
                 "accumulation_steps": self.accumulation_steps,
-                "asv_encoder": tf.keras.saving.serialize_keras_object(self.base_encoder),
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "use_residual_pool": self.use_residual_pool,
-                "build_input_shape": self.get_build_config(),
             }
         )
         return config
-
-    @classmethod
-    def from_config(cls, config, custom_objects=None):
-        input_shape = None
-        if "build_input_shape" in config:
-            build_input_shape = config.pop("build_input_shape")
-            input_shape = build_input_shape["input_shape"]
-
-        base_encoder = config["asv_encoder"]
-        config["asv_encoder"] = tf.keras.saving.deserialize_keras_object(base_encoder)
-        model = cls(**config)
-
-        if input_shape is not None:
-            model.build(input_shape)
-        return model

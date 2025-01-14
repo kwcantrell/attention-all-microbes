@@ -74,7 +74,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         return tf.reduce_mean(differences)
 
 
-def triplet_loss(embeddings, groups=2, margin=0.2):
+def triplet_loss(embeddings, groups=2, margin=0.05):
     emb_shape = tf.shape(embeddings, out_type=tf.int32)
     batch_dim = emb_shape[0]
     group_size = batch_dim // tf.cast(groups, dtype=tf.int32)

@@ -26,8 +26,8 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         vocab_size: int = 6,
         add_token: bool = True,
         nucleotide_encoder=None,
-        normalize_outputs=True,
-        use_residual_connections=False,
+        normalize_outputs=False,
+        use_residual_connections=True,
         use_residual_pool=None,
         asv_encoder=None,
         regularize_embeddings=False,
@@ -58,8 +58,12 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         self.use_residual_pool = use_residual_pool
 
     def build(self, input_shape):
+        if self.built:
+            print("BaseSequenceEncoder is already built")
+            return
         # layers used in model
         if self.asv_encoder is not None:
+            print("building ASVEncoder...")
             if not isinstance(self.asv_encoder, ASVEncoder):
                 raise Exception(f"{type(self.asv_encoder)} is not an ASVEncoder")
         else:
@@ -92,6 +96,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         return embeddings
 
     def call(self, inputs: tf.Tensor, include_bert_random_mask=True, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
+        training = training and self.trainable
         embeddings = self.asv_encoder(inputs, include_bert_random_mask=include_bert_random_mask, training=training)
         asv_embeddings = self._split_asvs(embeddings, training=training)
         print("BaseSequenceEncoder exit...", self.trainable)

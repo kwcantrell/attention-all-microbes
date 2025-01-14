@@ -124,6 +124,7 @@ class NucleotideEncoderV2(tf.keras.Model):
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         tokens = inputs
+        training = training and self.trainable
         embeddings = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
         return self.output_activation(embeddings)
 

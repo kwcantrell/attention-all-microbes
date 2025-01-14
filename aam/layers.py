@@ -67,6 +67,10 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
 
     def build(self, input_shape):
+        if self.built:
+            print("ASVEncoder is already built")
+            return
+
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens,
             self.embedding_dim,
@@ -101,6 +105,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
+        training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs_shape = tf.shape(inputs)
 
@@ -114,7 +119,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         random_mask = create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         masked_inputs = inputs
-        if include_bert_random_mask and training and self.trainable:
+        if include_bert_random_mask and training:
             print("applying bert mask")
             # of the masked tokens, select 20% to either keep or change to
             # random token
