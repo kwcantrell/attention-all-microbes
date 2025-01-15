@@ -42,6 +42,7 @@ def _pairwise_cosine_distance(embeddings):
     Args:
         embeddings (tf.Tensor): _description_
     """
+    embeddings = tf.linalg.l2_normalize(embeddings, axis=-1)
     distances = tf.matmul(embeddings, embeddings, transpose_b=True)
     return 1 - distances
 
@@ -99,4 +100,4 @@ def triplet_loss(embeddings, groups=2, margin=0.05):
     num_semi_hard_tuples = tf.reduce_sum(semi_hard_mask, axis=-1)
 
     semi_hard_loss = tf.math.divide_no_nan(tf.reduce_sum(triplet_loss * semi_hard_mask, axis=-1), num_semi_hard_tuples)
-    return tf.reduce_mean(semi_hard_loss) + global_embedding_l2_regulization(embeddings)
+    return tf.reduce_mean(semi_hard_loss)
