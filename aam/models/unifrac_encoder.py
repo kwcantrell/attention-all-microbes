@@ -64,16 +64,6 @@ class UnifracEncoder(tf.keras.layers.Layer):
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
 
-        # self._get_encoder_loss()
-        # self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        # self.encoder_tracker = tf.keras.metrics.Mean(name="encoder_loss")
-
-        # self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
-        # self.nuc_tracker = tf.keras.metrics.Mean(name="nuc_loss")
-
-        # self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        # self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
-
     def build(self, input_shape):
         print(f"Input Shape in build: {input_shape}")
         if self.built:
@@ -114,107 +104,10 @@ class UnifracEncoder(tf.keras.layers.Layer):
         self._accumulation_steps = steps
         self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
 
-    # def _get_encoder_loss(self):
-    #     self._unifrac_loss = PairwiseLoss(self.pairwise_loss_type)
-    #     self.encoder_loss = self._compute_unifrac_loss
-    #     self.extract_encoder_pred = self._unifrac_embeddings
-
     def _unifrac_embeddings(self, tensor, mask=None, training=False):
         encoder_pred = self.attention_pooling(tensor, mask=mask, training=training)
         encoder_pred = self.encoder_ff(encoder_pred)
         return encoder_pred
-
-    # def _compute_unifrac_loss(
-    #     self,
-    #     y_true: tf.Tensor,
-    #     unifrac_embeddings: tf.Tensor,
-    # ) -> tf.Tensor:
-    #     loss = self._unifrac_loss(y_true, unifrac_embeddings)
-    #     loss = tf.reduce_mean(loss)
-    #     return loss
-
-    # def _compute_encoder_loss(
-    #     self,
-    #     y_true: tf.Tensor,
-    #     encoder_embeddings: tf.Tensor,
-    # ) -> tf.Tensor:
-    #     loss = self.encoder_loss(y_true, encoder_embeddings)
-    #     if self.encoder_type != "combined":
-    #         return tf.reduce_mean(loss)
-    #     else:
-    #         return loss
-
-    # def _compute_loss(
-    #     self,
-    #     model_inputs: tuple[tf.Tensor, tf.Tensor],
-    #     y_true: Union[tf.Tensor, tuple[tf.Tensor, tf.Tensor]],
-    #     outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
-    # ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-    #     batch_counts, nuc_tokens, indicies, counts = model_inputs
-    #     embeddings, encoder_embeddings = outputs
-
-    #     nuc_loss = tf.reduce_sum(self.base_encoder.losses)
-
-    #     encoder_loss = self._compute_encoder_loss(y_true, encoder_embeddings)
-    #     loss = nuc_loss + encoder_loss
-    #     return loss, nuc_loss, encoder_loss
-
-    # def predict_step(
-    #     self,
-    #     data: Union[
-    #         tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
-    #         tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
-    #     ],
-    # ):
-    #     inputs, y = data
-    #     embeddings, encoder_embeddings = self(inputs, training=False)
-
-    #     return encoder_embeddings, y
-
-    # def train_step(
-    #     self,
-    #     data: Union[
-    #         tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
-    #         tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
-    #     ],
-    # ):
-    #     if not self.gradient_accumulator.built:
-    #         self.gradient_accumulator.build(self.optimizer, self)
-    #     inputs, y = data
-    #     y_target, encoder_target = y
-    #     with tf.GradientTape() as tape:
-    #         outputs = self(inputs, training=True)
-    #         loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
-
-    #         if self.compute_dtype == "float16":
-    #             loss = self.optimizer.get_scaled_loss(loss)
-
-    #     gradients = tape.gradient(loss, self.trainable_variables)
-    #     if self.compute_dtype == "float16":
-    #         gradients = self.optimizer.get_unscaled_gradients(gradients)
-    #     self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-
-    #     self.loss_tracker.update_state(loss)
-    #     self.encoder_tracker.update_state(encoder_loss)
-    #     self.nuc_tracker.update_state(nuc_loss)
-
-    #     return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
-
-    # def test_step(
-    #     self,
-    #     data: Union[
-    #         tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor],
-    #         tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
-    #     ],
-    # ):
-    #     inputs, y = data
-    #     y_target, encoder_target = y
-    #     outputs = self(inputs, training=False)
-    #     loss, nuc_loss, encoder_loss = self._compute_loss(inputs, encoder_target, outputs)
-    #     self.loss_tracker.update_state(loss)
-    #     self.encoder_tracker.update_state(encoder_loss)
-    #     self.nuc_tracker.update_state(nuc_loss)
-    #     return {**self.get_metrics_result(), "learning_rate": self.optimizer.learning_rate}
 
     def call(
         self,

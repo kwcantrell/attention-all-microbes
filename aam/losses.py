@@ -5,7 +5,19 @@ from typing import Union
 import tensorflow as tf
 
 
-def _pairwise_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False):
+def _pairwise_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False) -> tf.Tensor:
+    """Constructs a distance matrix between embedding tensors x and y.
+
+    Args:
+        x (tf.Tensor): float tensor of shape [N, E].
+        y (Union[tf.Tensor, None], optional): float tensor of shape [M, E]
+        squared (bool, optional): If true, computes euclidean distances between between.
+        Otherwise, computes dot product between x and y. Defaults to False.
+
+    Returns:
+        tf.Tensor: If y is provided returns tensor of shape [N, M]. Otherwise return tensor
+        of shape [N,N].
+    """
     if y is None:
         y = x
     distances = tf.expand_dims(x, axis=0) - tf.expand_dims(y, axis=1)
@@ -36,14 +48,23 @@ def global_embedding_l2_regulization(sample_embeddings):
     return tf.reduce_mean(tf.square(1 - norm))
 
 
-def _pairwise_cosine_distance(embeddings):
-    """Assumes embeddings approximate unit lenth
+def _pairwise_cosine_distance(x: tf.Tensor, y: Union[tf.Tensor, None] = None) -> tf.Tensor:
+    """Computes the cosine distance between embedding tensors x and y.
 
     Args:
-        embeddings (tf.Tensor): _description_
+        x (tf.Tensor): float tensor of shape [N, E].
+        y (Union[tf.Tensor, None], optional): float tensor of shape [M, E]
+
+    Returns:
+        tf.Tensor: If y is provided returns tensor of shape [N, M]. Otherwise return tensor
+        of shape [N,N].
     """
-    embeddings = tf.linalg.l2_normalize(embeddings, axis=-1)
-    distances = tf.matmul(embeddings, embeddings, transpose_b=True)
+    x = tf.linalg.l2_normalize(x, axis=-1)
+    if y is None:
+        y = x
+    else:
+        y = tf.linalg.l2_normalize(y, axis=-1)
+    distances = tf.matmul(x, y, transpose_b=True)
     return 1 - distances
 
 
@@ -71,7 +92,8 @@ class PairwiseLoss(tf.keras.losses.Loss):
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
 
         mask = tf.cast(y_true > 0, dtype=tf.float32)
-        differences = tf.math.divide_no_nan(tf.reduce_sum(differences * mask, axis=-1), tf.reduce_sum(mask, axis=-1))
+        # differences = tf.math.divide_no_nan(tf.reduce_sum(differences * mask, axis=-1), tf.reduce_sum(mask, axis=-1))
+        differences = tf.math.reduce_max(differences * mask, axis=-1)
         return tf.reduce_mean(differences)
 
 
