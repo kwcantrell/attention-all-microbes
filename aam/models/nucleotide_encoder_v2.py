@@ -21,6 +21,7 @@ class NucleotideEncoderV2(tf.keras.Model):
         use_residual_connections: bool = False,
         regularize_embeddings=False,
         asv_encoder=None,
+        include_bert_loss=True,
         **kwargs,
     ):
         super(NucleotideEncoderV2, self).__init__(**kwargs)
@@ -35,6 +36,7 @@ class NucleotideEncoderV2(tf.keras.Model):
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
         self.regularize_embeddings = regularize_embeddings
+        self.inlclude_bert_loss = include_bert_loss
 
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
@@ -82,7 +84,11 @@ class NucleotideEncoderV2(tf.keras.Model):
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
             asv_loss = self._compute_loss(y_true, embeddings)
-            nuc_loss = tf.reduce_sum(self.losses)
+            loss = asv_loss
+            if self.inlclude_bert_loss:
+                nuc_loss = tf.reduce_sum(self.losses)
+            else:
+                nuc_loss = 0.0
             loss = nuc_loss + asv_loss
 
             if self.compute_dtype == "float16":
@@ -107,8 +113,11 @@ class NucleotideEncoderV2(tf.keras.Model):
         inputs, y_true = data
         embeddings = self(inputs, training=False)
         asv_loss = self._compute_loss(y_true, embeddings)
-        nuc_loss = tf.reduce_sum(self.losses)
-        loss = nuc_loss
+        loss = asv_loss
+        if self.inlclude_bert_loss:
+            nuc_loss = tf.reduce_sum(self.losses)
+        else:
+            nuc_loss = 0.0
         self.loss_tracker.update_state(nuc_loss)
         self.nuc_tracker.update_state(nuc_loss)
 
@@ -125,7 +134,7 @@ class NucleotideEncoderV2(tf.keras.Model):
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         tokens = inputs
         training = training and self.trainable
-        embeddings = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
+        embeddings = self.asv_encoder(tokens, include_bert_random_mask=training and self.inlclude_bert_loss, training=training)
         return self.output_activation(embeddings)
 
     def get_config(self):
@@ -143,6 +152,7 @@ class NucleotideEncoderV2(tf.keras.Model):
                 "use_residual_connections": self.use_residual_connections,
                 "build_input_shape": self.get_build_config(),
                 "regularize_embeddings": self.regularize_embeddings,
+                "include_bert_loss": self.inlclude_bert_loss,
             }
         )
         return config

@@ -70,6 +70,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-normalize-outputs", default=False, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
 @click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-include-bert-loss", default=True, required=False)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -89,6 +90,7 @@ def fit_asv_encoder(
     p_normalize_outputs: bool,
     p_use_residual_connections: bool,
     i_model: str,
+    p_include_bert_loss: bool,
 ):
     import tensorflow_addons as tfa
 
@@ -118,6 +120,7 @@ def fit_asv_encoder(
             intermediate_size=p_intermediate_size,
             normalize_outputs=p_normalize_outputs,
             use_residual_connections=p_use_residual_connections,
+            include_bert_loss=p_include_bert_loss,
         )
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))

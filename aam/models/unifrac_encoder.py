@@ -88,9 +88,7 @@ class UnifracEncoder(tf.keras.layers.Layer):
         self._rezero = self.add_weight(
             name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
         )
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
-        )
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.token_limit, seq_axis=1)
 
         self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
         super(UnifracEncoder, self).build(input_shape)

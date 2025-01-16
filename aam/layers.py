@@ -79,9 +79,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
 
         self._rezero = self.add_weight(name="rezero_alpha", initializer="zeros", trainable=True, dtype=tf.float32)
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.max_bp + 1, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
-        )
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp + 1, seq_axis=1)
 
         self.asv_attention = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -158,7 +156,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         output = self.asv_attention(asv_input, training=training)
 
-        if self.trainable:
+        if self.trainable and include_bert_random_mask:
             # extract the masked nucleotides
             random_mask = tf.reshape(random_mask, shape=[-1])
             asv_tokens = tf.reshape(inputs + self.nucleotide_position, shape=[-1])[random_mask]

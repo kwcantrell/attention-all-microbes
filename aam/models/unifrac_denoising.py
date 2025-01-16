@@ -106,34 +106,30 @@ class UnifracDenoiser(tf.keras.Model):
             use_residual_pool=self.use_residual_pool,
         )
 
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
-        )
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit,
-            seq_axis=1,
-            initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
-        )
-        self.denoise_encoder = TransformerEncoder(
-            num_layers=self.attention_layers,
-            num_attention_heads=self.attention_heads,
-            intermediate_size=self.intermediate_size,
-            dropout_rate=self.dropout_rate,
-            activation=self.intermediate_activation,
-            normalize_outputs=self.normalize_outputs,
-            use_residual_connections=self.use_residual_connections,
-            name="encoder",
-        )
-        self.attention_pooling = MultiHeadAttentionPooling(
-            self.normalize_outputs,
-            num_heads=self.attention_heads,
-            use_residual_connections=self.use_residual_pool,
-        )
+        # self._rezero = self.add_weight(
+        #     name="rezero_alpha",
+        #     initializer=tf.keras.initializers.Zeros(),
+        #     trainable=True,
+        #     dtype=tf.float32,
+        # )
+        # self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.token_limit, seq_axis=1)
+        # self.denoise_encoder = TransformerEncoder(
+        #     num_layers=self.attention_layers,
+        #     num_attention_heads=self.attention_heads,
+        #     intermediate_size=self.intermediate_size,
+        #     dropout_rate=self.dropout_rate,
+        #     activation=self.intermediate_activation,
+        #     normalize_outputs=self.normalize_outputs,
+        #     use_residual_connections=self.use_residual_connections,
+        #     name="encoder",
+        # )
+        # self.attention_pooling = MultiHeadAttentionPooling(
+        #     self.normalize_outputs,
+        #     num_heads=self.attention_heads,
+        #     use_residual_connections=self.use_residual_pool,
+        # )
 
-        self.denoiser_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
+        # self.denoiser_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
         super(UnifracDenoiser, self).build(input_shape)
 
     def _embeddings(self, tensor, mask=None, training=False):
@@ -172,9 +168,9 @@ class UnifracDenoiser(tf.keras.Model):
         )
         unifrac_loss = tf.reduce_mean(unifrac_loss)
 
-        denoise_loss = self.triplet_loss(denoised_embeddings)
-        denoise_loss = tf.reduce_mean(denoise_loss)
-
+        # denoise_loss = self.triplet_loss(denoised_embeddings)
+        # denoise_loss = tf.reduce_mean(denoise_loss)
+        denoise_loss = 0.0
         loss = unifrac_loss + denoise_loss
 
         return loss, unifrac_loss, denoise_loss
@@ -267,11 +263,11 @@ class UnifracDenoiser(tf.keras.Model):
         asv_embeddings, counts = sort_using_counts(asv_embeddings, counts)
 
         asv_embeddings, unifrac_embeddings = self.unifrac_encoder(asv_embeddings, attention_mask=count_mask, training=training)
+        denoised_unifrac_embeddings = unifrac_embeddings
+        # asv_embeddings = asv_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_embeddings)
 
-        asv_embeddings = asv_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_embeddings)
-
-        asv_embeddings = self.denoise_encoder(asv_embeddings, mask=count_mask, training=training)
-        denoised_unifrac_embeddings = self._embeddings(asv_embeddings, count_mask, training=training)
+        # asv_embeddings = self.denoise_encoder(asv_embeddings, mask=count_mask, training=training)
+        # denoised_unifrac_embeddings = self._embeddings(asv_embeddings, count_mask, training=training)
         print("UniFracDenoiser exit...", self.trainable)
         if return_unifrac_embeddings:
             if not return_counts:

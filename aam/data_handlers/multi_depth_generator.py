@@ -226,8 +226,15 @@ if __name__ == "__main__":
     #     compile=False,
     # )
     print(data_obj)
-    for data in data_obj["dataset"].take(1):
-        print(data)
+    for x, y in data_obj["dataset"].take(1):
+        _, y_true = y
+        print(y_true)
+        shape = tf.shape(y_true)
+        batch_dim = shape[0]
+        group_dim = shape[-1]
+        groups = batch_dim // group_dim
+        y_true = tf.reshape(y_true, shape=[groups, group_dim, group_dim])
+        print(y_true)
     # print(encoder_target)
     # shape = tf.shape(encoder_target)
     # batch_dim = shape[0]
