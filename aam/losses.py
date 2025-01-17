@@ -92,7 +92,8 @@ class PairwiseLoss(tf.keras.losses.Loss):
         elif self.loss_type == "msle":
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
 
-        valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) > 0
+        batch_dim = tf.shape(y_true)[0]
+        valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
         valid_differences = differences[valid_pairs]
         return tf.reduce_mean(valid_differences)
 

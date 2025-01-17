@@ -150,16 +150,9 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         output = self.asv_attention(asv_input, training=training)
 
+        asv_tokens = inputs + self.nucleotide_position
+        loss = self._compute_nuc_loss(asv_tokens, output, random_mask)
         if self.trainable:
-            asv_tokens = inputs + self.nucleotide_position
-            batch_size = tf.shape(output)[0]
-            # loss = tf.map_fn(
-            #     self._compute_nuc_loss,
-            #     (asv_tokens, output, random_mask),
-            #     parallel_iterations=128,
-            #     fn_output_signature=tf.TensorSpec(shape=(), dtype=tf.float32),
-            # )
-            loss = self._compute_nuc_loss(asv_tokens, output, random_mask)
             self.add_loss(tf.reduce_mean(loss))
 
         print("ASVEncoder exit...", self.trainable)
