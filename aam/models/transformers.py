@@ -3,6 +3,8 @@ from __future__ import annotations
 import tensorflow as tf
 import tensorflow_models as tfm
 
+from aam.models.rezero_transformer_with_linear_biases import ReZeroTransformerLinearBiases
+
 
 @tf.keras.saving.register_keras_serializable(package="TransformerEncoder")
 class TransformerEncoder(tf.keras.layers.Layer):
@@ -19,6 +21,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         norm_epsilon=1e-6,
         normalize_outputs=True,
         use_residual_connections=False,
+        use_linear_bias=False,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -33,6 +36,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._norm_epsilon = norm_epsilon
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
@@ -42,10 +46,11 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
             )
 
+        ReZeroTransformer = tfm.nlp.layers.ReZeroTransformer if not self.use_linear_bias else ReZeroTransformerLinearBiases
         self.encoder_layers = []
         for i in range(self.num_layers):
             self.encoder_layers.append(
-                tfm.nlp.layers.ReZeroTransformer(
+                ReZeroTransformer(
                     num_attention_heads=self.num_attention_heads,
                     inner_dim=self._intermediate_size,
                     inner_activation=self._activation,
@@ -72,6 +77,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "norm_epsilon": self._norm_epsilon,
             "normalize_outputs": self.normalize_outputs,
             "use_residual_connections": self.use_residual_connections,
+            "use_linear_bias": self.use_linear_bias,
         }
         base_config = super(TransformerEncoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

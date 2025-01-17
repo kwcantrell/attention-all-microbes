@@ -71,6 +71,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-use-residual-connections", default=True, type=bool)
 @click.option("--i-model", default=None, required=False, type=str)
 @click.option("--p-include-bert-loss", default=True, required=False, type=bool)
+@click.option("--p-use-linear-bias", default=False, type=bool)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -91,6 +92,7 @@ def fit_asv_encoder(
     p_use_residual_connections: bool,
     i_model: str,
     p_include_bert_loss: bool,
+    p_use_linear_bias: bool,
 ):
     import tensorflow_addons as tfa
 
@@ -120,6 +122,7 @@ def fit_asv_encoder(
             intermediate_size=p_intermediate_size,
             normalize_outputs=p_normalize_outputs,
             use_residual_connections=p_use_residual_connections,
+            use_linear_bias=p_use_linear_bias,
         )
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
@@ -1047,7 +1050,7 @@ def fit_sample_regressor(
             weight_decay=p_weight_decay,
         )
         models.append(model_cv)
-        print(f"Fold {i+1} mae: {model_cv.metric_value}")
+        print(f"Fold {i + 1} mae: {model_cv.metric_value}")
 
     best_model_path = os.path.join(output_dir, "best-model.keras")
     model_ensemble = EnsembleModel(models)

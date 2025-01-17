@@ -2,24 +2,35 @@ from __future__ import annotations
 
 import tensorflow as tf
 
+from aam.models.multihead_attention_with_linear_biases import MultiHeadAttention
+
 
 @tf.keras.saving.register_keras_serializable(package="MultiHeadAttentionPooling")
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, normalize_output, num_heads=4, use_residual_connections=True):
+    def __init__(self, normalize_output, num_heads=4, use_residual_connections=True, use_linear_bias=False):
         super(MultiHeadAttentionPooling, self).__init__()
         self.num_heads = num_heads
         self.normalize_output = normalize_output
         self.use_residual_connections = use_residual_connections
+        self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
         hidden_dim = input_shape[-1]
         key_dim = int(hidden_dim // self.num_heads)
         self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
-        self.attention = tf.keras.layers.MultiHeadAttention(
-            self.num_heads,
-            key_dim=key_dim,
-            dropout=0.1,
-        )
+        if self.use_linear_bias:
+            self.attention = MultiHeadAttention(
+                self.num_heads,
+                key_dim=key_dim,
+                dropout=0.1,
+            )
+
+        else:
+            self.attention = tf.keras.layers.MultiHeadAttention(
+                self.num_heads,
+                key_dim=key_dim,
+                dropout=0.1,
+            )
         if self.use_residual_connections:
             self._rezero = self.add_weight(
                 name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
@@ -32,6 +43,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
                 "normalize_output": self.normalize_output,
                 "num_heads": self.num_heads,
                 "use_residual_connections": self.use_residual_connections,
+                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config

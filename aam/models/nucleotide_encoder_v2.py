@@ -21,6 +21,7 @@ class NucleotideEncoderV2(tf.keras.Model):
         use_residual_connections: bool = False,
         regularize_embeddings=False,
         asv_encoder=None,
+        use_linear_bias=False,
         **kwargs,
     ):
         super(NucleotideEncoderV2, self).__init__(**kwargs)
@@ -41,7 +42,7 @@ class NucleotideEncoderV2(tf.keras.Model):
 
         self.asv_loss = PairwiseLoss()
         self.asv_tracker = tf.keras.metrics.Mean()
-
+        self.use_linear_bias = use_linear_bias
         self.asv_encoder = BaseSequenceEncoder(
             embedding_dim=self.embedding_dim,
             max_bp=self.max_bp,
@@ -59,6 +60,7 @@ class NucleotideEncoderV2(tf.keras.Model):
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             asv_encoder=asv_encoder,
+            use_linear_bias=self.use_linear_bias,
         )
 
     def build(self, input_shape):
@@ -151,6 +153,7 @@ class NucleotideEncoderV2(tf.keras.Model):
                 "use_residual_connections": self.use_residual_connections,
                 "build_input_shape": self.get_build_config(),
                 "regularize_embeddings": self.regularize_embeddings,
+                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config

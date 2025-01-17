@@ -39,6 +39,7 @@ class UnifracEncoder(tf.keras.layers.Layer):
         use_residual_connections=True,
         use_residual_pool=None,
         asv_encoder=None,
+        use_linear_bias=False,
         **kwargs,
     ):
         super(UnifracEncoder, self).__init__(**kwargs)
@@ -60,6 +61,7 @@ class UnifracEncoder(tf.keras.layers.Layer):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.use_linear_bias = use_linear_bias
 
         if use_residual_pool is None:
             use_residual_pool = use_residual_connections
@@ -83,13 +85,15 @@ class UnifracEncoder(tf.keras.layers.Layer):
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
+            use_linear_bias=self.use_linear_bias,
             name="encoder",
         )
 
-        self._rezero = self.add_weight(
-            name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
-        )
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.token_limit, seq_axis=1)
+        if not self.use_linear_bias:
+            self._rezero = self.add_weight(
+                name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+            )
+            self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.token_limit, seq_axis=1)
 
         self.encoder_ff = tf.keras.layers.Dense(self.output_dim, dtype=tf.float32)
         super(UnifracEncoder, self).build(input_shape)
@@ -116,8 +120,10 @@ class UnifracEncoder(tf.keras.layers.Layer):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
-        asv_embeddings = inputs + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(inputs)
-        asv_embeddings = self.encoder(asv_embeddings, mask=attention_mask, training=training)
+        if not self.use_linear_bias:
+            inputs = inputs + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(inputs)
+
+        asv_embeddings = self.encoder(inputs, mask=attention_mask, training=training)
         unifrac_embeddings = self._unifrac_embeddings(asv_embeddings, attention_mask, training=training)
 
         print("UnifracEncoder exit...", self.trainable)

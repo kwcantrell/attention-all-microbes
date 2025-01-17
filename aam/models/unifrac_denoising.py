@@ -39,6 +39,7 @@ class UnifracDenoiser(tf.keras.Model):
         use_residual_connections=True,
         use_residual_pool=None,
         asv_encoder=None,
+        use_linear_bias=False,
         **kwargs,
     ):
         super(UnifracDenoiser, self).__init__(**kwargs)
@@ -60,6 +61,7 @@ class UnifracDenoiser(tf.keras.Model):
         self.pairwise_loss_type = pairwise_loss_type
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
+        self.use_linear_bias = use_linear_bias
 
         if asv_encoder is None:
             raise Exception("UnifracDeniser is missing ASVEncoder")
@@ -103,6 +105,7 @@ class UnifracDenoiser(tf.keras.Model):
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             use_residual_pool=self.use_residual_pool,
+            use_linear_bias=self.use_linear_bias,
             name="unifrac_encoder",
         )
 
@@ -126,6 +129,7 @@ class UnifracDenoiser(tf.keras.Model):
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             use_residual_pool=self.use_residual_pool,
+            use_linear_bias=self.use_linear_bias,
             name="unifrac_denoiser",
         )
 
@@ -324,6 +328,7 @@ class UnifracDenoiser(tf.keras.Model):
                 "use_residual_pool": self.use_residual_pool,
                 "build_input_shape": self.get_build_config(),
                 "asv_encoder": tf.keras.saving.serialize_keras_object(self.asv_encoder),
+                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config

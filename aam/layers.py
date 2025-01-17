@@ -45,6 +45,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         normalize_outputs=True,
         use_residual_connections=False,
         regularize_embeddings=False,
+        use_linear_bias=False,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -61,6 +62,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
         self.regularize_embeddings = regularize_embeddings
+        self.use_linear_bias = use_linear_bias
+
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
         self.nucleotide_position = tf.range(0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32)
@@ -73,8 +76,9 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         self.emb_layer = tf.keras.layers.Embedding(self.num_tokens, self.embedding_dim, input_length=self.max_bp)
 
-        self._rezero = self.add_weight(name="rezero_alpha", initializer="zeros", trainable=True, dtype=tf.float32)
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp + 1, seq_axis=1)
+        if not self.use_linear_bias:
+            self._rezero = self.add_weight(name="rezero_alpha", initializer="zeros", trainable=True, dtype=tf.float32)
+            self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp + 1, seq_axis=1)
 
         self.asv_attention = TransformerEncoder(
             num_layers=self.attention_layers,
@@ -84,6 +88,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
+            use_linear_bias=self.use_linear_bias,
         )
 
         self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32)
@@ -141,7 +146,9 @@ class ASVEncoder(tf.keras.layers.Layer):
         # get nucleotides embeddigns
         asv_tokens = masked_inputs + self.nucleotide_position
         asv_input = self.emb_layer(asv_tokens)
-        asv_input = asv_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_input)
+
+        if not self.use_linear_bias:
+            asv_input = asv_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_input)
 
         output = self.asv_attention(asv_input, training=training)
 
@@ -180,6 +187,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "regularize_embeddings": self.regularize_embeddings,
+                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config

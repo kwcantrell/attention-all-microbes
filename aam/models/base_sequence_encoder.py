@@ -31,6 +31,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         use_residual_pool=None,
         asv_encoder=None,
         regularize_embeddings=False,
+        use_linear_bias=False,
         **kwargs,
     ):
         super(BaseSequenceEncoder, self).__init__(**kwargs)
@@ -56,6 +57,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         if use_residual_pool is None:
             use_residual_pool = use_residual_connections
         self.use_residual_pool = use_residual_pool
+        self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
         if self.built:
@@ -79,11 +81,15 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 normalize_outputs=self.normalize_outputs,
                 use_residual_connections=self.use_residual_connections,
                 regularize_embeddings=self.regularize_embeddings,
+                use_linear_bias=self.use_linear_bias,
                 name="asv_encoder",
             )
 
         self.attention_pool = MultiHeadAttentionPooling(
-            self.normalize_outputs, num_heads=self.nuc_attention_heads, use_residual_connections=self.use_residual_pool
+            self.normalize_outputs,
+            num_heads=self.nuc_attention_heads,
+            use_residual_connections=self.use_residual_pool,
+            use_linear_bias=self.use_linear_bias,
         )
         super(BaseSequenceEncoder, self).build(input_shape)
 
@@ -184,6 +190,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
                 "use_residual_pool": self.use_residual_pool,
                 "asv_encoder": tf.keras.saving.serialize_keras_object(self.asv_encoder),
                 "regularize_embeddings": self.regularize_embeddings,
+                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config
