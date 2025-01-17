@@ -71,12 +71,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             print("ASVEncoder is already built")
             return
 
-        self.emb_layer = tf.keras.layers.Embedding(
-            self.num_tokens,
-            self.embedding_dim,
-            input_length=self.max_bp,
-            embeddings_initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
-        )
+        self.emb_layer = tf.keras.layers.Embedding(self.num_tokens, self.embedding_dim, input_length=self.max_bp)
 
         self._rezero = self.add_weight(name="rezero_alpha", initializer="zeros", trainable=True, dtype=tf.float32)
         self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp + 1, seq_axis=1)

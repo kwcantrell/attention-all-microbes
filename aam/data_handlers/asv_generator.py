@@ -69,7 +69,13 @@ class ASVGenerator:
 
             if not n.is_root():
                 n.length += n.parent.length
+
+            if n.is_tip():
+                n.parents = self._root_to_node(n)
             self.preorder_nodes.append(n)
+
+        for i, n in enumerate(self.tree_node.postorder(include_self=True)):
+            n.postorder_pos = i
 
         # step 4: find distance from node to root
         print("step 4: find distance from node to root")
@@ -119,18 +125,31 @@ class ASVGenerator:
     def _sample_data(self, samples: np.ndarray, return_asv_ids) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tokens = self.obs_encodings[samples]
 
-        asv_pos = self.asv_preorderpos[samples]
+        if return_asv_ids:
+            asv_pos = self.asv_preorderpos[samples]
+            return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
+
         num_asvs = self.pairwise_batch_size
+        samples = samples[:num_asvs]
+        asv_pos = self.asv_preorderpos[samples]
+        post_order_pos = np.array([self.preorder_nodes[i].postorder_pos for i in asv_pos], dtype=np.int32)
+        sorted_post_indx = np.argsort(post_order_pos)
+
+        asv_pos = asv_pos[sorted_post_indx]
 
         dists = np.zeros((num_asvs, num_asvs))
-        parents = [self._root_to_node(self.preorder_nodes[asv_pos[i]]) for i in range(num_asvs)]
 
         for i in range(num_asvs):
+            _ri = sorted_post_indx[i]
             pre_i = asv_pos[i]
 
             # get leaf i
             leaf_i = self.preorder_nodes[pre_i]
+            lca = None
+
             for j in range(i + 1, num_asvs, 1):
+                _rj = sorted_post_indx[j]
+
                 # get leaf_j
                 pre_j = asv_pos[j]
                 leaf_j = self.preorder_nodes[pre_j]
@@ -138,16 +157,19 @@ class ASVGenerator:
                 # get length of i, j, and lca to root
                 i_to_root = leaf_i.length
                 j_to_root = leaf_j.length
-                lca_to_root = self._lca(parents[i], parents[j]).length
+
+                if lca is None:
+                    lca = self._lca(leaf_i.parents, leaf_j.parents)
+                elif lca.postorder_pos < leaf_j.postorder_pos:
+                    lca = self._lca(leaf_i.parents, leaf_j.parents)
+
+                lca_to_root = lca.length
 
                 # distance from i to j
                 pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
-                dists[i, j] = pairwise_distance / self.max_dist_to_root
+                dists[_ri, _rj] = pairwise_distance / self.max_dist_to_root
 
-        if not return_asv_ids:
-            return tokens, dists
-        else:
-            return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
+        return tokens, dists + dists.T
 
     def _epoch_complete(self, processed):
         if processed < self.steps_per_epoch:
