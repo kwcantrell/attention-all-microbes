@@ -251,6 +251,7 @@ def fit_asv_encoder(
 @click.option("--p-use-residual-pool", default=None, type=bool)
 @click.option("--p-train-nuc-encoder", default=True, type=bool)
 @click.option("--p-nuc-encoder", default=None)
+@click.option("--p-use-linear-bias", default=False, type=bool)
 def fit_denoised_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -290,6 +291,7 @@ def fit_denoised_unifrac_regressor(
     p_use_residual_pool: bool,
     p_train_nuc_encoder: bool,
     p_nuc_encoder: Union[None, tf.keras.Model],
+    p_use_linear_bias: bool,
 ):
     import tensorflow_addons as tfa
     from biom import load_table
@@ -340,6 +342,7 @@ def fit_denoised_unifrac_regressor(
             use_residual_connections=p_use_residual_connections,
             use_residual_pool=p_use_residual_pool,
             asv_encoder=asv_encoder,
+            use_linear_bias=p_use_linear_bias,
         )
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))

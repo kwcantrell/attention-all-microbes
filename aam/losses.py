@@ -135,4 +135,5 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.0, soft_margin=0.1):
     r_std = mean + std
     mask = (semi_hard_loss >= l_std) & (semi_hard_loss <= r_std)
 
-    return tf.reduce_mean(semi_hard_loss[mask])
+    loss = tf.reduce_mean(semi_hard_loss[mask])
+    return tf.where(loss > 0, 0.0)

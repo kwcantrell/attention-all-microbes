@@ -74,7 +74,10 @@ class UnifracEncoder(tf.keras.layers.Layer):
             return
 
         self.attention_pooling = MultiHeadAttentionPooling(
-            self.normalize_outputs, num_heads=self.attention_heads, use_residual_connections=self.use_residual_pool
+            self.normalize_outputs,
+            num_heads=self.attention_heads,
+            use_residual_connections=self.use_residual_pool,
+            use_linear_bias=self.use_linear_bias,
         )
 
         self.encoder = TransformerEncoder(
@@ -210,6 +213,7 @@ class UnifracEncoder(tf.keras.layers.Layer):
                 "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "use_residual_pool": self.use_residual_pool,
+                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config
