@@ -106,9 +106,10 @@ class GeneratorDataset:
             self.obs_ids = self.preprocessed_table.ids(axis="observation")
 
             print("creating table...")
+            print(f"Prerafaction Table shape: {self.preprocessed_table.shape}")
             self.rarefy_table, self.sample_mask = self.create_rarefied_table(self.preprocessed_table)
 
-            print(f"Table shape: {self.rarefy_table.shape}")
+            print(f"Postrarefaction Table shape: {self.rarefy_table.shape}")
             self.sample_indices = np.arange(len(self.rarefy_table.ids()))
             self.size = len(self.sample_indices)
             self.sample_indices = self.sample_indices[self.sample_mask]

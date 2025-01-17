@@ -95,7 +95,10 @@ class PairwiseLoss(tf.keras.losses.Loss):
         batch_dim = tf.shape(y_true)[0]
         valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
         valid_differences = differences[valid_pairs]
-        return tf.reduce_mean(valid_differences)
+
+        mean_mask = valid_differences > tf.reduce_mean(valid_differences)
+
+        return tf.reduce_mean(valid_differences[mean_mask])
 
 
 def triplet_loss(embeddings, groups=2, hard_margin=0.0, soft_margin=0.1):

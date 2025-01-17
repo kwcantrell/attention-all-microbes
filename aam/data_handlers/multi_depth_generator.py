@@ -226,27 +226,32 @@ if __name__ == "__main__":
     #     compile=False,
     # )
     print(data_obj)
+    model = tf.keras.models.load_model(
+        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/profile-unifrac-regressor/model.keras", compile=False
+    )
     for x, y in data_obj["dataset"].take(1):
-        _, y_true = y
-        print(y_true)
-        shape = tf.shape(y_true)
-        batch_dim = shape[0]
-        group_dim = shape[-1]
-        groups = batch_dim // group_dim
-        y_true = tf.reshape(y_true, shape=[groups, group_dim, group_dim])
-        print(y_true)
-    # print(encoder_target)
-    # shape = tf.shape(encoder_target)
-    # batch_dim = shape[0]
-    # group_dim = shape[-1]
-    # groups = batch_dim // group_dim
-    # print(tf.reshape(encoder_target, shape=[groups, group_dim, group_dim]))
-    # data = ug.get_data()
-    # for i, (x, y) in enumerate(data["dataset"]):
-    #     print(y[1], np.log1p(y[1]), np.sqrt(y[1]))
-    #     break
+        y_target, encoder_target = y
+        batch_counts, tokens, indicies, counts = x
+        group_dim = tf.shape(encoder_target)[-1]
+        batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
+        batch_sums = tf.pad(tf.reduce_sum(batch_counts[:-1], axis=-1, keepdims=True), [[1, 0], [0, 0]])
+        batch_sums = tf.squeeze(batch_sums, axis=-1)
+        batch_sums = tf.math.cumsum(batch_sums, axis=0)
+        # print(batch_counts, batch_sums, tf.reduce_sum(batch_counts, axis=-1), tf.reduce_sum(batch_counts), indicies.shape)
 
-    # data = ug.get_data_by_id(ug.rarefy_tables.ids()[:16])
-    # for x, y in data["dataset"]:
-    #     print(y)
-    #     break
+        def _process_batch(inputs):
+            bi_batch_counts, prev_batch_sums = inputs
+            bi_total = tf.reduce_sum(bi_batch_counts)
+            bi_indices = indicies[prev_batch_sums : prev_batch_sums + bi_total]
+            bi_counts = counts[prev_batch_sums : prev_batch_sums + bi_total]
+            print("WHAT???", bi_total, bi_indices.shape)
+            return model((bi_batch_counts, tokens, bi_indices, bi_counts), training=True)
+
+        output = tf.map_fn(
+            _process_batch,
+            (batch_counts, batch_sums),
+            fn_output_signature=(
+                tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
+                tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
+            ),
+        )
