@@ -125,12 +125,11 @@ class ASVGenerator:
         dists = np.zeros((num_asvs, num_asvs))
         parents = [self._root_to_node(self.preorder_nodes[asv_pos[i]]) for i in range(num_asvs)]
 
-        def pair_dist(i):
+        for i in range(num_asvs):
             pre_i = asv_pos[i]
 
             # get leaf i
             leaf_i = self.preorder_nodes[pre_i]
-
             for j in range(i + 1, num_asvs, 1):
                 # get leaf_j
                 pre_j = asv_pos[j]
@@ -145,10 +144,6 @@ class ASVGenerator:
                 pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
                 dists[i, j] = pairwise_distance / self.max_dist_to_root
 
-        vfunc_pair_dist = np.vectorize(pair_dist, otypes=None)
-
-        # get preorder position of asvs
-        vfunc_pair_dist(np.arange(num_asvs, dtype=np.int32))
         if not return_asv_ids:
             return tokens, dists
         else:
