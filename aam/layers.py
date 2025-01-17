@@ -90,12 +90,6 @@ class ASVEncoder(tf.keras.layers.Layer):
             normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
         )
-        # self.norm_out = tf.keras.layers.LayerNormalization(axis=1, epsilon=1e-6, dtype=tf.float32)
-
-        # nuc postions start at 1 as 0 is used for mask token
-        # self.nuc_pred = tf.keras.layers.Dense(5, activation="softmax")
-        if self.regularize_embeddings:
-            self.nuc_ff = tf.keras.layers.Dense(self.embedding_dim, use_bias=True)
 
         self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32)
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
@@ -157,26 +151,25 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         if self.trainable:
-            # extract the masked nucleotides
-            random_mask = tf.reshape(random_mask, shape=[-1])
-            asv_tokens = tf.reshape(inputs + self.nucleotide_position, shape=[-1])[random_mask]
-
-            masked_embeddings = tf.cast(tf.reshape(output, shape=[-1, self.embedding_dim]), dtype=tf.float32)
-            if self.regularize_embeddings:
-                print("Normalizing nucleotide embeddings...")
-                masked_embeddings = self.nuc_ff(masked_embeddings)
-                l2_loss = global_embedding_l2_regulization(masked_embeddings)
-            nuc_pred = self._softmax(self.nuc_pred(masked_embeddings[random_mask]))
-            asv_tokens = tf.one_hot(asv_tokens, self.base_tokens * self.max_bp)
-            loss = self.nuc_loss(asv_tokens, nuc_pred)
-
-            loss = tf.reduce_mean(loss)
-            if self.regularize_embeddings:
-                loss += tf.reduce_mean(l2_loss)
-            self.add_loss(loss)
+            asv_tokens = inputs + self.nucleotide_position
+            loss = tf.map_fn(
+                self._compute_nuc_loss,
+                (asv_tokens, output, random_mask),
+                fn_output_signature=tf.TensorSpec(shape=(), dtype=tf.float32),
+            )
+            self.add_loss(tf.reduce_mean(loss))
 
         print("ASVEncoder exit...", self.trainable)
         return output
+
+    def _compute_nuc_loss(self, inputs):
+        tokens, embeddings, mask = inputs
+        tokens = tokens[mask]
+        embeddings = embeddings[mask]
+        nuc_pred = self._softmax(self.nuc_pred(embeddings))
+        tokens = tf.one_hot(tokens, self.base_tokens * self.max_bp)
+        loss = self.nuc_loss(tokens, nuc_pred)
+        return tf.reduce_mean(loss, axis=-1)
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()
