@@ -13,7 +13,7 @@ def map_unicode(val):
     return mapping.get(val, 0)  # Return 0 if the value is not in the mapping
 
 
-class ASVGenerator:
+class ASVGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
         tree,
@@ -100,7 +100,26 @@ class ASVGenerator:
 
         self.size = int(len(self.obs_encodings) * subsample)
         self.steps_per_epoch = max(self.size // self.samples_per_minibatch, 1)
+
+        self.sample_indices = np.arange(len(self.obs_encodings), dtype=np.int32)
+        if self.shuffle:
+            np.random.shuffle(self.sample_indices)
+
         print("Number of sequences:", self.size)
+
+    def __len__(self):
+        return self.steps_per_epoch
+
+    def __getitem__(self, idx):
+        start = idx * self.samples_per_minibatch
+        end = start + self.samples_per_minibatch
+        samples = self.sample_indices[start:end]
+        return self._sample_data(samples, False)
+
+    def on_epoch_end(self):
+        if self.shuffle:
+            np.random.shuffle(self.sample_indices)
+        return super().on_epoch_end()
 
     def _root_to_node(self, node):
         parent = node.parent
@@ -172,55 +191,6 @@ class ASVGenerator:
 
         return tokens, dists + dists.T
 
-    def _epoch_complete(self, processed):
-        if processed < self.steps_per_epoch:
-            return False
-        return True
-
-    def _minibatch_indices(self, minibatch, sample_indices):
-        start = minibatch * self.samples_per_minibatch
-        end = start + self.samples_per_minibatch
-        return sample_indices[start:end]
-
-    def _create_epoch_generator(self, return_asv_ids):
-        def generator():
-            for epoch in range(self.epochs):
-                print(f"Starting epcoh: {epoch}")
-                processed = 0
-                minibatch = 0
-                sample_indices = np.arange(len(self.obs_encodings), dtype=np.int32)
-
-                if self.shuffle:
-                    print("shuffling...")
-                    np.random.shuffle(sample_indices)
-
-                while not self._epoch_complete(processed):
-                    samples = self._minibatch_indices(minibatch, sample_indices)
-                    processed += 1
-                    minibatch += 1
-
-                    yield self._sample_data(samples, return_asv_ids)
-
-        return generator
-
-    def get_data(self, return_asv_ids=False):
-        generator = self._create_epoch_generator(return_asv_ids)
-
-        token_sig = tf.TensorSpec(shape=[None, self.max_bp], dtype=tf.int32)
-        if not return_asv_ids:
-            pair_dist_sig = tf.TensorSpec(shape=[None, None], dtype=tf.float32)
-        else:
-            pair_dist_sig = tf.TensorSpec(shape=[None], dtype=tf.string)
-        dataset: tf.data.Dataset = tf.data.Dataset.from_generator(generator, output_signature=(token_sig, pair_dist_sig))
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
-
-        data_obj = {
-            "dataset": dataset,
-            "size": self.size,
-            "steps_pre_epoch": self.steps_per_epoch,
-        }
-        return data_obj
-
 
 if __name__ == "__main__":
     import numpy as np
@@ -230,6 +200,10 @@ if __name__ == "__main__":
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
 
     ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
-    data = ug.get_data(return_asv_ids=False)
-    for x in data["dataset"].take(1):
+    # data = ug.get_data(return_asv_ids=False)
+    # for x in data["dataset"].take(1):
+    #     print(x)
+    for x, y in ug:
         print(x)
+        print(y)
+        break

@@ -165,7 +165,7 @@ def fit_asv_encoder(
         shuffle=True,
         **common_kwargs,
     )
-    train_data = train_gen.get_data()
+    # train_data = train_gen.get_data()
 
     val_gen = ASVGenerator(
         tree=i_tree,
@@ -173,7 +173,7 @@ def fit_asv_encoder(
         subsample=0.01,
         **common_kwargs,
     )
-    val_data = val_gen.get_data()
+    # val_data = val_gen.get_data()
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -186,12 +186,12 @@ def fit_asv_encoder(
         model_saver,
     ]
     model.fit(
-        train_data["dataset"],
-        validation_data=val_data["dataset"],
+        train_gen,
+        validation_data=val_gen,
         callbacks=[*core_callbacks, lr_scheduler],
         epochs=p_epochs,
-        steps_per_epoch=train_data["steps_pre_epoch"],
-        validation_steps=val_data["steps_pre_epoch"],
+        # steps_per_epoch=train_data["steps_pre_epoch"],
+        # validation_steps=val_data["steps_pre_epoch"],
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")

@@ -115,8 +115,8 @@ class NucleotideEncoderV2(tf.keras.Model):
         inputs, y_true = data
         embeddings = self(inputs, training=False)
         asv_loss = self._compute_loss(y_true, embeddings)
-        loss = asv_loss
         nuc_loss = tf.reduce_sum(self.losses)
+        loss = asv_loss + nuc_loss
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)
         self.asv_tracker.update_state(asv_loss)
