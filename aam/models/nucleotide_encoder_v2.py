@@ -68,6 +68,11 @@ class NucleotideEncoderV2(tf.keras.Model):
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(NucleotideEncoderV2, self).build(input_shape)
 
+    def compile(self, include_bert_loss=True, **kwargs):
+        super(NucleotideEncoderV2, self).compile(**kwargs)
+
+        self.include_bert_loss = include_bert_loss
+
     def predict_step(self, data):
         inputs, asv_ids = data
         return self(inputs, training=False), asv_ids
@@ -123,7 +128,10 @@ class NucleotideEncoderV2(tf.keras.Model):
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         tokens = inputs
         training = training and self.trainable
-        embeddings = self.asv_encoder(tokens, include_bert_random_mask=training, training=training)
+        include_bert_loss = True
+        if hasattr(self, "include_bert_loss"):
+            include_bert_loss = self.include_bert_loss
+        embeddings = self.asv_encoder(tokens, include_bert_random_mask=include_bert_loss, training=training)
         return self.output_activation(embeddings)
 
     def get_config(self):

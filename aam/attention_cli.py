@@ -70,6 +70,7 @@ def validate_metadata(table, metadata, missing_samples_flag):
 @click.option("--p-normalize-outputs", default=False, type=bool)
 @click.option("--p-use-residual-connections", default=True, type=bool)
 @click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-include-bert-loss", default=True, required=False, type=bool)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -89,6 +90,7 @@ def fit_asv_encoder(
     p_normalize_outputs: bool,
     p_use_residual_connections: bool,
     i_model: str,
+    p_include_bert_loss: bool,
 ):
     import tensorflow_addons as tfa
 
@@ -143,6 +145,7 @@ def fit_asv_encoder(
     token_shape = tf.TensorShape([None, 150])
     model.build(token_shape)
     model.compile(
+        include_bert_loss=p_include_bert_loss,
         optimizer=optimizer,
         run_eagerly=False,
     )
