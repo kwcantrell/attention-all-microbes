@@ -118,9 +118,6 @@ class NucleotideEncoderV2(tf.keras.Model):
             nuc_loss = tf.reduce_sum(self.losses)
         else:
             nuc_loss = 0.0
-        self.loss_tracker.update_state(nuc_loss)
-        self.nuc_tracker.update_state(nuc_loss)
-
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)
         self.asv_tracker.update_state(asv_loss)

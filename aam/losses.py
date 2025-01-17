@@ -69,6 +69,7 @@ def _pairwise_cosine_distance(x: tf.Tensor, y: Union[tf.Tensor, None] = None) ->
 
 
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
+    sample_embeddings = tf.linalg.l2_normalize(sample_embeddings, axis=-1)
     d = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
     sample_inner_prod = tf.matmul(sample_embeddings, sample_embeddings, transpose_b=True)
     non_matching_pairs = sample_inner_prod[non_matching_pairs_mask]
@@ -96,7 +97,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         return tf.reduce_mean(valid_differences)
 
 
-def triplet_loss(embeddings, groups=2, margin=0.05):
+def triplet_loss(embeddings, groups=2, hard_margin=0.0, soft_margin=0.1):
     emb_shape = tf.shape(embeddings, out_type=tf.int32)
     batch_dim = emb_shape[0]
     group_size = batch_dim // tf.cast(groups, dtype=tf.int32)
@@ -112,13 +113,13 @@ def triplet_loss(embeddings, groups=2, margin=0.05):
     matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
     non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
 
-    triplet_loss = (matching_pairs + margin) - non_matching_pairs
+    triplet_loss = (matching_pairs + soft_margin) - non_matching_pairs
     valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
     triplet_loss = triplet_loss * valid_mask
 
-    hard_mask = tf.cast(non_matching_pairs < matching_pairs, dtype=tf.float32)
-    semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + margin, dtype=tf.float32) * (1 - hard_mask)
+    hard_mask = tf.cast(non_matching_pairs < matching_pairs + hard_margin, dtype=tf.float32)
+    semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + soft_margin, dtype=tf.float32) * (1 - hard_mask)
     num_semi_hard_tuples = tf.reduce_sum(semi_hard_mask, axis=-1)
 
     semi_hard_loss = tf.math.divide_no_nan(tf.reduce_sum(triplet_loss * semi_hard_mask, axis=-1), num_semi_hard_tuples)
-    return tf.reduce_mean(semi_hard_loss) + global_embedding_l2_regulization(embeddings)
+    return tf.reduce_mean(semi_hard_loss)

@@ -38,6 +38,7 @@ class UnifracEncoder(tf.keras.layers.Layer):
         normalize_outputs=False,
         use_residual_connections=True,
         use_residual_pool=None,
+        asv_encoder=None,
         **kwargs,
     ):
         super(UnifracEncoder, self).__init__(**kwargs)

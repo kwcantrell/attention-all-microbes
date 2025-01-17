@@ -95,14 +95,37 @@ class ASVGenerator:
         self.steps_per_epoch = max(self.size // self.samples_per_minibatch, 1)
         print("Number of sequences:", self.size)
 
+    def _root_to_node(self, node):
+        parent = node.parent
+        parents = []
+        while parent != self.tree_node:
+            parents.append(parent)
+            parent = parent.parent
+        parents.append(parent)
+        return parents[::-1]
+
+    def _lca(self, left_parents, right_parents):
+        l_size = len(left_parents)
+        r_size = len(right_parents)
+
+        current_lca = self.tree_node
+        for i in range(1, min(l_size, r_size), 1):
+            if left_parents[i] != right_parents[i]:
+                return current_lca
+            current_lca = left_parents[i]
+
+        return current_lca
+
     def _sample_data(self, samples: np.ndarray, return_asv_ids) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tokens = self.obs_encodings[samples]
 
         asv_pos = self.asv_preorderpos[samples]
         num_asvs = self.pairwise_batch_size
 
+        dists = np.zeros((num_asvs, num_asvs))
+        parents = [self._root_to_node(self.preorder_nodes[asv_pos[i]]) for i in range(num_asvs)]
+
         def pair_dist(i):
-            dists = np.zeros(num_asvs)
             pre_i = asv_pos[i]
 
             # get leaf i
@@ -116,21 +139,18 @@ class ASVGenerator:
                 # get length of i, j, and lca to root
                 i_to_root = leaf_i.length
                 j_to_root = leaf_j.length
-                lca_to_root = self.tree_node.lca([leaf_i, leaf_j]).length
+                lca_to_root = self._lca(parents[i], parents[j]).length
 
                 # distance from i to j
                 pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
-                dists[j] = pairwise_distance / self.max_dist_to_root
+                dists[i, j] = pairwise_distance / self.max_dist_to_root
 
-            return dists
-
-        self.vfunc_pair_dist = np.vectorize(pair_dist, otypes=[np.float32], signature="()->(n)")
+        self.vfunc_pair_dist = np.vectorize(pair_dist, otypes=None)
 
         # get preorder position of asvs
-        pair_distances = self.vfunc_pair_dist(np.arange(num_asvs, dtype=np.int32))
-
+        self.vfunc_pair_dist(np.arange(num_asvs, dtype=np.int32))
         if not return_asv_ids:
-            return tokens, pair_distances + pair_distances.T
+            return tokens, dists + dists.T
         else:
             return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
 
@@ -192,6 +212,6 @@ if __name__ == "__main__":
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
 
     ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
-    data = ug.get_data(return_asv_ids=True)
+    data = ug.get_data(return_asv_ids=False)
     for x in data["dataset"].take(1):
         print(x)
