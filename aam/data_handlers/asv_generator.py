@@ -74,6 +74,7 @@ class ASVGenerator:
                 n.parents = self._root_to_node(n)
             self.preorder_nodes.append(n)
 
+        # cache postorder position to aid with lca computation
         for i, n in enumerate(self.tree_node.postorder(include_self=True)):
             n.postorder_pos = i
 

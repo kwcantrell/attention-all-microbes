@@ -195,16 +195,6 @@ class UnifracDenoiser(tf.keras.Model):
         batch_counts, tokens, indicies, counts = inputs
 
         batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
-        # batch_sums = tf.pad(tf.reduce_sum(batch_counts[:-1], axis=-1, keepdims=True), [[1, 0], [0, 0]])
-        # batch_sums = tf.squeeze(batch_sums, axis=-1)
-        # batch_sums = tf.math.cumsum(batch_sums, axis=0)
-
-        # def _process_batch(inputs):
-        #     bi_batch_counts, prev_batch_sums = inputs
-        #     bi_total = tf.reduce_sum(bi_batch_counts)
-        #     bi_indices = indicies[prev_batch_sums : prev_batch_sums + bi_total]
-        #     bi_counts = counts[prev_batch_sums : prev_batch_sums + bi_total]
-        #     return self((bi_batch_counts, tokens, bi_indices, bi_counts), training=True)
 
         asv_embeddings = self.asv_encoder(tokens, training=False)
         b1_batch_counts = batch_counts[0]
@@ -218,6 +208,7 @@ class UnifracDenoiser(tf.keras.Model):
         b2_indices = indicies[b1_total:]
         b2_counts = counts[b1_total:]
         b2_embeddings, b2_mask = self._batch_embeddings(asv_embeddings, b2_batch_counts, b2_indices, b2_counts)
+
         with tf.GradientTape() as tape:
             b1_denoise, b1_unifrac = self.call(b1_embeddings, attention_mask=b1_mask, training=True)
             b2_denoise, b2_unifrac = self.call(b2_embeddings, attention_mask=b2_mask, training=True)
@@ -280,11 +271,7 @@ class UnifracDenoiser(tf.keras.Model):
         return self._batch_embeddings(asv_embeddings, batch_counts, indicies, counts)
 
     def call(
-        self,
-        inputs,
-        attention_mask=None,
-        return_asv_embeddings: bool = False,
-        training: bool = False,
+        self, inputs, attention_mask=None, return_asv_embeddings: bool = False, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
@@ -301,7 +288,7 @@ class UnifracDenoiser(tf.keras.Model):
         )
         print("UniFracDenoiser exit...", self.trainable)
         if return_asv_embeddings:
-            return asv_embeddings, denoised_unifrac_embeddings, unifrac_embeddings
+            return asv_embeddings, attention_mask, denoised_unifrac_embeddings, unifrac_embeddings
         else:
             return denoised_unifrac_embeddings, unifrac_embeddings
 

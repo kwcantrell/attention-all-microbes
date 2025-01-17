@@ -127,12 +127,12 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.0, soft_margin=0.1):
 
     hard_mask = tf.cast(non_matching_pairs < matching_pairs + hard_margin, dtype=tf.float32)
     semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + soft_margin, dtype=tf.float32) * (1 - hard_mask)
-    semi_hard_loss = triplet_loss[semi_hard_mask]
+    semi_hard_loss = triplet_loss[tf.cast(semi_hard_mask, tf.bool)]
 
     mean = tf.reduce_mean(semi_hard_loss)
-    std = tf.reduce_std(semi_hard_loss)
+    std = tf.math.reduce_std(semi_hard_loss)
     l_std = mean - std
     r_std = mean + std
-    mask = (semi_hard_loss >= l_std) * (semi_hard_loss <= r_std)
+    mask = (semi_hard_loss >= l_std) & (semi_hard_loss <= r_std)
 
     return tf.reduce_mean(semi_hard_loss[mask])

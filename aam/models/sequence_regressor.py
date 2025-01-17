@@ -216,11 +216,11 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
         ],
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
-        embeddings, y_pred = model_outputs
+        sample_embeddings, y_pred = model_outputs
 
-        # step 1: pairwise distance of embeddings should match pairwise distance of target
+        # step 1: pairwise distance of sample_embeddings should match pairwise distance of target
         y_true_dist = _pairwise_distances(tf.reshape(y_true, shape=[-1, 1]), squared=False)
-        embedding_loss = self.embedding_loss(y_true_dist, embeddings)
+        embedding_loss = self.embedding_loss(y_true_dist, sample_embeddings)
 
         # step 2: minimize mse
         mse_loss = tf.square(y_true - y_pred)
@@ -265,11 +265,38 @@ class SequenceRegressor(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        y_true, _ = y
+        y_true, encoder_target = y
 
+        group_dim = tf.shape(encoder_target)[-1]
+        batch_counts, tokens, indicies, counts = inputs
+
+        batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
+
+        asv_embeddings = self.base_model.asv_encoder(tokens, training=False)
+        b1_batch_counts = batch_counts[0]
+
+        b1_total = tf.reduce_sum(b1_batch_counts)
+        b1_indices = indicies[:b1_total]
+        b1_counts = counts[:b1_total]
+        b1_embeddings, b1_mask = self.base_model._batch_embeddings(asv_embeddings, b1_batch_counts, b1_indices, b1_counts)
+        b1_embeddings, b1_mask, _, _ = self.base_model.call(
+            b1_embeddings, attention_mask=b1_mask, return_asv_embeddings=True, training=False
+        )
+
+        b2_batch_counts = batch_counts[1]
+        b2_indices = indicies[b1_total:]
+        b2_counts = counts[b1_total:]
+        b2_embeddings, b2_mask = self.base_model._batch_embeddings(asv_embeddings, b2_batch_counts, b2_indices, b2_counts)
+        b2_embeddings, b2_mask, _, _ = self.base_model.call(
+            b2_embeddings, attention_mask=b2_mask, return_asv_embeddings=True, training=False
+        )
         with tf.GradientTape() as tape:
-            outputs = self(inputs, training=True)
-            loss, target_loss, embedding_loss = self._compute_loss(y_true, outputs)
+            b1_sample_embeddings, b1_y_pred = self.call(b1_embeddings, b1_mask, training=True)
+            b2_sample_embeddings, b2_y_pred = self.call(b2_embeddings, b2_mask, training=True)
+
+            sample_embeddings = tf.concat([b1_sample_embeddings, b2_sample_embeddings], axis=0)
+            y_pred = tf.concat([b1_y_pred, b2_y_pred], axis=0)
+            loss, target_loss, embedding_loss = self._compute_loss(y_true, (sample_embeddings, y_pred))
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
 
@@ -280,7 +307,7 @@ class SequenceRegressor(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
         self.embedding_tracker.update_state(embedding_loss)
-        self._compute_metric(y_true, outputs)
+        self._compute_metric(y_true, (sample_embeddings, y_pred))
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
@@ -352,38 +379,34 @@ class SequenceRegressor(tf.keras.Model):
         random_mask = random_mask > 0
         return counts, random_mask
 
-    def _compute_target_embeddings(
-        self,
-        tensor: tf.Tensor,
-        attention_mask: Optional[tf.Tensor] = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        target_embeddings = self.target_encoder(tensor, mask=attention_mask, training=training)
-        # target_embeddings = tensor
-        target_out = self.attention_pooling(target_embeddings, mask=attention_mask)
-        target_out = self.target_ff(target_out)
-        return target_embeddings, target_out
+    def _extract_asv_embeddings(self, inputs):
+        asv_embeddings, attention_mask, _, _ = self.base_model(inputs, return_asv_embeddings=True, training=False)
+        return asv_embeddings, attention_mask
 
     def call(
-        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
+        self, inputs, attention_mask=None, return_asv_embeddings: bool = False, training: bool = False
     ) -> Union[
         tuple[tf.Tensor, tf.Tensor, tf.Tensor],
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
         training = training and self.trainable
-        denoised_sample_embeddings, counts = self.base_model(
-            inputs, return_unifrac_embeddings=False, return_counts=True, training=training
-        )
 
-        count_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        denoised_sample_embeddings = denoised_sample_embeddings + tf.cast(
-            self._rezero, dtype=self.compute_dtype
-        ) * self.pos_emb(denoised_sample_embeddings)
-        target_embeddings = self.encoder(denoised_sample_embeddings, mask=count_mask, training=training)
-        sample_embeddings = self.attention_pooling(target_embeddings, mask=count_mask, training=training)
+        if isinstance(inputs, (tuple, list)):
+            asv_embeddings, attention_mask = self._extract_asv_embeddings(inputs)
+        else:
+            asv_embeddings = inputs
+
+        asv_embeddings = asv_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_embeddings)
+        asv_embeddings = self.encoder(asv_embeddings, mask=attention_mask, training=training)
+
+        sample_embeddings = self.attention_pooling(asv_embeddings, mask=attention_mask, training=training)
         y_pred = self.target_ff(sample_embeddings)
         print("SequenceRegressor exit...")
-        return self.output_activation(sample_embeddings), y_pred
+
+        if return_asv_embeddings:
+            return asv_embeddings, attention_mask, self.output_activation(sample_embeddings), y_pred
+        else:
+            return self.output_activation(sample_embeddings), y_pred
 
     def base_embeddings(
         self, inputs: tuple[tf.Tensor, tf.Tensor]
