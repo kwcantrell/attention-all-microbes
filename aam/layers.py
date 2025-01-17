@@ -61,7 +61,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
         self.regularize_embeddings = regularize_embeddings
-
+        print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
         self.nucleotide_position = tf.range(0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32)
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")

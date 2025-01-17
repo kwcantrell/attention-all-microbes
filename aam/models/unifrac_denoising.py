@@ -160,7 +160,7 @@ class UnifracDenoiser(tf.keras.Model):
         unifrac_loss = self._compute_unifrac_loss(unifrac_distances, unifrac_embeddings)
 
         denoise_loss = self.triplet_loss(denoised_embeddings)
-        denoise_loss = tf.reduce_mean(denoise_loss)
+        denoise_loss = 0.1 * tf.reduce_mean(denoise_loss)
 
         loss = unifrac_loss + denoise_loss
 
@@ -174,7 +174,7 @@ class UnifracDenoiser(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        embeddings, denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
+        denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
 
         return unifrac_embeddings, y
 
@@ -345,6 +345,7 @@ class UnifracDenoiser(tf.keras.Model):
     def from_config(cls, config):
         print("Reconstructing ASVEncoder...")
         asv_encoder = tf.keras.saving.deserialize_keras_object(config["asv_encoder"])
+        asv_encoder.trainable = False
         config["asv_encoder"] = asv_encoder
 
         print("Constructing UnifracDenoser from config")
