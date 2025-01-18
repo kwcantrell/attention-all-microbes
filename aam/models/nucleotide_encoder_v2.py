@@ -169,5 +169,5 @@ class NucleotideEncoderV2(tf.keras.Model):
         model = cls(**config)
 
         if input_shape is not None:
-            model.build(input_shape)
+            model.build([None, 150])
         return model

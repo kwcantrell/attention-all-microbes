@@ -347,7 +347,10 @@ class UnifracDenoiser(tf.keras.Model):
             input_shape = build_input_shape["input_shape"]
 
         model = cls(**config)
-
+        batch_counts = tf.TensorShape([None])
+        token_shape = tf.TensorShape([None, 150])
+        indicies_shape = tf.TensorShape([None])
+        count_shape = tf.TensorShape([None, 1])
         if input_shape is not None:
-            model.build(input_shape)
+            model.build([batch_counts, token_shape, indicies_shape, count_shape])
         return model
