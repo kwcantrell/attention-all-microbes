@@ -165,9 +165,9 @@ def fit_asv_encoder(
         shuffle=True,
         **common_kwargs,
     )
-    train_gen = tf.keras.utils.OrderedEnqueuer(train_gen)
-    train_gen.start(8, max_queue_size=32)
-    train_data = train_gen.get()
+    train_enqueue = tf.keras.utils.OrderedEnqueuer(train_gen)
+    train_enqueue.start(8, max_queue_size=32)
+    train_data = train_enqueue.get()
 
     val_gen = ASVGenerator(
         tree=i_tree,
@@ -175,9 +175,9 @@ def fit_asv_encoder(
         subsample=0.01,
         **common_kwargs,
     )
-    val_gen = tf.keras.utils.OrderedEnqueuer(val_gen)
-    val_gen.start(8, max_queue_size=32)
-    val_data = val_gen.get()
+    val_enqueue = tf.keras.utils.OrderedEnqueuer(val_gen)
+    val_enqueue.start(8, max_queue_size=32)
+    val_data = val_enqueue.get()
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
