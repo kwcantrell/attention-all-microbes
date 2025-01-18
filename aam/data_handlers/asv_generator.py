@@ -151,7 +151,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
         if self.return_asv_ids:
             asv_pos = self.asv_preorderpos[samples]
-            return tokenize_asv(tokens), np.array([self.preorder_nodes[i].name for i in asv_pos])
+            return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
 
         num_asvs = self.pairwise_batch_size
         samples = samples[:num_asvs]
@@ -191,7 +191,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
                 pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
                 dists[_ri, _rj] = pairwise_distance / self.max_dist_to_root
 
-        return tokenize_asv(tokens), dists + dists.T
+        return tokens, dists + dists.T
 
 
 if __name__ == "__main__":

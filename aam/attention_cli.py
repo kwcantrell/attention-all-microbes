@@ -186,8 +186,8 @@ def fit_asv_encoder(
         model_saver,
     ]
 
-    train_enqueue.start(8, max_queue_size=32)
-    val_enqueue.start(8, max_queue_size=32)
+    train_enqueue.start(2, max_queue_size=32)
+    val_enqueue.start(2, max_queue_size=32)
 
     train_data = train_enqueue.get()
     val_data = val_enqueue.get()
