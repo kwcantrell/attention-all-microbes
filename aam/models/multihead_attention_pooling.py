@@ -53,7 +53,9 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         if mask is not None:
             attention_mask = tf.cast(attention_mask, dtype=self.compute_dtype)
             attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
-        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=training)
+
+        # disable dropout
+        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=False)
 
         if self.use_residual_connections:
             print("Pooler residual connection...")

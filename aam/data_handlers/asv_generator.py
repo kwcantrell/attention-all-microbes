@@ -23,14 +23,6 @@ TOKENIZER = tf.keras.layers.TextVectorization(
 )
 
 
-def map_decorator(func):
-    def wrapper(steps, times, values):
-        # Use a tf.py_function to prevent auto-graph from compiling the method
-        return tf.py_function(func, inp=(steps, times, values), Tout=(steps.dtype, times.dtype, values.dtype))
-
-    return wrapper
-
-
 def tokenize_asv(asv):
     # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
     # AAM expects A to map to 1

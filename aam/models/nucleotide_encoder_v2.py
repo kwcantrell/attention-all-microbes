@@ -130,8 +130,8 @@ class NucleotideEncoderV2(tf.keras.Model):
         }
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        tokens = tokenize_asv(inputs)
         training = training and self.trainable
+        tokens = tokenize_asv(inputs)
         include_bert_loss = True
         if hasattr(self, "include_bert_loss"):
             include_bert_loss = self.include_bert_loss

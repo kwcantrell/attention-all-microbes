@@ -230,6 +230,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             self.steps_per_epoch = self.size // self.batch_size
 
         self.sample_indices = self.sample_indices[self.sample_mask]
+        self.sample_ids = self.rarefy_table.ids()[self.sample_mask]
         fill_out = (self.size // len(self.sample_indices)) + 1
         if fill_out > 0:
             self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out, axis=0).reshape((-1))

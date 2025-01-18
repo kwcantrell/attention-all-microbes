@@ -75,7 +75,6 @@ class ReZeroTransformerLinearBiases(tf.keras.layers.Layer):
         share_rezero=True,
         **kwargs,
     ):
-        print("building ReZeroTransformer with linear biases")
         # attention_dropout will override attention_dropout_rate.
         # This is to unify the input params with TransformerEncoderBlock.
         attention_dropout_rate = kwargs.pop("attention_dropout", attention_dropout_rate)

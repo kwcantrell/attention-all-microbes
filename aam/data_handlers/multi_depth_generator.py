@@ -21,6 +21,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         batch_size=4,
         shuffle=False,
         return_sample_ids=False,
+        epochs=1000,
         **kwargs,
     ):
         if isinstance(table, str):
@@ -41,6 +42,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         self.gen_new_table_frequency = gen_new_table_frequency
         self.epochs_since_last_table = 0
         self.return_sample_ids = return_sample_ids
+        self.epochs = epochs
         self.update_sample_indices()
         self.on_epoch_end()
 
@@ -54,12 +56,11 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         sample_indices = self.sample_indices[start:end]
         sample_ids = self.common_ids[sample_indices]
 
-        def _samples(sample_ids, gen):
-            sample_mask = np.expand_dims(sample_ids, axis=-1) == gen.rarefy_table.ids()
-            _sample_indices = np.argwhere(sample_mask)[:, -1]
+        def _samples(i, sample_ids, gen):
+            _sample_indices = np.argwhere(np.isin(gen.rarefy_table.ids(), sample_ids, assume_unique=True)).reshape((-1))
             return gen._sample_data(_sample_indices)
 
-        outputs = [_samples(sample_ids, gen) for gen in self.generators]
+        outputs = [_samples(i, sample_ids, gen) for i, gen in enumerate(self.generators)]
         combined_outputs = self._sample_data(outputs)
 
         (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = combined_outputs
@@ -95,9 +96,9 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
                 return table_output
 
     def update_sample_indices(self):
-        common_ids = np.concatenate([g.rarefy_table.ids()[g.sample_mask] for g in self.generators])
-        self.common_ids = np.unique(common_ids)
+        self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
         self.sample_indices = np.arange(len(self.common_ids))
+        print("samples indices!!!!", self.sample_indices)
 
         fill_out = (self.size // len(self.sample_indices)) + 1
 
@@ -153,13 +154,14 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
 def get_dataset(gen: MultiDepthGenerator):
     def generator():
-        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
+        for _ in range(gen.epochs):
+            sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
 
-        if gen.shuffle:
-            np.random.shuffle(sequence)
+            if gen.shuffle:
+                np.random.shuffle(sequence)
 
-        for i in sequence:
-            yield gen[i]
+            for i in sequence:
+                yield gen[i]
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)
@@ -200,7 +202,8 @@ if __name__ == "__main__":
 
     dataset = get_dataset(ug)
     for x in dataset:
-        print(x)
+        # print(x)
+        break
     # # model = tf.keras.models.load_model(
     # #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
     # #     compile=False,

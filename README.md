@@ -12,17 +12,6 @@ First create a new conda environment with unifrac
 
 `conda install -c conda-forge gxx_linux-64 hdf5 mkl-include lz4 hdf5-static libcblas liblapacke make`
 
-## GPU Support 
-
-Install CUDA 11.8
-
-`conda install nvidia/label/cuda-11.8.0::cuda-toolkit`
-
-Verify the NVIDIA GPU drives are on your path
-
-`nvidia-smi`
-
-Please see [Tensorflow](https://www.tensorflow.org/install) for more information
 
 ## Install AAM
 
