@@ -23,14 +23,6 @@ TOKENIZER = tf.keras.layers.TextVectorization(
 )
 
 
-def map_decorator(func):
-    def wrapper(steps, times, values):
-        # Use a tf.py_function to prevent auto-graph from compiling the method
-        return tf.py_function(func, inp=(steps, times, values), Tout=(steps.dtype, times.dtype, values.dtype))
-
-    return wrapper
-
-
 def tokenize_asv(asv):
     # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
     # AAM expects A to map to 1
@@ -204,12 +196,13 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
 def get_dataset(gen: ASVGenerator):
     def generator():
-        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
-        if gen.shuffle:
-            np.random.shuffle(sequence)
+        for _ in range(1000):
+            sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
+            if gen.shuffle:
+                np.random.shuffle(sequence)
 
-        for i in sequence:
-            yield gen[i]
+            for i in sequence:
+                yield gen[i]
 
     if not gen.return_asv_ids:
         y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
