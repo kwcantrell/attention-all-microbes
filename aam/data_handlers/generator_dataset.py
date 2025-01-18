@@ -9,6 +9,8 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
+from aam.data_handlers.asv_generator import tokenize_asv
+
 
 def add_lock(func):
     lock = f"_{func.__name__}_lock"
@@ -89,6 +91,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         self.is_16S = is_16S
         self.seed = seed
         self.gen_new_table_frequency = gen_new_table_frequency
+        self.epochs_since_last_table = 0
 
         if table is not None:
             self.preprocessed_table = self.table
@@ -139,7 +142,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         end = start + self.batch_size
 
         samples = self.sample_indices[start:end]
-        (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = self._sample_data(samples, False)
+        (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = self._sample_data(samples)
 
         if counts is not None:
             table_output = (
@@ -169,9 +172,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         else:
             return table_output
 
-    def _sample_data(
-        self, samples: np.ndarray, table_data=None, y_data=None, encoder_target=None
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _sample_data(self, samples) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         row, col, counts, obs_encodings, sample_ids = self.table_data
 
         if max(samples) >= len(sample_ids):
@@ -201,11 +202,18 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         y_output = self._y_output(self.y_data, s_ids)
         encoder_output = self._encoder_output(self.encoder_target, s_ids, s_obj_ids)
 
-        return (batch_counts, s_counts.reshape((-1, 1)), s_tokens, obj_indices, y_output, encoder_output, s_obj_ids, s_ids)
+        return (
+            batch_counts,
+            s_counts.reshape((-1, 1)),
+            s_tokens,
+            obj_indices,
+            y_output,
+            encoder_output,
+            s_obj_ids,
+            s_ids,
+        )
 
-    def on_epoch_end(self):
-        print("creating table...")
-        print(f"Prerafaction Table shape: {self.preprocessed_table.shape}")
+    def _create_table(self):
         self.rarefy_table, self.sample_mask = self.create_rarefied_table(self.preprocessed_table)
 
         print(f"Postrarefaction Table shape: {self.rarefy_table.shape}")
@@ -222,11 +230,19 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         self.table_data = self._create_table_data(self.rarefy_table)
         self.y_data = self._create_y_data(self.rarefy_table)
+        self.epochs_since_last_table = 0
+
+    def on_epoch_end(self):
+        print("creating table...")
+        print(f"Prerafaction Table shape: {self.preprocessed_table.shape}")
+
+        if self.epochs_since_last_table >= self.gen_new_table_frequency or not hasattr(self, "steps_per_epoch"):
+            self._create_table()
+
+        self.epochs_since_last_table += 1
 
         if self.shuffle:
             np.random.shuffle(self.sample_indices)
-
-        return super().on_epoch_end()
 
     def _validate_dataframe(self, df: pd.DataFrame):
         if isinstance(df, str):

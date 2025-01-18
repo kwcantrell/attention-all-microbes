@@ -48,41 +48,16 @@ class ASVGenerator(tf.keras.utils.Sequence):
         # step 1: find which nodes represent 150bp ASVs
         print("Data pipeline initialization...")
         print("step 1: find which nodes represent 150bp ASVs")
-        # preoderposition = np.arange(0, int(tree.B.size / 2), 1, dtype=np.int32)
-
-        # def is_150bp(pre_pos):
-        #     name = tree.name(tree.preorderselect(pre_pos))
-        #     if name is not None:
-        #         if len(name) == 150:
-        #             return True
-        #         return False
-        #     return False
         asv_preorderpos = []
         obs_encodings = []
         for i, node in enumerate(self.tree_node.preorder(include_self=True)):
             if node.is_tip() and len(node.name) == 150:
                 asv_preorderpos.append(i)
                 obs_encodings.append(node.name)
-        # vfunc_is_150bp = np.vectorize(lambda x: is_150bp(x), otypes=[bool])
-        # is_150bp_mask = vfunc_is_150bp(preoderposition)
-        # print(f"found {np.sum(is_150bp_mask)} ASVs")
-        # asv_preorderpos = preoderposition[is_150bp_mask]
+
+        # step 2: extract ASV tokens
         self.asv_preorderpos = np.array(asv_preorderpos, dtype=np.int32)
         self.obs_encodings = np.array(obs_encodings)
-
-        # # step 2: extract ASV tokens
-        # print("step 2: extract ASV tokens")
-        # mapping = {65: 1, 67: 2, 71: 3, 84: 4}
-
-        # def get_tokens(pre_pos):
-        #     # asv = tree.name(tree.preorderselect(pre_pos))
-        #     # return np.array([mapping[ord(c)] for c in asv], dtype=np.int32)
-        #     return tree.name(tree.preorderselect(pre_pos))
-
-        # vfunc_tokens = np.vectorize(get_tokens, otypes=[np.string_], signature="()->()")
-
-        # self.obs_encodings = vfunc_tokens(asv_preorder)
-        # self.asv_preorderpos = asv_preorder
 
         # step 3: cache node info
         print("step 3: cache node info")
@@ -126,8 +101,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
         self.steps_per_epoch = max(self.size // self.samples_per_minibatch, 1)
 
         self.sample_indices = np.arange(len(self.obs_encodings), dtype=np.int32)
-        if self.shuffle:
-            np.random.shuffle(self.sample_indices)
+        self.on_epoch_end()
 
         print("Number of sequences:", self.size)
 
@@ -141,9 +115,10 @@ class ASVGenerator(tf.keras.utils.Sequence):
         return self._sample_data(samples)
 
     def on_epoch_end(self):
+        print("Epoch finished")
+        print("Preparing next epoch")
         if self.shuffle:
             np.random.shuffle(self.sample_indices)
-        return super().on_epoch_end()
 
     def _root_to_node(self, node):
         parent = node.parent
@@ -171,7 +146,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
         if self.return_asv_ids:
             asv_pos = self.asv_preorderpos[samples]
-            return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
+            return tokenize_asv(tokens), np.array([self.preorder_nodes[i].name for i in asv_pos])
 
         num_asvs = self.pairwise_batch_size
         samples = samples[:num_asvs]
@@ -202,9 +177,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
                 i_to_root = leaf_i.length
                 j_to_root = leaf_j.length
 
-                if lca is None:
-                    lca = self._lca(leaf_i.parents, leaf_j.parents)
-                elif lca.postorder_pos < leaf_j.postorder_pos:
+                if lca is None or lca.postorder_pos < leaf_j.postorder_pos:
                     lca = self._lca(leaf_i.parents, leaf_j.parents)
 
                 lca_to_root = lca.length
@@ -213,7 +186,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
                 pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
                 dists[_ri, _rj] = pairwise_distance / self.max_dist_to_root
 
-        return tokens, dists + dists.T
+        return tokenize_asv(tokens), dists + dists.T
 
 
 if __name__ == "__main__":
@@ -222,11 +195,11 @@ if __name__ == "__main__":
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
 
     ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
+
     # data = ug.get_data(return_asv_ids=False)
     # for x in data["dataset"].take(1):
     #     print(x)
     for x, y in ug:
         print(x)
-        print(tokenize_asv(x))
         print(y)
         break

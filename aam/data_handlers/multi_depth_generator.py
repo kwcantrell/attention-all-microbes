@@ -9,6 +9,7 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
+from aam.data_handlers.asv_generator import tokenize_asv
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
@@ -30,7 +31,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         kwargs["tree_path"] = tree_path
         kwargs["unifrac_metric"] = unifrac_metric
         self.generators = [
-            UniFracGenerator(table=table, rarefy_depth=depth, shuffle=shuffle, batch_size=batch_size, **kwargs)
+            UniFracGenerator(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
             for depth in sample_depths
         ]
 
@@ -38,6 +39,9 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         self.steps_per_epoch = min([g.steps_per_epoch for g in self.generators])
         self.size = self.batch_size * self.steps_per_epoch
         self.shuffle = shuffle
+        self.gen_new_table_frequency = gen_new_table_frequency
+        self.epochs_since_last_table = 0
+        self.update_sample_indices()
         self.on_epoch_end()
 
     def __len__(self):
@@ -53,10 +57,9 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         def _samples(sample_ids, gen):
             sample_mask = np.expand_dims(sample_ids, axis=-1) == gen.rarefy_table.ids()
             _sample_indices = np.argwhere(sample_mask)[:, -1]
-            return _sample_indices
+            return gen._sample_data(_sample_indices)
 
-        samples = [_samples(sample_ids, gen) for gen in self.generators]
-        outputs = [gen._sample_data(s, False) for s, gen in zip(samples, self.generators)]
+        outputs = [_samples(sample_ids, gen) for gen in self.generators]
         combined_outputs = self._sample_data(outputs)
 
         (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = combined_outputs
@@ -88,10 +91,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
             else:
                 return table_output
 
-    def on_epoch_end(self):
-        for g in self.generators:
-            g.on_epoch_end()
-
+    def update_sample_indices(self):
         sample_ids = [g.rarefy_table.ids()[g.sample_mask] for g in self.generators]
 
         common_ids = set(sample_ids[0])
@@ -100,16 +100,24 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         self.common_ids = np.array(list(common_ids))
         self.sample_indices = np.arange(len(self.common_ids))
 
+        fill_out = (self.size // len(self.sample_indices)) + 1
+
         if self.shuffle:
             np.random.shuffle(self.sample_indices)
 
-        fill_out = (self.size // len(self.sample_indices)) + 1
         if fill_out > 0:
             self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out, axis=0).reshape((-1))
 
-    def _sample_data(
-        self, outputs: np.ndarray, table_data=None, y_data=None, encoder_target=None
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def on_epoch_end(self):
+        if self.epochs_since_last_table >= self.gen_new_table_frequency:
+            for g in self.generators:
+                g._create_table()
+                self.epochs_since_last_table = 0
+                self.update_sample_indices()
+
+        self.epochs_since_last_table += 1
+
+    def _sample_data(self, outputs) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids = [], [], [], [], [], [], [], []
         shift = 0
         for bc, c, t, ind, yo, eo, oi, si in outputs:
@@ -132,7 +140,16 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         s_ids = np.concatenate(s_ids)
 
         unique_t, unique_ind = np.unique(tokens, return_inverse=True, axis=0)
-        return batch_counts, counts.reshape((-1, 1)), unique_t, unique_ind[indices], y_output, encoder_out, ob_ids, s_ids
+        return (
+            batch_counts,
+            counts.reshape((-1, 1)),
+            tokenize_asv(unique_t),
+            unique_ind[indices],
+            y_output,
+            encoder_out,
+            ob_ids,
+            s_ids,
+        )
 
 
 if __name__ == "__main__":
@@ -152,6 +169,7 @@ if __name__ == "__main__":
     )
     for x, y in ug:
         print(x, y)
+        break
     # # model = tf.keras.models.load_model(
     # #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
     # #     compile=False,
