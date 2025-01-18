@@ -57,7 +57,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         sample_ids = self.common_ids[sample_indices]
 
         def _samples(i, sample_ids, gen):
-            _sample_indices = np.argwhere(np.isin(gen.rarefy_table.ids(), sample_ids, assume_unique=True)).reshape((-1))
+            _, _sample_indices, _ = np.intersect1d(gen.rarefy_table.ids(), sample_ids, return_indices=True, assume_unique=True)
             return gen._sample_data(_sample_indices)
 
         outputs = [_samples(i, sample_ids, gen) for i, gen in enumerate(self.generators)]
@@ -98,7 +98,6 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
     def update_sample_indices(self):
         self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
         self.sample_indices = np.arange(len(self.common_ids))
-        print("samples indices!!!!", self.sample_indices)
 
         fill_out = (self.size // len(self.sample_indices)) + 1
 
@@ -109,7 +108,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
             self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out, axis=0).reshape((-1))
 
     def on_epoch_end(self):
-        if self.epochs_since_last_table >= self.gen_new_table_frequency:
+        if self.epochs_since_last_table >= self.gen_new_table_frequency and self.shuffle:
             for g in self.generators:
                 g._create_table()
                 self.epochs_since_last_table = 0
@@ -162,6 +161,9 @@ def get_dataset(gen: MultiDepthGenerator):
 
             for i in sequence:
                 yield gen[i]
+
+            print("Completed epoch...")
+            gen.on_epoch_end()
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)
