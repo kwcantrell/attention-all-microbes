@@ -19,14 +19,8 @@ class UniFracGenerator(GeneratorDataset):
         self.tree_path = tree_path
         self.unifrac_metric = unifrac_metric
 
-        if self.batch_size % 2 != 0:
-            raise Exception("Batch size must be multiple of 2")
         self.encoder_target = self._create_encoder_target(self.rarefy_table)
         self.encoder_dtype = np.float32
-        if self.unifrac_metric == "unifrac":
-            self.encoder_output_type = tf.TensorSpec(shape=[self.batch_size, self.batch_size], dtype=tf.float32)
-        else:
-            self.encoder_output_type = tf.TensorSpec(shape=[self.batch_size, 1], dtype=tf.float32)
 
     def _create_encoder_target(self, table: Table) -> DistanceMatrix:
         if not hasattr(self, "tree_path"):
@@ -69,8 +63,8 @@ if __name__ == "__main__":
         scale=100.0,
         gen_new_tables=True,
     )
-    data = ug.get_data()
-    for i, (x, y) in enumerate(data["dataset"]):
+
+    for i, (x, y) in enumerate(ug):
         print(y[1], np.log1p(y[1]), np.sqrt(y[1]))
         break
 

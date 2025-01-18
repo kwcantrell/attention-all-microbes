@@ -13,6 +13,20 @@ def map_unicode(val):
     return mapping.get(val, 0)  # Return 0 if the value is not in the mapping
 
 
+TOKENIZER = tf.keras.layers.TextVectorization(
+    max_tokens=6, split="character", vocabulary=["a", "c", "t", "g"], output_mode="int", pad_to_max_tokens=True
+)
+
+
+def tokenize_asv(asv):
+    # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
+    # AAM expects A to map to 1
+    tokens = TOKENIZER(asv)
+    mask = tokens > 0
+    tokens = tokens - tf.cast(mask, dtype=tf.type_spec_from_value(tokens).dtype)
+    return tokens
+
+
 class ASVGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
@@ -24,41 +38,51 @@ class ASVGenerator(tf.keras.utils.Sequence):
         max_bp: int = 150,
         subsample: float = 1.0,
         seed=None,
+        return_asv_ids=False,
     ):
         tree = parse_newick(open(tree).read())
         self.tree_node = to_skbio_treenode(tree)
+        self.return_asv_ids = return_asv_ids
 
         # extracting ASV tokens
         # step 1: find which nodes represent 150bp ASVs
         print("Data pipeline initialization...")
         print("step 1: find which nodes represent 150bp ASVs")
-        preoderposition = np.arange(0, int(tree.B.size / 2), 1, dtype=np.int32)
+        # preoderposition = np.arange(0, int(tree.B.size / 2), 1, dtype=np.int32)
 
-        def is_150bp(pre_pos):
-            name = tree.name(tree.preorderselect(pre_pos))
-            if name is not None:
-                if len(name) == 150:
-                    return True
-                return False
-            return False
+        # def is_150bp(pre_pos):
+        #     name = tree.name(tree.preorderselect(pre_pos))
+        #     if name is not None:
+        #         if len(name) == 150:
+        #             return True
+        #         return False
+        #     return False
+        asv_preorderpos = []
+        obs_encodings = []
+        for i, node in enumerate(self.tree_node.preorder(include_self=True)):
+            if node.is_tip() and len(node.name) == 150:
+                asv_preorderpos.append(i)
+                obs_encodings.append(node.name)
+        # vfunc_is_150bp = np.vectorize(lambda x: is_150bp(x), otypes=[bool])
+        # is_150bp_mask = vfunc_is_150bp(preoderposition)
+        # print(f"found {np.sum(is_150bp_mask)} ASVs")
+        # asv_preorderpos = preoderposition[is_150bp_mask]
+        self.asv_preorderpos = np.array(asv_preorderpos, dtype=np.int32)
+        self.obs_encodings = np.array(obs_encodings)
 
-        vfunc_is_150bp = np.vectorize(lambda x: is_150bp(x), otypes=[bool])
-        is_150bp_mask = vfunc_is_150bp(preoderposition)
-        print(f"found {np.sum(is_150bp_mask)} ASVs")
-        asv_preorder = preoderposition[is_150bp_mask]
+        # # step 2: extract ASV tokens
+        # print("step 2: extract ASV tokens")
+        # mapping = {65: 1, 67: 2, 71: 3, 84: 4}
 
-        # step 2: extract ASV tokens
-        print("step 2: extract ASV tokens")
-        mapping = {65: 1, 67: 2, 71: 3, 84: 4}
+        # def get_tokens(pre_pos):
+        #     # asv = tree.name(tree.preorderselect(pre_pos))
+        #     # return np.array([mapping[ord(c)] for c in asv], dtype=np.int32)
+        #     return tree.name(tree.preorderselect(pre_pos))
 
-        def get_tokens(pre_pos):
-            asv = tree.name(tree.preorderselect(pre_pos))
-            return np.array([mapping[ord(c)] for c in asv], dtype=np.int32)
+        # vfunc_tokens = np.vectorize(get_tokens, otypes=[np.string_], signature="()->()")
 
-        vfunc_tokens = np.vectorize(get_tokens, otypes=[np.int32], signature="()->(n)")
-
-        self.obs_encodings = vfunc_tokens(asv_preorder)
-        self.asv_preorderpos = asv_preorder
+        # self.obs_encodings = vfunc_tokens(asv_preorder)
+        # self.asv_preorderpos = asv_preorder
 
         # step 3: cache node info
         print("step 3: cache node info")
@@ -114,7 +138,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
         start = idx * self.samples_per_minibatch
         end = start + self.samples_per_minibatch
         samples = self.sample_indices[start:end]
-        return self._sample_data(samples, False)
+        return self._sample_data(samples)
 
     def on_epoch_end(self):
         if self.shuffle:
@@ -142,10 +166,10 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
         return current_lca
 
-    def _sample_data(self, samples: np.ndarray, return_asv_ids) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _sample_data(self, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         tokens = self.obs_encodings[samples]
 
-        if return_asv_ids:
+        if self.return_asv_ids:
             asv_pos = self.asv_preorderpos[samples]
             return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
 
@@ -195,8 +219,6 @@ class ASVGenerator(tf.keras.utils.Sequence):
 if __name__ == "__main__":
     import numpy as np
 
-    from aam.data_handlers import ASVGenerator
-
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
 
     ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
@@ -205,5 +227,6 @@ if __name__ == "__main__":
     #     print(x)
     for x, y in ug:
         print(x)
+        print(tokenize_asv(x))
         print(y)
         break

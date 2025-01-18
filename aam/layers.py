@@ -155,12 +155,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_tokens = inputs + self.nucleotide_position
         loss = self._compute_nuc_loss(asv_tokens, output, random_mask)
         if include_bert_random_mask and self.trainable:
-            mean = tf.reduce_mean(loss)
-            std = tf.math.reduce_std(loss)
-            l_std = mean - std
-            r_std = mean + std
-            mask = (loss >= l_std) & (loss <= r_std)
-            self.add_loss(tf.reduce_mean(loss[mask]))
+            self.add_loss(tf.reduce_mean(loss))
 
         print("ASVEncoder exit...", self.trainable)
         return output

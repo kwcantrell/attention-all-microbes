@@ -98,7 +98,7 @@ def fit_asv_encoder(
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers import ASVGenerator
+    from aam.data_handlers.asv_generator import ASVGenerator
     from aam.models.nucleotide_encoder_v2 import NucleotideEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
@@ -145,7 +145,7 @@ def fit_asv_encoder(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    token_shape = tf.TensorShape([None, 150])
+    token_shape = tf.TensorShape([None, 1])
     model.build(token_shape)
     model.compile(
         include_bert_loss=p_include_bert_loss,
@@ -297,7 +297,7 @@ def fit_denoised_unifrac_regressor(
     from biom import load_table
 
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers import MultiDepthGenerator
+    from aam.data_handlers.multi_depth_generator import MultiDepthGenerator
     from aam.models.unifrac_denoising import UnifracDenoiser
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -395,7 +395,6 @@ def fit_denoised_unifrac_regressor(
         "tree_path": i_tree,
         "metadata": df,
         "unifrac_metric": p_unifrac_metric,
-        "repeat": 1,
     }
     train_gen = MultiDepthGenerator(
         table=train_table,
@@ -406,7 +405,6 @@ def fit_denoised_unifrac_regressor(
         epochs=p_epochs,
         **common_kwargs,
     )
-    train_data = train_gen.get_data()
 
     val_gen = MultiDepthGenerator(
         table=val_table,
@@ -417,10 +415,9 @@ def fit_denoised_unifrac_regressor(
         epochs=1,
         **common_kwargs,
     )
-    val_data = val_gen.get_data()
 
     batch_counts = tf.TensorShape([None])
-    token_shape = tf.TensorShape([None, 150])
+    token_shape = tf.TensorShape([None, 1])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
     model.build([batch_counts, token_shape, indicies_shape, count_shape])
@@ -446,12 +443,10 @@ def fit_denoised_unifrac_regressor(
         lr_scheduler,
     ]
     model.fit(
-        train_data["dataset"],
-        validation_data=val_data["dataset"],
+        train_gen,
+        validation_data=val_gen,
         callbacks=[*core_callbacks],
         epochs=p_epochs,
-        steps_per_epoch=train_data["steps_pre_epoch"],
-        validation_steps=val_data["steps_pre_epoch"],
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")

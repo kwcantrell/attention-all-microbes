@@ -9,10 +9,10 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
-from aam.data_handlers import GeneratorDataset
+from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
-class MultiDepthGenerator(GeneratorDataset):
+class MultiDepthGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
         table: Union[str, Table],
@@ -20,44 +20,96 @@ class MultiDepthGenerator(GeneratorDataset):
         tree_path=None,
         unifrac_metric="unifrac",
         gen_new_table_frequency=3,
+        batch_size=4,
+        shuffle=False,
         **kwargs,
     ):
         if isinstance(table, str):
             table = load_table(table)
-        from aam.data_handlers import UniFracGenerator
-
-        super(MultiDepthGenerator, self).__init__(**kwargs)
-        max_depth = max(sample_depths)
-        self.sample_depths = sample_depths
-        sample_mask = table.sum(axis="sample") >= max_depth
-        keep_samples = table.ids()[sample_mask]
-        table = table.filter(keep_samples)
-        table = table.remove_empty()
-        self.table = table
 
         kwargs["tree_path"] = tree_path
         kwargs["unifrac_metric"] = unifrac_metric
-        self.generators = [UniFracGenerator(table=self.table, rarefy_depth=depth, **kwargs) for depth in sample_depths]
-        self.shift = self.generators[0].shift
-        self.scale = self.generators[0].scale
-
-        self.sample_mask = np.logical_and.reduce([gen.sample_mask for gen in self.generators])
-        self.sample_indices = np.arange(len(self.table.ids()))[self.sample_mask]
-        self.size = len(self.table.ids())
-        self.steps_per_epoch = (self.size // self.batch_size) * self.repeat
-        self.encoder_output_type = tf.TensorSpec(
-            shape=[len(sample_depths) * self.batch_size, self.batch_size], dtype=tf.float32
-        )
-        self.gen_new_table_frequency = gen_new_table_frequency
-
-    def _sample_data(
-        self, samples: np.ndarray, table_data=None, y_data=None, encoder_target=None
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        outputs = [
-            gen._sample_data(samples, td, yd, et)
-            for gen, td, yd, et in zip(self.generators, table_data, y_data, encoder_target)
+        self.generators = [
+            UniFracGenerator(table=table, rarefy_depth=depth, shuffle=shuffle, batch_size=batch_size, **kwargs)
+            for depth in sample_depths
         ]
 
+        self.batch_size = batch_size
+        self.steps_per_epoch = min([g.steps_per_epoch for g in self.generators])
+        self.size = self.batch_size * self.steps_per_epoch
+        self.shuffle = shuffle
+        self.on_epoch_end()
+
+    def __len__(self):
+        return self.steps_per_epoch
+
+    def __getitem__(self, idx):
+        start = idx * self.batch_size
+        end = start + self.batch_size
+
+        sample_indices = self.sample_indices[start:end]
+        sample_ids = self.common_ids[sample_indices]
+
+        def _samples(sample_ids, gen):
+            sample_mask = np.expand_dims(sample_ids, axis=-1) == gen.rarefy_table.ids()
+            _sample_indices = np.argwhere(sample_mask)[:, -1]
+            return _sample_indices
+
+        samples = [_samples(sample_ids, gen) for gen in self.generators]
+        outputs = [gen._sample_data(s, False) for s, gen in zip(samples, self.generators)]
+        combined_outputs = self._sample_data(outputs)
+
+        (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = combined_outputs
+        if counts is not None:
+            table_output = (
+                batch_counts.astype(np.int32),
+                tokens,
+                indices.astype(np.int32),
+                counts.astype(np.int32),
+            )
+
+            output = None
+            if y_output is not None:
+                output = y_output.astype(np.float32)
+
+            if encoder_out is not None:
+                if isinstance(encoder_out, tuple):
+                    encoder_out = tuple([o.astype(t) for o, t in zip(encoder_out, self.generators[0].encoder_dtype)])
+                else:
+                    encoder_out = encoder_out.astype(self.generators[0].encoder_dtype)
+
+                if output is not None:
+                    output = (output, encoder_out)
+                else:
+                    output = encoder_out
+
+            if output is not None:
+                return (table_output, output)
+            else:
+                return table_output
+
+    def on_epoch_end(self):
+        for g in self.generators:
+            g.on_epoch_end()
+
+        sample_ids = [g.rarefy_table.ids()[g.sample_mask] for g in self.generators]
+
+        common_ids = set(sample_ids[0])
+        for s_ids in sample_ids[1:]:
+            common_ids = common_ids.intersection(s_ids)
+        self.common_ids = np.array(list(common_ids))
+        self.sample_indices = np.arange(len(self.common_ids))
+
+        if self.shuffle:
+            np.random.shuffle(self.sample_indices)
+
+        fill_out = (self.size // len(self.sample_indices)) + 1
+        if fill_out > 0:
+            self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out, axis=0).reshape((-1))
+
+    def _sample_data(
+        self, outputs: np.ndarray, table_data=None, y_data=None, encoder_target=None
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids = [], [], [], [], [], [], [], []
         shift = 0
         for bc, c, t, ind, yo, eo, oi, si in outputs:
@@ -82,131 +134,9 @@ class MultiDepthGenerator(GeneratorDataset):
         unique_t, unique_ind = np.unique(tokens, return_inverse=True, axis=0)
         return batch_counts, counts.reshape((-1, 1)), unique_t, unique_ind[indices], y_output, encoder_out, ob_ids, s_ids
 
-    def _epoch_samples(self, epoch, table_data, y_data, encoder_target, sample_mask, sample_indices):
-        if self.gen_new_tables and epoch > 0 and epoch % self.gen_new_table_frequency == 0:
-            new_table_data, new_y_data, new_encoder_target, sample_masks = [], [], [], []
-            for gen, _td, _yd, _et in zip(self.generators, table_data, y_data, encoder_target):
-                td, yd, et, sm, _ = gen._epoch_samples(epoch, _td, _yd, _et, sample_mask, sample_indices)
-                new_table_data.append(td)
-                new_y_data.append(yd)
-                new_encoder_target.append(et)
-                sample_masks.append(sm)
-
-            sample_mask = np.logical_and.reduce(sample_masks)
-            sample_indices = np.arange(len(self.table.ids()))[sample_mask]
-            table_data = new_table_data
-            y_data = new_y_data
-            encoder_target = new_encoder_target
-
-        if self.shuffle:
-            print("shuffling...")
-            np.random.shuffle(sample_indices)
-
-        return table_data, y_data, encoder_target, sample_mask, sample_indices
-
-    def _create_epoch_generator(self, include_seq_id, include_sample_ids):
-        def generator():
-            processed = 0
-            table_data = [gen.table_data for gen in self.generators]
-            y_data = [gen.y_data for gen in self.generators]
-            encoder_target = [gen.encoder_target for gen in self.generators]
-            sample_mask = np.logical_and.reduce([gen.sample_mask for gen in self.generators])
-            sample_indices = self.sample_indices
-            for epoch in range(self.epochs):
-                print(f"Finished epcoh: {epoch} processed {processed}")
-                processed = 0
-                minibatch = 0
-                table_data, y_data, encoder_target, sample_mask, sample_indices = self._epoch_samples(
-                    epoch, table_data, y_data, encoder_target, sample_mask, sample_indices
-                )
-
-                def sample_data(minibatch):
-                    samples = self._minibatch_indices(minibatch, sample_indices)
-                    return self._sample_data(samples, table_data, y_data, encoder_target)
-
-                while not self._epoch_complete(processed):
-                    (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = sample_data(minibatch)
-
-                    if counts is not None:
-                        processed += 1
-                        table_output = (
-                            batch_counts.astype(np.int32),
-                            tokens.astype(np.int32),
-                            indices.astype(np.int32),
-                            counts.astype(np.int32),
-                        )
-
-                        output = None
-                        if y_output is not None:
-                            output = y_output.astype(np.float32)
-
-                        if encoder_out is not None:
-                            if isinstance(encoder_out, tuple):
-                                encoder_out = tuple(
-                                    [o.astype(t) for o, t in zip(encoder_out, self.generators[0].encoder_dtype)]
-                                )
-                            else:
-                                encoder_out = encoder_out.astype(self.generators[0].encoder_dtype)
-
-                            if output is not None:
-                                output = (output, encoder_out)
-                            else:
-                                output = encoder_out
-
-                        if include_seq_id:
-                            output = (*output, ob_ids)
-                        if include_sample_ids:
-                            output = (*output, s_ids)
-
-                        if output is not None:
-                            yield (table_output, output)
-                        else:
-                            yield table_output
-                    minibatch += 1
-
-        return generator
-
-    def get_data(self, include_seq_id=False, include_sample_ids=False):
-        generator = self._create_epoch_generator(include_seq_id, include_sample_ids)
-
-        if self.is_16S:
-            output_sig = (
-                tf.TensorSpec(shape=[len(self.sample_depths) * self.batch_size], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, self.max_bp], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-            )
-        else:
-            output_sig = (
-                tf.TensorSpec(shape=[len(self.sample_depths) * self.batch_size, None, 1], dtype=tf.int32),
-                tf.TensorSpec(shape=[len(self.sample_depths) * self.batch_size, None, 1], dtype=tf.int32),
-            )
-
-        y_output_sig = None
-        y_output_sig = tf.TensorSpec(shape=[len(self.sample_depths) * self.batch_size, 1], dtype=tf.float32)
-        y_output_sig = (y_output_sig, self.encoder_output_type)
-        output_sig = (output_sig, y_output_sig)
-
-        dataset: tf.data.Dataset = tf.data.Dataset.from_generator(
-            generator,
-            output_signature=output_sig,
-        )
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
-
-        data_obj = {
-            "dataset": dataset,
-            "shift": self.shift,
-            "scale": self.scale,
-            "size": self.size,
-            "steps_pre_epoch": self.steps_per_epoch,
-        }
-        return data_obj
-
 
 if __name__ == "__main__":
     import numpy as np
-
-    from aam.data_handlers import UniFracGenerator
 
     ug = MultiDepthGenerator(
         table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
@@ -217,41 +147,42 @@ if __name__ == "__main__":
         # shift=0.0,
         scale="minmax",
         gen_new_tables=True,
-        max_token_per_sample=100,
+        max_token_per_sample=2048,
         batch_size=4,
     )
-    data_obj = ug.get_data()
+    for x, y in ug:
+        print(x, y)
+    # # model = tf.keras.models.load_model(
+    # #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
+    # #     compile=False,
+    # # )
+    # print(data_obj)
     # model = tf.keras.models.load_model(
-    #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
-    #     compile=False,
+    #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/profile-unifrac-regressor/model.keras", compile=False
     # )
-    print(data_obj)
-    model = tf.keras.models.load_model(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/profile-unifrac-regressor/model.keras", compile=False
-    )
-    for x, y in data_obj["dataset"].take(1):
-        y_target, encoder_target = y
-        batch_counts, tokens, indicies, counts = x
-        group_dim = tf.shape(encoder_target)[-1]
-        batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
-        batch_sums = tf.pad(tf.reduce_sum(batch_counts[:-1], axis=-1, keepdims=True), [[1, 0], [0, 0]])
-        batch_sums = tf.squeeze(batch_sums, axis=-1)
-        batch_sums = tf.math.cumsum(batch_sums, axis=0)
-        # print(batch_counts, batch_sums, tf.reduce_sum(batch_counts, axis=-1), tf.reduce_sum(batch_counts), indicies.shape)
+    # for x, y in data_obj["dataset"].take(1):
+    #     y_target, encoder_target = y
+    #     batch_counts, tokens, indicies, counts = x
+    #     group_dim = tf.shape(encoder_target)[-1]
+    #     batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
+    #     batch_sums = tf.pad(tf.reduce_sum(batch_counts[:-1], axis=-1, keepdims=True), [[1, 0], [0, 0]])
+    #     batch_sums = tf.squeeze(batch_sums, axis=-1)
+    #     batch_sums = tf.math.cumsum(batch_sums, axis=0)
+    #     # print(batch_counts, batch_sums, tf.reduce_sum(batch_counts, axis=-1), tf.reduce_sum(batch_counts), indicies.shape)
 
-        def _process_batch(inputs):
-            bi_batch_counts, prev_batch_sums = inputs
-            bi_total = tf.reduce_sum(bi_batch_counts)
-            bi_indices = indicies[prev_batch_sums : prev_batch_sums + bi_total]
-            bi_counts = counts[prev_batch_sums : prev_batch_sums + bi_total]
-            print("WHAT???", bi_total, bi_indices.shape)
-            return model((bi_batch_counts, tokens, bi_indices, bi_counts), training=True)
+    #     def _process_batch(inputs):
+    #         bi_batch_counts, prev_batch_sums = inputs
+    #         bi_total = tf.reduce_sum(bi_batch_counts)
+    #         bi_indices = indicies[prev_batch_sums : prev_batch_sums + bi_total]
+    #         bi_counts = counts[prev_batch_sums : prev_batch_sums + bi_total]
+    #         print("WHAT???", bi_total, bi_indices.shape)
+    #         return model((bi_batch_counts, tokens, bi_indices, bi_counts), training=True)
 
-        output = tf.map_fn(
-            _process_batch,
-            (batch_counts, batch_sums),
-            fn_output_signature=(
-                tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
-                tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
-            ),
-        )
+    #     output = tf.map_fn(
+    #         _process_batch,
+    #         (batch_counts, batch_sums),
+    #         fn_output_signature=(
+    #             tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
+    #             tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
+    #         ),
+    #     )
