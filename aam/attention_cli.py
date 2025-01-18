@@ -442,12 +442,7 @@ def fit_denoised_unifrac_regressor(
         model_saver,
         lr_scheduler,
     ]
-    model.fit(
-        train_gen,
-        validation_data=val_gen,
-        callbacks=[*core_callbacks],
-        epochs=p_epochs,
-    )
+    model.fit(train_gen, validation_data=val_gen, callbacks=[*core_callbacks], epochs=p_epochs, max_queue_size=32, workers=8)
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")
 
