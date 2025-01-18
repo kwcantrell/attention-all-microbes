@@ -14,7 +14,12 @@ def map_unicode(val):
 
 
 TOKENIZER = tf.keras.layers.TextVectorization(
-    max_tokens=6, split="character", vocabulary=["a", "c", "t", "g"], output_mode="int", pad_to_max_tokens=True
+    max_tokens=6,
+    split="character",
+    vocabulary=["a", "c", "t", "g"],
+    output_mode="int",
+    pad_to_max_tokens=True,
+    output_sequence_length=150,
 )
 
 
@@ -23,7 +28,7 @@ def tokenize_asv(asv):
     # AAM expects A to map to 1
     tokens = TOKENIZER(asv)
     mask = tokens > 0
-    tokens = tokens - tf.cast(mask, dtype=tf.type_spec_from_value(tokens).dtype)
+    tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
     return tokens
 
 

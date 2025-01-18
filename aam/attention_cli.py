@@ -145,7 +145,7 @@ def fit_asv_encoder(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    token_shape = tf.TensorShape([None, 150])
+    token_shape = tf.TensorShape([None, 1])
     model.build(token_shape)
     model.compile(
         include_bert_loss=p_include_bert_loss,
@@ -166,8 +166,6 @@ def fit_asv_encoder(
         **common_kwargs,
     )
     train_enqueue = tf.keras.utils.OrderedEnqueuer(train_gen)
-    train_enqueue.start(8, max_queue_size=32)
-    train_data = train_enqueue.get()
 
     val_gen = ASVGenerator(
         tree=i_tree,
@@ -176,8 +174,6 @@ def fit_asv_encoder(
         **common_kwargs,
     )
     val_enqueue = tf.keras.utils.OrderedEnqueuer(val_gen)
-    val_enqueue.start(8, max_queue_size=32)
-    val_data = val_enqueue.get()
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -189,6 +185,12 @@ def fit_asv_encoder(
         tf.keras.callbacks.TensorBoard(log_dir=log_dir),
         model_saver,
     ]
+
+    train_enqueue.start(8, max_queue_size=32)
+    val_enqueue.start(8, max_queue_size=32)
+
+    train_data = train_enqueue.get()
+    val_data = val_enqueue.get()
     model.fit(
         train_data,
         validation_data=val_data,
@@ -197,8 +199,8 @@ def fit_asv_encoder(
         steps_per_epoch=train_gen.steps_per_epoch,
         validation_steps=val_gen.steps_per_epoch,
     )
-    train_gen.stop()
-    val_gen.stop()
+    train_enqueue.stop()
+    val_enqueue.stop()
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")
 
@@ -429,7 +431,7 @@ def fit_denoised_unifrac_regressor(
     val_data = val_enque.get()
 
     batch_counts = tf.TensorShape([None])
-    token_shape = tf.TensorShape([None, 150])
+    token_shape = tf.TensorShape([None, 1])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
     model.build([batch_counts, token_shape, indicies_shape, count_shape])

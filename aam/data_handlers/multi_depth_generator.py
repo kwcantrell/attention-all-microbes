@@ -9,7 +9,7 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
-from aam.data_handlers.asv_generator import tokenize_asv
+# from aam.data_handlers.asv_generator import tokenize_asv
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
@@ -38,6 +38,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         self.batch_size = batch_size
         self.steps_per_epoch = min([g.steps_per_epoch for g in self.generators])
         self.size = self.batch_size * self.steps_per_epoch
+        print(self.size, self.steps_per_epoch, [g.steps_per_epoch for g in self.generators])
         self.shuffle = shuffle
         self.gen_new_table_frequency = gen_new_table_frequency
         self.epochs_since_last_table = 0
@@ -143,7 +144,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         return (
             batch_counts,
             counts.reshape((-1, 1)),
-            tokenize_asv(unique_t),
+            unique_t,
             unique_ind[indices],
             y_output,
             encoder_out,
@@ -168,8 +169,7 @@ if __name__ == "__main__":
         batch_size=4,
     )
     for x, y in ug:
-        print(x, y)
-        break
+        print(x[1])
     # # model = tf.keras.models.load_model(
     # #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
     # #     compile=False,
