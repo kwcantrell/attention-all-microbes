@@ -96,7 +96,12 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
                 return table_output
 
     def update_sample_indices(self):
+<<<<<<< HEAD
         self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
+=======
+        common_ids = [g.rarefy_table.ids()[g.sample_mask] for g in self.generators]
+        self.common_ids = np.intersect1d(common_ids[0], common_ids[1], assume_unique=True)
+>>>>>>> 6ae6a821c0ec65712435db37c061f6be02f73cea
         self.sample_indices = np.arange(len(self.common_ids))
         print("samples indices!!!!", self.sample_indices)
 

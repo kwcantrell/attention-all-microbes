@@ -196,12 +196,13 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
 def get_dataset(gen: ASVGenerator):
     def generator():
-        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
-        if gen.shuffle:
-            np.random.shuffle(sequence)
+        for _ in range(1000):
+            sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
+            if gen.shuffle:
+                np.random.shuffle(sequence)
 
-        for i in sequence:
-            yield gen[i]
+            for i in sequence:
+                yield gen[i]
 
     if not gen.return_asv_ids:
         y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
