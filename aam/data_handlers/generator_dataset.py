@@ -65,10 +65,12 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         is_16S: bool = True,
         is_categorical: Optional[bool] = None,
         gen_new_table_frequency=3,
+        return_sample_ids=False,
         seed=None,
     ):
         if table is not None:
             self.table = table
+        self.return_sample_ids = return_sample_ids
 
         self.metadata_column = metadata_column
         self.is_categorical = is_categorical
@@ -151,6 +153,10 @@ class GeneratorDataset(tf.keras.utils.Sequence):
                 indices.astype(np.int32),
                 counts.astype(np.int32),
             )
+
+        if self.return_sample_ids:
+            row, col, counts, obs_encodings, sample_ids = self.table_data
+            return (table_output, s_ids)
 
         output = None
         if y_output is not None:

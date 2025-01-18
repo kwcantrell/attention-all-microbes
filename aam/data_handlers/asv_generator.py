@@ -23,6 +23,14 @@ TOKENIZER = tf.keras.layers.TextVectorization(
 )
 
 
+def map_decorator(func):
+    def wrapper(steps, times, values):
+        # Use a tf.py_function to prevent auto-graph from compiling the method
+        return tf.py_function(func, inp=(steps, times, values), Tout=(steps.dtype, times.dtype, values.dtype))
+
+    return wrapper
+
+
 def tokenize_asv(asv):
     # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
     # AAM expects A to map to 1
@@ -194,17 +202,34 @@ class ASVGenerator(tf.keras.utils.Sequence):
         return tokens, dists + dists.T
 
 
+def get_dataset(gen: ASVGenerator):
+    def generator():
+        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
+        if gen.shuffle:
+            np.random.shuffle(sequence)
+
+        for i in sequence:
+            yield gen[i]
+
+    if not gen.return_asv_ids:
+        y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
+    else:
+        y_type = tf.TensorSpec(shape=(gen.samples_per_minibatch), dtype=tf.string)
+
+    dataset = tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(tf.TensorSpec(shape=(gen.samples_per_minibatch), dtype=tf.string), y_type),
+    )
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+
 if __name__ == "__main__":
     import numpy as np
 
     tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
-
     ug = ASVGenerator(tree=tree_path, sequence_batch_size=128, pairwise_batch_size=32, shuffle=False)
 
-    # data = ug.get_data(return_asv_ids=False)
-    # for x in data["dataset"].take(1):
-    #     print(x)
-    for x, y in ug:
-        print(x)
-        print(y)
-        break
+    dataset = get_dataset(ug)
+    for x, y in dataset:
+        print(x, y)

@@ -49,10 +49,39 @@ class UniFracGenerator(GeneratorDataset):
             return encoder_target.loc[sample_ids].to_numpy().reshape((-1, 1))
 
 
+def get_dataset(gen: UniFracGenerator):
+    def generator():
+        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
+
+        if gen.shuffle:
+            np.random.shuffle(sequence)
+
+        for i in sequence:
+            yield gen[i]
+
+    if not gen.return_sample_ids:
+        y_type = tf.TensorSpec(shape=[gen.batch_size, gen.batch_size], dtype=tf.float32)
+    else:
+        y_type = tf.TensorSpec(shape=(gen.batch_size), dtype=tf.string)
+
+    dataset = tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(
+            (
+                tf.TensorSpec(shape=[gen.batch_size], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.string),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+            ),
+            y_type,
+        ),
+    )
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+
 if __name__ == "__main__":
     import numpy as np
-
-    from aam.data_handlers import UniFracGenerator
 
     ug = UniFracGenerator(
         table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
@@ -63,11 +92,9 @@ if __name__ == "__main__":
         scale=100.0,
         gen_new_tables=True,
     )
-
-    for i, (x, y) in enumerate(ug):
-        print(y[1], np.log1p(y[1]), np.sqrt(y[1]))
-        break
-
+    dataset = get_dataset(ug)
+    for i, (x, y) in enumerate(dataset):
+        print(x, y)
     # data = ug.get_data_by_id(ug.rarefy_tables.ids()[:16])
     # for x, y in data["dataset"]:
     #     print(y)

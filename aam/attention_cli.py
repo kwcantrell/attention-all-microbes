@@ -98,7 +98,7 @@ def fit_asv_encoder(
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers.asv_generator import ASVGenerator
+    from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
     from aam.models.nucleotide_encoder_v2 import NucleotideEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
@@ -165,7 +165,7 @@ def fit_asv_encoder(
         shuffle=True,
         **common_kwargs,
     )
-    train_enqueue = tf.keras.utils.OrderedEnqueuer(train_gen)
+    train_dataset = get_dataset(train_gen)
 
     val_gen = ASVGenerator(
         tree=i_tree,
@@ -173,7 +173,7 @@ def fit_asv_encoder(
         subsample=0.01,
         **common_kwargs,
     )
-    val_enqueue = tf.keras.utils.OrderedEnqueuer(val_gen)
+    val_dataset = get_dataset(val_gen)
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -186,21 +186,14 @@ def fit_asv_encoder(
         model_saver,
     ]
 
-    train_enqueue.start(2, max_queue_size=32)
-    val_enqueue.start(2, max_queue_size=32)
-
-    train_data = train_enqueue.get()
-    val_data = val_enqueue.get()
     model.fit(
-        train_data,
-        validation_data=val_data,
+        train_dataset,
+        validation_data=val_dataset,
         callbacks=[*core_callbacks, lr_scheduler],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
         validation_steps=val_gen.steps_per_epoch,
     )
-    train_enqueue.stop()
-    val_enqueue.stop()
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")
 
@@ -305,7 +298,7 @@ def fit_denoised_unifrac_regressor(
     from biom import load_table
 
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers.multi_depth_generator import MultiDepthGenerator
+    from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
     from aam.models.unifrac_denoising import UnifracDenoiser
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -413,9 +406,7 @@ def fit_denoised_unifrac_regressor(
         epochs=p_epochs,
         **common_kwargs,
     )
-    train_enque = tf.keras.utils.OrderedEnqueuer(train_gen)
-    train_enque.start(2, max_queue_size=32)
-    train_data = train_enque.get()
+    training_dataset = get_dataset(train_gen)
 
     val_gen = MultiDepthGenerator(
         table=val_table,
@@ -426,9 +417,7 @@ def fit_denoised_unifrac_regressor(
         epochs=1,
         **common_kwargs,
     )
-    val_enque = tf.keras.utils.OrderedEnqueuer(val_gen)
-    val_enque.start(2, max_queue_size=32)
-    val_data = val_enque.get()
+    val_dataset = get_dataset(val_gen)
 
     batch_counts = tf.TensorShape([None])
     token_shape = tf.TensorShape([None, 1])
@@ -457,8 +446,8 @@ def fit_denoised_unifrac_regressor(
         lr_scheduler,
     ]
     model.fit(
-        train_data,
-        validation_data=val_data,
+        training_dataset,
+        validation_data=val_dataset,
         callbacks=[*core_callbacks],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,

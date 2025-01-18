@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-from functools import wraps
 from typing import Iterable, List, Optional, Union
 
 import numpy as np
@@ -9,7 +7,6 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
-# from aam.data_handlers.asv_generator import tokenize_asv
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
@@ -23,6 +20,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         gen_new_table_frequency=3,
         batch_size=4,
         shuffle=False,
+        return_sample_ids=False,
         **kwargs,
     ):
         if isinstance(table, str):
@@ -42,6 +40,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.gen_new_table_frequency = gen_new_table_frequency
         self.epochs_since_last_table = 0
+        self.return_sample_ids = return_sample_ids
         self.update_sample_indices()
         self.on_epoch_end()
 
@@ -72,6 +71,9 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
                 counts.astype(np.int32),
             )
 
+            if self.return_sample_ids:
+                return (table_output, s_ids)
+
             output = None
             if y_output is not None:
                 output = y_output.astype(np.float32)
@@ -93,12 +95,8 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
                 return table_output
 
     def update_sample_indices(self):
-        sample_ids = [g.rarefy_table.ids()[g.sample_mask] for g in self.generators]
-
-        common_ids = set(sample_ids[0])
-        for s_ids in sample_ids[1:]:
-            common_ids = common_ids.intersection(s_ids)
-        self.common_ids = np.array(list(common_ids))
+        common_ids = np.concatenate([g.rarefy_table.ids()[g.sample_mask] for g in self.generators])
+        self.common_ids = np.unique(common_ids)
         self.sample_indices = np.arange(len(self.common_ids))
 
         fill_out = (self.size // len(self.sample_indices)) + 1
@@ -153,6 +151,37 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         )
 
 
+def get_dataset(gen: MultiDepthGenerator):
+    def generator():
+        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
+
+        if gen.shuffle:
+            np.random.shuffle(sequence)
+
+        for i in sequence:
+            yield gen[i]
+
+    if not gen.return_sample_ids:
+        y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)
+    else:
+        y_type = tf.TensorSpec(shape=(gen.batch_size * len(gen.generators)), dtype=tf.string)
+
+    dataset = tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(
+            (
+                tf.TensorSpec(shape=[gen.batch_size * len(gen.generators)], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.string),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+            ),
+            (tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32), y_type),
+        ),
+    )
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
+
+
 if __name__ == "__main__":
     import numpy as np
 
@@ -168,8 +197,10 @@ if __name__ == "__main__":
         max_token_per_sample=2048,
         batch_size=4,
     )
-    for x, y in ug:
-        print(x[1])
+
+    dataset = get_dataset(ug)
+    for x in dataset:
+        print(x)
     # # model = tf.keras.models.load_model(
     # #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
     # #     compile=False,
