@@ -10,7 +10,6 @@ from biom.util import biom_open
 from skbio import DistanceMatrix
 from unifrac import faith_pd, unweighted
 
-from aam.data_handlers.asv_generator import TOKENIZER
 from aam.data_handlers.generator_dataset import GeneratorDataset
 
 

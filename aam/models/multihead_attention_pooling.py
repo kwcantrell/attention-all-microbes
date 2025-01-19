@@ -22,14 +22,14 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
             self.attention = MultiHeadAttention(
                 self.num_heads,
                 key_dim=key_dim,
-                dropout=0.1,
+                dropout=0.0,
             )
 
         else:
             self.attention = tf.keras.layers.MultiHeadAttention(
                 self.num_heads,
                 key_dim=key_dim,
-                dropout=0.1,
+                dropout=0.0,
             )
         if self.use_residual_connections:
             self._rezero = self.add_weight(

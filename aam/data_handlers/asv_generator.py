@@ -4,15 +4,6 @@ import numpy as np
 import tensorflow as tf
 from bp import parse_newick, to_skbio_treenode
 
-TOKENIZER = tf.keras.layers.TextVectorization(
-    max_tokens=6,
-    split="character",
-    vocabulary=["a", "c", "t", "g"],
-    output_mode="int",
-    pad_to_max_tokens=True,
-    output_sequence_length=150,
-)
-
 
 class ASVGenerator(tf.keras.utils.Sequence):
     def __init__(

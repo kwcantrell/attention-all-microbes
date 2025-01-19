@@ -7,7 +7,6 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
-from aam.data_handlers.asv_generator import TOKENIZER
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
@@ -57,11 +56,11 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         sample_indices = self.sample_indices[start:end]
         sample_ids = self.common_ids[sample_indices]
 
-        def _samples(i, sample_ids, gen):
+        def _samples(sample_ids, gen):
             _, _sample_indices, _ = np.intersect1d(gen.rarefy_table.ids(), sample_ids, return_indices=True, assume_unique=True)
             return gen._sample_data(_sample_indices)
 
-        outputs = [_samples(i, sample_ids, gen) for i, gen in enumerate(self.generators)]
+        outputs = [_samples(sample_ids, gen) for gen in self.generators]
         combined_outputs = self._sample_data(outputs)
 
         (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = combined_outputs
@@ -78,6 +77,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
             return [lookup[c] for c in asv]
 
         tokens = [map(o) for o in tokens]
+
         if counts is not None:
             table_output = (
                 batch_counts.astype(np.int32),
@@ -189,15 +189,6 @@ def get_dataset(gen: MultiDepthGenerator):
         ),
     )
 
-    # def tokenize_asv(inputs, targets):
-    #     batch_counts, asvs, inx, counts = inputs
-    #     tokens = TOKENIZER(asvs)
-    #     mask = tokens > 0
-    #     tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
-    #     return (batch_counts, tokens, inx, counts), targets
-
-    # dataset = dataset.map(tokenize_asv)
-    # dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
     dataset = dataset.prefetch(10)
     return dataset
 
