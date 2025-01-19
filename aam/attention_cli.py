@@ -51,6 +51,9 @@ def validate_metadata(table, metadata, missing_samples_flag):
     return table.ids(), table, metadata
 
 
+GLOBAL_CONFIGURATIONS = {}
+
+
 @cli.command()
 @click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--p-sequence-batch-size", default=8, show_default=True, required=False, type=int)
