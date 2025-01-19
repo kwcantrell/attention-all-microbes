@@ -185,6 +185,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
 def get_dataset(gen: ASVGenerator):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
     enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
+    gen.stop = lambda: enqueuer.stop(0.1)
 
     if not gen.return_asv_ids:
         y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
@@ -210,3 +211,4 @@ if __name__ == "__main__":
     for x, y in dataset:
         print(x, y)
         break
+    ug.stop(0.1)

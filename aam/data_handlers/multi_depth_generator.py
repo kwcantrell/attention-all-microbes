@@ -169,6 +169,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 def get_dataset(gen: MultiDepthGenerator):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
     enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
+    gen.stop = enqueuer.stop
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)

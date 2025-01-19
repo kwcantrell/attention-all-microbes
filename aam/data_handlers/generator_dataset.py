@@ -128,6 +128,18 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         samples = self.sample_indices[start:end]
         (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = self._sample_data(samples)
 
+        lookup = {
+            "a": 1,
+            "c": 2,
+            "g": 3,
+            "t": 3,
+        }
+
+        def map(asv):
+            asv = asv.lower()
+            return [lookup[c] for c in asv]
+
+        tokens = [map(o) for o in tokens]
         if counts is not None:
             table_output = (
                 batch_counts.astype(np.int32),

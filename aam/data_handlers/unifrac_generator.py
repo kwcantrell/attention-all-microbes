@@ -52,7 +52,8 @@ class UniFracGenerator(GeneratorDataset):
 
 def get_dataset(gen: UniFracGenerator):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
-    enqueuer.start(workers=4, max_queue_size=128)
+    enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
+    gen.stop = lambda: enqueuer.stop(0.1)
 
     if not gen.return_sample_ids:
         y_type = (
@@ -67,7 +68,7 @@ def get_dataset(gen: UniFracGenerator):
         output_signature=(
             (
                 tf.TensorSpec(shape=[gen.batch_size], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.string),
+                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
                 tf.TensorSpec(shape=[None], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
             ),
@@ -75,16 +76,7 @@ def get_dataset(gen: UniFracGenerator):
         ),
     )
 
-    def tokenize_asv(inputs, targets):
-        batch_counts, asvs, inx, counts = inputs
-        tokens = TOKENIZER(asvs)
-        mask = tokens > 0
-        tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
-        return (batch_counts, tokens, inx, counts), targets
-
-    dataset = dataset.map(tokenize_asv)
-    # dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
-    # dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.prefetch(10)
     return dataset
 
 
@@ -104,3 +96,4 @@ if __name__ == "__main__":
     dataset = get_dataset(ug)
     for x, y in dataset.take(1):
         print(y)
+    ug.stop()
