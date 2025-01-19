@@ -3,16 +3,12 @@ from __future__ import annotations
 from typing import Union
 
 import tensorflow as tf
-import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss, triplet_loss
-from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
-from aam.models.transformers import TransformerEncoder
 from aam.models.unifrac_encoder import UnifracEncoder
 from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
-from aam.utils import float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracDenoiser")
@@ -142,9 +138,15 @@ class UnifracDenoiser(tf.keras.Model):
         groups = batch_dim // group_dim
         unifrac_distances = tf.reshape(unifrac_distances, shape=[groups, group_dim, group_dim])
         unifrac_embeddings = tf.reshape(unifrac_embeddings, shape=[groups, group_dim, self.embedding_dim])
+
+        def _unifrac_loss(inputs):
+            uni_dist, uni_emb = inputs
+            return self.pairwise_loss(uni_dist, uni_emb)
+
         unifrac_loss = tf.map_fn(
-            lambda inputs: self.pairwise_loss(inputs[0], inputs[1]),
-            (unifrac_distances, unifrac_embeddings),
+            # lambda inputs: self.pairwise_loss(inputs[0], inputs[1]),
+            _unifrac_loss,
+            [unifrac_distances, unifrac_embeddings],
             fn_output_signature=tf.float32,
         )
         unifrac_loss = tf.reduce_mean(unifrac_loss)
@@ -223,7 +225,10 @@ class UnifracDenoiser(tf.keras.Model):
             loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, (denoise_embeddings, unifrac_embeddings))
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
-
+            # outputs = self(inputs, training=True)
+            # loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, outputs)
+            # if self.compute_dtype == "float16":
+            #     loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
         if self.compute_dtype == "float16":
             gradients = self.optimizer.get_unscaled_gradients(gradients)

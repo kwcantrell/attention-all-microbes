@@ -29,24 +29,7 @@ def add_lock(func):
     return wrapper
 
 
-# Unicode mapping dictionary
-mapping = {65: 1, 67: 2, 71: 3, 84: 4}  # Maps Unicode numbers to specific values
-
-
-# Create the mapping function
-def map_unicode(val):
-    return mapping.get(val, 0)  # Return 0 if the value is not in the mapping
-
-
 class GeneratorDataset(tf.keras.utils.Sequence):
-    table_fn = "table.biom"
-    taxonomy_fn = "taxonomy.tsv"
-    axes = np.array(["counts", "tokens", "y", "encoder"])
-    # # These are the UTF-8 encodings of A, C, T, G respectively
-    # # lookup table converts utf-8 encodings to token
-    # # tokens start at 1 to make room for pad token
-    lookup_table = np.vectorize(map_unicode)
-
     def __init__(
         self,
         table: Union[str, Table] = None,

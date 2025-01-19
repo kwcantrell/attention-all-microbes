@@ -4,15 +4,6 @@ import numpy as np
 import tensorflow as tf
 from bp import parse_newick, to_skbio_treenode
 
-# Unicode mapping dictionary
-mapping = {65: 1, 67: 2, 71: 3, 84: 4}  # Maps Unicode numbers to specific values
-
-
-# Create the mapping function
-def map_unicode(val):
-    return mapping.get(val, 0)  # Return 0 if the value is not in the mapping
-
-
 TOKENIZER = tf.keras.layers.TextVectorization(
     max_tokens=6,
     split="character",
@@ -44,16 +35,22 @@ class ASVGenerator(tf.keras.utils.Sequence):
         # step 1: find which nodes represent 150bp ASVs
         print("Data pipeline initialization...")
         print("step 1: find which nodes represent 150bp ASVs")
+        lookup = {
+            "a": 1,
+            "c": 2,
+            "g": 3,
+            "t": 3,
+        }
         asv_preorderpos = []
         obs_encodings = []
         for i, node in enumerate(self.tree_node.preorder(include_self=True)):
             if node.is_tip() and len(node.name) == 150:
                 asv_preorderpos.append(i)
-                obs_encodings.append(node.name)
+                obs_encodings.append([lookup[c] for c in node.name.lower()])
 
         # step 2: extract ASV tokens
         self.asv_preorderpos = np.array(asv_preorderpos, dtype=np.int32)
-        self.obs_encodings = np.array(obs_encodings)
+        self.obs_encodings = np.array(obs_encodings, dtype=np.int32)
 
         # step 3: cache node info
         print("step 3: cache node info")
@@ -145,8 +142,8 @@ class ASVGenerator(tf.keras.utils.Sequence):
             return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
 
         num_asvs = self.pairwise_batch_size
-        samples = samples[:num_asvs]
-        asv_pos = self.asv_preorderpos[samples]
+        tip_tip_samples = samples[:num_asvs]
+        asv_pos = self.asv_preorderpos[tip_tip_samples]
         post_order_pos = np.array([self.preorder_nodes[i].postorder_pos for i in asv_pos], dtype=np.int32)
         sorted_post_indx = np.argsort(post_order_pos)
 
@@ -187,7 +184,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
 def get_dataset(gen: ASVGenerator):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
-    enqueuer.start(workers=4, max_queue_size=128)
+    enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
 
     if not gen.return_asv_ids:
         y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
@@ -196,19 +193,10 @@ def get_dataset(gen: ASVGenerator):
 
     dataset = tf.data.Dataset.from_generator(
         enqueuer.get,
-        output_signature=(tf.TensorSpec(shape=(gen.samples_per_minibatch), dtype=tf.string), y_type),
+        output_signature=(tf.TensorSpec(shape=(gen.samples_per_minibatch, 150), dtype=tf.int32), y_type),
     )
 
-    def tokenize_asv(asvs, target):
-        # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
-        # AAM expects A to map to 1
-        tokens = TOKENIZER(asvs)
-        mask = tokens > 0
-        tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
-        return tokens, target
-
-    dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.prefetch(10)
     return dataset
 
 
@@ -221,3 +209,4 @@ if __name__ == "__main__":
     dataset = get_dataset(ug)
     for x, y in dataset:
         print(x, y)
+        break

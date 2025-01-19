@@ -65,6 +65,19 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         combined_outputs = self._sample_data(outputs)
 
         (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = combined_outputs
+
+        lookup = {
+            "a": 1,
+            "c": 2,
+            "g": 3,
+            "t": 3,
+        }
+
+        def map(asv):
+            asv = asv.lower()
+            return [lookup[c] for c in asv]
+
+        tokens = [map(o) for o in tokens]
         if counts is not None:
             table_output = (
                 batch_counts.astype(np.int32),
@@ -155,7 +168,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
 def get_dataset(gen: MultiDepthGenerator):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
-    enqueuer.start(workers=4, max_queue_size=128)
+    enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)
@@ -167,7 +180,7 @@ def get_dataset(gen: MultiDepthGenerator):
         output_signature=(
             (
                 tf.TensorSpec(shape=[gen.batch_size * len(gen.generators)], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.string),
+                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
                 tf.TensorSpec(shape=[None], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
             ),
@@ -175,15 +188,16 @@ def get_dataset(gen: MultiDepthGenerator):
         ),
     )
 
-    def tokenize_asv(inputs, targets):
-        batch_counts, asvs, inx, counts = inputs
-        tokens = TOKENIZER(asvs)
-        mask = tokens > 0
-        tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
-        return (batch_counts, tokens, inx, counts), targets
+    # def tokenize_asv(inputs, targets):
+    #     batch_counts, asvs, inx, counts = inputs
+    #     tokens = TOKENIZER(asvs)
+    #     mask = tokens > 0
+    #     tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
+    #     return (batch_counts, tokens, inx, counts), targets
 
-    dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    # dataset = dataset.map(tokenize_asv)
+    # dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
+    dataset = dataset.prefetch(10)
     return dataset
 
 

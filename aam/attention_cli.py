@@ -102,6 +102,28 @@ def fit_asv_encoder(
     from aam.models.nucleotide_encoder_v2 import NucleotideEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
+    # launch datasets first so they can begin to preprocess
+    common_kwargs = {
+        "sequence_batch_size": p_sequence_batch_size,
+        "pairwise_batch_size": p_pairwise_batch_size,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+    }
+    train_gen = ASVGenerator(
+        tree=i_tree,
+        shuffle=True,
+        **common_kwargs,
+    )
+    train_dataset = get_dataset(train_gen)
+
+    val_gen = ASVGenerator(
+        tree=i_tree,
+        shuffle=False,
+        subsample=0.01,
+        **common_kwargs,
+    )
+    val_dataset = get_dataset(val_gen)
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -153,27 +175,6 @@ def fit_asv_encoder(
         run_eagerly=False,
     )
     model.summary()
-
-    common_kwargs = {
-        "sequence_batch_size": p_sequence_batch_size,
-        "pairwise_batch_size": p_pairwise_batch_size,
-        "max_bp": p_max_bp,
-        "epochs": p_epochs,
-    }
-    train_gen = ASVGenerator(
-        tree=i_tree,
-        shuffle=True,
-        **common_kwargs,
-    )
-    train_dataset = get_dataset(train_gen)
-
-    val_gen = ASVGenerator(
-        tree=i_tree,
-        shuffle=False,
-        subsample=0.01,
-        **common_kwargs,
-    )
-    val_dataset = get_dataset(val_gen)
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -304,6 +305,56 @@ def fit_denoised_unifrac_regressor(
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.models.utils import cos_decay_with_warmup
 
+    # start pre processing dataset
+    table = load_table(i_table)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    indices = np.arange(len(ids), dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(len(ids) * 0.8)
+
+    train_indices = indices[:train_size]
+    train_ids = ids[train_indices]
+    train_table = table.filter(train_ids, inplace=False)
+
+    val_indices = indices[train_size:]
+    val_ids = ids[val_indices]
+    val_table = table.filter(val_ids, inplace=False)
+    common_kwargs = {
+        "metadata_column": m_metadata_column,
+        "max_token_per_sample": p_asv_limit,
+        "sample_depths": [1000, 5000],
+        "batch_size": p_batch_size,
+        "is_16S": True,
+        "is_categorical": p_is_categorical,
+        "max_bp": p_max_bp,
+        "tree_path": i_tree,
+        "metadata": df,
+        "unifrac_metric": p_unifrac_metric,
+    }
+    train_gen = MultiDepthGenerator(
+        table=train_table,
+        shuffle=True,
+        shift=0.0,
+        scale=1.0,
+        gen_new_tables=p_gen_new_table,
+        epochs=p_epochs,
+        **common_kwargs,
+    )
+    training_dataset = get_dataset(train_gen)
+
+    val_gen = MultiDepthGenerator(
+        table=val_table,
+        shuffle=False,
+        shift=0.0,
+        scale=1.0,
+        gen_new_tables=False,
+        epochs=1,
+        **common_kwargs,
+    )
+    val_dataset = get_dataset(val_gen)
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -368,56 +419,6 @@ def fit_denoised_unifrac_regressor(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     #
-
-    table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
-    ids, table, df = validate_metadata(table, df, p_missing_samples)
-    indices = np.arange(len(ids), dtype=np.int32)
-
-    np.random.shuffle(indices)
-    train_size = int(len(ids) * 0.8)
-
-    train_indices = indices[:train_size]
-    train_ids = ids[train_indices]
-    train_table = table.filter(train_ids, inplace=False)
-
-    val_indices = indices[train_size:]
-    val_ids = ids[val_indices]
-    val_table = table.filter(val_ids, inplace=False)
-
-    common_kwargs = {
-        "metadata_column": m_metadata_column,
-        "max_token_per_sample": p_asv_limit,
-        "sample_depths": [1000, 5000],
-        "batch_size": p_batch_size,
-        "is_16S": True,
-        "is_categorical": p_is_categorical,
-        "max_bp": p_max_bp,
-        "tree_path": i_tree,
-        "metadata": df,
-        "unifrac_metric": p_unifrac_metric,
-    }
-    train_gen = MultiDepthGenerator(
-        table=train_table,
-        shuffle=True,
-        shift=0.0,
-        scale=1.0,
-        gen_new_tables=p_gen_new_table,
-        epochs=p_epochs,
-        **common_kwargs,
-    )
-    training_dataset = get_dataset(train_gen)
-
-    val_gen = MultiDepthGenerator(
-        table=val_table,
-        shuffle=False,
-        shift=0.0,
-        scale=1.0,
-        gen_new_tables=False,
-        epochs=1,
-        **common_kwargs,
-    )
-    val_dataset = get_dataset(val_gen)
 
     batch_counts = tf.TensorShape([None])
     token_shape = tf.TensorShape([None, 1])

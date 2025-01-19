@@ -82,8 +82,9 @@ def get_dataset(gen: UniFracGenerator):
         tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
         return (batch_counts, tokens, inx, counts), targets
 
-    dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.map(tokenize_asv)
+    # dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
+    # dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
 
@@ -103,7 +104,3 @@ if __name__ == "__main__":
     dataset = get_dataset(ug)
     for x, y in dataset.take(1):
         print(y)
-    # data = ug.get_data_by_id(ug.rarefy_tables.ids()[:16])
-    # for x, y in data["dataset"]:
-    #     print(y)
-    #     break
