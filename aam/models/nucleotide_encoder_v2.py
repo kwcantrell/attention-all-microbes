@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import tensorflow as tf
 
-from aam.data_handlers.asv_generator import tokenize_asv
 from aam.losses import PairwiseLoss
 from aam.models.base_sequence_encoder import BaseSequenceEncoder
 
@@ -131,7 +130,7 @@ class NucleotideEncoderV2(tf.keras.Model):
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
-        tokens = tokenize_asv(inputs)
+        tokens = inputs
         include_bert_loss = True
         if hasattr(self, "include_bert_loss"):
             include_bert_loss = self.include_bert_loss
@@ -170,5 +169,5 @@ class NucleotideEncoderV2(tf.keras.Model):
         model = cls(**config)
 
         if input_shape is not None:
-            model.build([None, 1])
+            model.build([None, 150])
         return model

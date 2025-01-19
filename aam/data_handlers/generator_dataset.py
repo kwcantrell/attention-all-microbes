@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from functools import wraps
 from typing import Iterable, Optional, Union
@@ -8,8 +9,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
-
-from aam.data_handlers.asv_generator import tokenize_asv
 
 
 def add_lock(func):
@@ -231,9 +230,13 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         self.sample_indices = self.sample_indices[self.sample_mask]
         self.sample_ids = self.rarefy_table.ids()[self.sample_mask]
-        fill_out = (self.size // len(self.sample_indices)) + 1
-        if fill_out > 0:
-            self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out, axis=0).reshape((-1))
+        fill_out = math.ceil(self.size / len(self.sample_indices))
+
+        if self.size != len(self.sample_indices):
+            self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out + 1, axis=0).reshape((-1))
+
+        if self.shuffle:
+            np.random.shuffle(self.sample_indices)
 
         self.table_data = self._create_table_data(self.rarefy_table)
         self.y_data = self._create_y_data(self.rarefy_table)
@@ -247,9 +250,6 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             self._create_table()
 
         self.epochs_since_last_table += 1
-
-        if self.shuffle:
-            np.random.shuffle(self.sample_indices)
 
     def _validate_dataframe(self, df: pd.DataFrame):
         if isinstance(df, str):

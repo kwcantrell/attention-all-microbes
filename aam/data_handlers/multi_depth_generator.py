@@ -7,6 +7,7 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
+from aam.data_handlers.asv_generator import TOKENIZER
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
@@ -109,6 +110,7 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
     def on_epoch_end(self):
         if self.epochs_since_last_table >= self.gen_new_table_frequency and self.shuffle:
+            print("creating new data...")
             for g in self.generators:
                 g._create_table()
                 self.epochs_since_last_table = 0
@@ -152,18 +154,8 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
 
 def get_dataset(gen: MultiDepthGenerator):
-    def generator():
-        for _ in range(gen.epochs):
-            sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
-
-            if gen.shuffle:
-                np.random.shuffle(sequence)
-
-            for i in sequence:
-                yield gen[i]
-
-            print("Completed epoch...")
-            gen.on_epoch_end()
+    enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
+    enqueuer.start(workers=4, max_queue_size=128)
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)
@@ -171,7 +163,7 @@ def get_dataset(gen: MultiDepthGenerator):
         y_type = tf.TensorSpec(shape=(gen.batch_size * len(gen.generators)), dtype=tf.string)
 
     dataset = tf.data.Dataset.from_generator(
-        generator,
+        enqueuer.get,
         output_signature=(
             (
                 tf.TensorSpec(shape=[gen.batch_size * len(gen.generators)], dtype=tf.int32),
@@ -182,6 +174,15 @@ def get_dataset(gen: MultiDepthGenerator):
             (tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32), y_type),
         ),
     )
+
+    def tokenize_asv(inputs, targets):
+        batch_counts, asvs, inx, counts = inputs
+        tokens = TOKENIZER(asvs)
+        mask = tokens > 0
+        tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
+        return (batch_counts, tokens, inx, counts), targets
+
+    dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
@@ -203,40 +204,5 @@ if __name__ == "__main__":
     )
 
     dataset = get_dataset(ug)
-    for x in dataset:
-        # print(x)
-        break
-    # # model = tf.keras.models.load_model(
-    # #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-regressor-LAMB-norm/model.keras",
-    # #     compile=False,
-    # # )
-    # print(data_obj)
-    # model = tf.keras.models.load_model(
-    #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/profile-unifrac-regressor/model.keras", compile=False
-    # )
-    # for x, y in data_obj["dataset"].take(1):
-    #     y_target, encoder_target = y
-    #     batch_counts, tokens, indicies, counts = x
-    #     group_dim = tf.shape(encoder_target)[-1]
-    #     batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
-    #     batch_sums = tf.pad(tf.reduce_sum(batch_counts[:-1], axis=-1, keepdims=True), [[1, 0], [0, 0]])
-    #     batch_sums = tf.squeeze(batch_sums, axis=-1)
-    #     batch_sums = tf.math.cumsum(batch_sums, axis=0)
-    #     # print(batch_counts, batch_sums, tf.reduce_sum(batch_counts, axis=-1), tf.reduce_sum(batch_counts), indicies.shape)
-
-    #     def _process_batch(inputs):
-    #         bi_batch_counts, prev_batch_sums = inputs
-    #         bi_total = tf.reduce_sum(bi_batch_counts)
-    #         bi_indices = indicies[prev_batch_sums : prev_batch_sums + bi_total]
-    #         bi_counts = counts[prev_batch_sums : prev_batch_sums + bi_total]
-    #         print("WHAT???", bi_total, bi_indices.shape)
-    #         return model((bi_batch_counts, tokens, bi_indices, bi_counts), training=True)
-
-    #     output = tf.map_fn(
-    #         _process_batch,
-    #         (batch_counts, batch_sums),
-    #         fn_output_signature=(
-    #             tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
-    #             tf.TensorSpec(shape=[None, 128], dtype=tf.float32),
-    #         ),
-    #     )
+    for x in dataset.take(1):
+        print(x)

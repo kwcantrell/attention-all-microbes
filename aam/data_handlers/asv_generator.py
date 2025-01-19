@@ -23,15 +23,6 @@ TOKENIZER = tf.keras.layers.TextVectorization(
 )
 
 
-def tokenize_asv(asv):
-    # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
-    # AAM expects A to map to 1
-    tokens = TOKENIZER(asv)
-    mask = tokens > 0
-    tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
-    return tokens
-
-
 class ASVGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
@@ -195,14 +186,8 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
 
 def get_dataset(gen: ASVGenerator):
-    def generator():
-        for _ in range(gen.epochs):
-            sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
-            if gen.shuffle:
-                np.random.shuffle(sequence)
-
-            for i in sequence:
-                yield gen[i]
+    enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
+    enqueuer.start(workers=4, max_queue_size=128)
 
     if not gen.return_asv_ids:
         y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
@@ -210,9 +195,19 @@ def get_dataset(gen: ASVGenerator):
         y_type = tf.TensorSpec(shape=(gen.samples_per_minibatch), dtype=tf.string)
 
     dataset = tf.data.Dataset.from_generator(
-        generator,
+        enqueuer.get,
         output_signature=(tf.TensorSpec(shape=(gen.samples_per_minibatch), dtype=tf.string), y_type),
     )
+
+    def tokenize_asv(asvs, target):
+        # TextVectorization layer use 0 and 1 for <MASK> and <UNK>
+        # AAM expects A to map to 1
+        tokens = TOKENIZER(asvs)
+        mask = tokens > 0
+        tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
+        return tokens, target
+
+    dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 

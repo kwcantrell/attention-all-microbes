@@ -10,6 +10,7 @@ from biom.util import biom_open
 from skbio import DistanceMatrix
 from unifrac import faith_pd, unweighted
 
+from aam.data_handlers.asv_generator import TOKENIZER
 from aam.data_handlers.generator_dataset import GeneratorDataset
 
 
@@ -50,22 +51,19 @@ class UniFracGenerator(GeneratorDataset):
 
 
 def get_dataset(gen: UniFracGenerator):
-    def generator():
-        sequence = np.arange(gen.steps_per_epoch, dtype=np.int32)
-
-        if gen.shuffle:
-            np.random.shuffle(sequence)
-
-        for i in sequence:
-            yield gen[i]
+    enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
+    enqueuer.start(workers=4, max_queue_size=128)
 
     if not gen.return_sample_ids:
-        y_type = tf.TensorSpec(shape=[gen.batch_size, gen.batch_size], dtype=tf.float32)
+        y_type = (
+            tf.TensorSpec(shape=[gen.batch_size, 1], dtype=tf.float32),
+            tf.TensorSpec(shape=[gen.batch_size, gen.batch_size], dtype=tf.float32),
+        )
     else:
         y_type = tf.TensorSpec(shape=(gen.batch_size), dtype=tf.string)
 
     dataset = tf.data.Dataset.from_generator(
-        generator,
+        enqueuer.get,
         output_signature=(
             (
                 tf.TensorSpec(shape=[gen.batch_size], dtype=tf.int32),
@@ -76,6 +74,15 @@ def get_dataset(gen: UniFracGenerator):
             y_type,
         ),
     )
+
+    def tokenize_asv(inputs, targets):
+        batch_counts, asvs, inx, counts = inputs
+        tokens = TOKENIZER(asvs)
+        mask = tokens > 0
+        tokens = tf.cast(tokens, dtype=tf.int32) - tf.cast(mask, dtype=tf.int32)
+        return (batch_counts, tokens, inx, counts), targets
+
+    dataset = dataset.map(tokenize_asv, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
@@ -91,10 +98,11 @@ if __name__ == "__main__":
         shift=0.0,
         scale=100.0,
         gen_new_tables=True,
+        return_sample_ids=True,
     )
     dataset = get_dataset(ug)
-    for i, (x, y) in enumerate(dataset):
-        print(x, y)
+    for x, y in dataset.take(1):
+        print(y)
     # data = ug.get_data_by_id(ug.rarefy_tables.ids()[:16])
     # for x, y in data["dataset"]:
     #     print(y)
