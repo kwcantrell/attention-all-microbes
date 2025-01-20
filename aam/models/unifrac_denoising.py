@@ -143,14 +143,18 @@ class UnifracDenoiser(tf.keras.Model):
             uni_dist, uni_emb = inputs
             return self.pairwise_loss(uni_dist, uni_emb)
 
-        unifrac_loss = tf.map_fn(
-            # lambda inputs: self.pairwise_loss(inputs[0], inputs[1]),
+        unifrac_losses = tf.map_fn(
             _unifrac_loss,
             [unifrac_distances, unifrac_embeddings],
             fn_output_signature=tf.float32,
         )
-        unifrac_loss = tf.reduce_mean(unifrac_loss)
-        return unifrac_loss
+
+        mean = tf.reduce_mean(unifrac_losses)
+        std = tf.math.reduce_std(unifrac_losses)
+        difficult_mask = unifrac_losses > (mean - std)
+        non_outlier_mask = unifrac_losses < (mean + 3 * std)
+
+        return unifrac_losses[difficult_mask & non_outlier_mask]
 
     def _compute_denoise_loss(self, denoised_embeddings):
         denoise_loss = self.triplet_loss(denoised_embeddings)
@@ -168,7 +172,7 @@ class UnifracDenoiser(tf.keras.Model):
         denoise_loss = self.triplet_loss(denoised_embeddings)
         denoise_loss = 0.1 * tf.reduce_mean(denoise_loss)
 
-        loss = unifrac_loss + denoise_loss
+        loss = tf.reduce_mean(unifrac_loss) + denoise_loss
 
         return loss, unifrac_loss, denoise_loss
 
