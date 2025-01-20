@@ -19,10 +19,11 @@ class UniFracGenerator(GeneratorDataset):
         self.tree_path = tree_path
         self.unifrac_metric = unifrac_metric
 
-        self.encoder_target = self._create_encoder_target(self.rarefy_table)
+        self._create_encoder_target(self.rarefy_table)
         self.encoder_dtype = np.float32
 
     def _create_encoder_target(self, table: Table) -> DistanceMatrix:
+        print("creating unifrac targets...")
         if not hasattr(self, "tree_path"):
             return None
 
@@ -35,7 +36,7 @@ class UniFracGenerator(GeneratorDataset):
         else:
             distances = faith_pd(temp_path, self.tree_path)
         os.remove(temp_path)
-        return distances
+        self.encoder_target = distances
 
     def _encoder_output(
         self,

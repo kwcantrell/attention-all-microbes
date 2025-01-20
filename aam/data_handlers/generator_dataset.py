@@ -177,7 +177,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         if max(samples) >= len(sample_ids):
             raise Exception(f"\tsample_indices exceed max {len(sample_ids)}. samples {samples}...")
-        s_ids = [sample_ids[s] for s in samples]
+        s_ids = [self.rarefy_table.ids()[s] for s in samples]
 
         samples = samples.reshape((-1, 1))
         row = row.reshape((1, -1))
@@ -224,7 +224,6 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             self.steps_per_epoch = self.size // self.batch_size
 
         self.sample_indices = self.sample_indices[self.sample_mask]
-        self.sample_ids = self.rarefy_table.ids()[self.sample_mask]
         fill_out = math.ceil(self.size / len(self.sample_indices))
 
         if self.size != len(self.sample_indices):
@@ -235,6 +234,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         self.table_data = self._create_table_data(self.rarefy_table)
         self.y_data = self._create_y_data(self.rarefy_table)
+        self._create_encoder_target(self.rarefy_table)
         self.epochs_since_last_table = 0
 
     def on_epoch_end(self):
