@@ -150,11 +150,9 @@ class UnifracDenoiser(tf.keras.Model):
         )
 
         mean = tf.reduce_mean(unifrac_losses)
-        std = tf.math.reduce_std(unifrac_losses)
-        difficult_mask = unifrac_losses > (mean - std)
-        non_outlier_mask = unifrac_losses < (mean + 3 * std)
+        difficult_mask = unifrac_losses > mean
 
-        return unifrac_losses[difficult_mask & non_outlier_mask]
+        return unifrac_losses[difficult_mask]
 
     def _compute_denoise_loss(self, denoised_embeddings):
         denoise_loss = self.triplet_loss(denoised_embeddings)
