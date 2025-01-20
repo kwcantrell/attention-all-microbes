@@ -152,7 +152,7 @@ class UnifracDenoiser(tf.keras.Model):
         mean = tf.reduce_mean(unifrac_losses)
         difficult_mask = unifrac_losses > mean
 
-        return unifrac_losses[difficult_mask]
+        return unifrac_losses[difficult_mask], mean
 
     def _compute_denoise_loss(self, denoised_embeddings):
         denoise_loss = self.triplet_loss(denoised_embeddings)
@@ -165,14 +165,14 @@ class UnifracDenoiser(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         denoised_embeddings, unifrac_embeddings = outputs
 
-        unifrac_loss = self._compute_unifrac_loss(unifrac_distances, unifrac_embeddings)
+        unifrac_loss, unifrac_mean_loss = self._compute_unifrac_loss(unifrac_distances, unifrac_embeddings)
 
         denoise_loss = self.triplet_loss(denoised_embeddings)
         denoise_loss = 0.1 * tf.reduce_mean(denoise_loss)
 
         loss = tf.reduce_mean(unifrac_loss) + denoise_loss
 
-        return loss, unifrac_loss, denoise_loss
+        return loss, unifrac_loss, denoise_loss, unifrac_mean_loss
 
     def predict_step(
         self,
@@ -224,7 +224,9 @@ class UnifracDenoiser(tf.keras.Model):
             denoise_embeddings = tf.concat([b1_denoise, b2_denoise], axis=0)
             unifrac_embeddings = tf.concat([b1_unifrac, b2_unifrac], axis=0)
 
-            loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, (denoise_embeddings, unifrac_embeddings))
+            loss, unifrac_loss, denoise_loss, unifrac_mean_loss = self._compute_loss(
+                encoder_target, (denoise_embeddings, unifrac_embeddings)
+            )
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
             # outputs = self(inputs, training=True)
@@ -237,7 +239,7 @@ class UnifracDenoiser(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.loss_tracker.update_state(unifrac_loss + denoise_loss)
-        self.unifrac_tracker.update_state(unifrac_loss)
+        self.unifrac_tracker.update_state(unifrac_mean_loss)
         self.denoise_tracker.update_state(denoise_loss)
 
         return {
@@ -257,9 +259,9 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         y_target, encoder_target = y
         outputs = self(inputs, training=False)
-        loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, outputs)
+        loss, unifrac_loss, denoise_loss, unifrac_mean_loss = self._compute_loss(encoder_target, outputs)
         self.loss_tracker.update_state(loss)
-        self.unifrac_tracker.update_state(unifrac_loss)
+        self.unifrac_tracker.update_state(unifrac_mean_loss)
         self.denoise_tracker.update_state(denoise_loss)
         return {
             "loss": self.loss_tracker.result(),
