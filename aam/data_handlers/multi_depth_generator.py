@@ -33,18 +33,28 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
             UniFracGenerator(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
             for depth in sample_depths
         ]
+        self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
+        self.size = len(self.common_ids)
+        self.sample_indices = np.arange(self.size)
 
         self.batch_size = batch_size
-        self.steps_per_epoch = min([g.steps_per_epoch for g in self.generators])
-        self.size = self.batch_size * self.steps_per_epoch
-        print(self.size, self.steps_per_epoch, [g.steps_per_epoch for g in self.generators])
+        self.steps_per_epoch = self.size // self.batch_size
         self.shuffle = shuffle
         self.gen_new_table_frequency = gen_new_table_frequency
         self.epochs_since_last_table = 0
         self.return_sample_ids = return_sample_ids
         self.epochs = epochs
-        self.update_sample_indices()
+        self.sample_indices = np.arange(self.size, dtype=np.int32)
         self.on_epoch_end()
+
+    def on_epoch_end(self):
+        for g in self.generators:
+            g.on_epoch_end()
+
+        if self.shuffle:
+            np.random.shuffle(self.sample_indices)
+
+        self.epochs_since_last_table += 1
 
     def __len__(self):
         return self.steps_per_epoch
@@ -52,18 +62,40 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         start = idx * self.batch_size
         end = start + self.batch_size
-
         sample_indices = self.sample_indices[start:end]
-        sample_ids = self.common_ids[sample_indices]
+        batch_sample_ids = self.common_ids[sample_indices]
+        return self._batch_data(batch_sample_ids)
 
-        def _samples(sample_ids, gen):
-            _, _sample_indices, _ = np.intersect1d(gen.rarefy_table.ids(), sample_ids, return_indices=True, assume_unique=True)
-            return gen._sample_data(_sample_indices)
+    def _batch_data(self, batch_sample_ids):
+        num_unique_asvs, sparse_indices, obs_indices, counts = [], [], [], []
+        cur_row_indx = 0
+        gen_is = []
+        for gen_i, generator in enumerate(self.generators):
+            for s_id in batch_sample_ids:
+                sample_data = generator.rarefied_table.data(s_id, dense=False).tocoo()
+                (obs_idx, _), sample_counts = sample_data.coords, sample_data.data
 
-        outputs = [_samples(sample_ids, gen) for gen in self.generators]
-        combined_outputs = self._sample_data(outputs)
+                num_unique_asvs.append(len(obs_idx))
+                sparse_indices.append([[cur_row_indx, i] for i in range(len(obs_idx))])
+                obs_indices.append(obs_idx)
+                counts.append(sample_counts)
+                gen_is.append(gen_i)
+                cur_row_indx += 1
 
-        (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = combined_outputs
+        num_unique_asvs = np.array(num_unique_asvs, dtype=np.int32)
+        sparse_indices = np.vstack(sparse_indices, dtype=np.int32)
+        obs_indices = obs_indices
+        counts = np.hstack(counts, dtype=np.float32)[:, np.newaxis]
+
+        # first cast obs_indices to obs_ids
+        def idx_to_asv(indices, gen_i):
+            asvs = []
+            for i in indices:
+                asvs.append(self.generators[gen_i].asv_ids[i])
+            return asvs
+
+        asvs = np.hstack([idx_to_asv(indices, gen_i) for indices, gen_i in zip(obs_indices, gen_is)])
+        unique_asvs, obs_indices = np.unique(asvs, return_inverse=True)
 
         lookup = {
             "a": 1,
@@ -74,96 +106,13 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
         def map(asv):
             asv = asv.lower()
-            return [lookup[c] for c in asv]
+            return np.array([lookup[c] for c in asv], dtype=np.int32)[np.newaxis, :]
 
-        tokens = [map(o) for o in tokens]
+        tokens = np.concatenate([map(asv) for asv in unique_asvs], axis=0)
 
-        if counts is not None:
-            table_output = (
-                batch_counts.astype(np.int32),
-                tokens,
-                indices.astype(np.int32),
-                counts.astype(np.int32),
-            )
-
-            if self.return_sample_ids:
-                return (table_output, s_ids)
-
-            output = None
-            if y_output is not None:
-                output = y_output.astype(np.float32)
-
-            if encoder_out is not None:
-                if isinstance(encoder_out, tuple):
-                    encoder_out = tuple([o.astype(t) for o, t in zip(encoder_out, self.generators[0].encoder_dtype)])
-                else:
-                    encoder_out = encoder_out.astype(self.generators[0].encoder_dtype)
-
-                if output is not None:
-                    output = (output, encoder_out)
-                else:
-                    output = encoder_out
-
-            if output is not None:
-                return (table_output, output)
-            else:
-                return table_output
-
-    def update_sample_indices(self):
-        self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
-        self.sample_indices = np.arange(len(self.common_ids))
-
-        fill_out = (self.size // len(self.sample_indices)) + 1
-
-        if self.shuffle:
-            np.random.shuffle(self.sample_indices)
-
-        if fill_out > 0:
-            self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out, axis=0).reshape((-1))
-
-    def on_epoch_end(self):
-        if self.epochs_since_last_table >= self.gen_new_table_frequency and self.shuffle:
-            print("creating new data...")
-            for g in self.generators:
-                g._create_table()
-                self.epochs_since_last_table = 0
-                self.update_sample_indices()
-
-        self.epochs_since_last_table += 1
-
-    def _sample_data(self, outputs) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids = [], [], [], [], [], [], [], []
-        shift = 0
-        for bc, c, t, ind, yo, eo, oi, si in outputs:
-            batch_counts.append(bc)
-            counts.append(c.reshape(-1))
-            tokens.append(t)
-            indices.append(ind + shift)
-            y_output.append(yo)
-            encoder_out.append(eo)
-            ob_ids.append(oi)
-            s_ids.append(si)
-            shift = np.max(ind + shift + 1)
-        batch_counts = np.concatenate(batch_counts)
-        counts = np.concatenate(counts)
-        tokens = np.concatenate(tokens)
-        indices = np.concatenate(indices)
-        y_output = np.concatenate(y_output)
-        encoder_out = np.concatenate(encoder_out)
-        ob_ids = np.concatenate(ob_ids)
-        s_ids = np.concatenate(s_ids)
-
-        unique_t, unique_ind = np.unique(tokens, return_inverse=True, axis=0)
-        return (
-            batch_counts,
-            counts.reshape((-1, 1)),
-            unique_t,
-            unique_ind[indices],
-            y_output,
-            encoder_out,
-            ob_ids,
-            s_ids,
-        )
+        y_true = np.concatenate([gen.y_data.loc[batch_sample_ids] for gen in self.generators], axis=None)[:, np.newaxis]
+        encoder_output = np.concatenate([gen._encoder_output(batch_sample_ids) for gen in self.generators], axis=0)
+        return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
 
 
 def get_dataset(gen: MultiDepthGenerator):
@@ -180,8 +129,8 @@ def get_dataset(gen: MultiDepthGenerator):
         enqueuer.get,
         output_signature=(
             (
-                tf.TensorSpec(shape=[gen.batch_size * len(gen.generators)], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
                 tf.TensorSpec(shape=[None], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
             ),
@@ -209,6 +158,12 @@ if __name__ == "__main__":
         batch_size=4,
     )
 
-    dataset = get_dataset(ug)
-    for x in dataset.take(1):
-        print(x)
+    # dataset = get_dataset(ug)
+    # for x in dataset.take(1):
+    #     print(x)
+    x, y = ug[0]
+    (tokens, batch_indices, obs_indices, counts) = x
+    print("tokens:", tokens.shape)
+    print("batch_indices:", batch_indices.shape, batch_indices)
+    print("obs indices:", obs_indices.shape)
+    print("counts:", counts.shape)

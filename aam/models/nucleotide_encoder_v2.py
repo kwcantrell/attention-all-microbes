@@ -86,11 +86,10 @@ class NucleotideEncoderV2(tf.keras.Model):
 
         # want "hard" examples
         # pairwise loss seems to follow an expontial distribution
-        # grab 75 quantile: -ln(1-p)/lambda where lambda = 1/E[X]
+        # the goal is to drive the mean towards 0
         mean = tf.reduce_mean(losses)
-        quantile = -1 * tf.math.log(0.25) * mean
-        quantile_mask = losses > quantile
-        asv_loss = tf.reduce_mean(losses[quantile_mask])
+        mean_mask = losses >= mean
+        asv_loss = tf.reduce_mean(losses[mean_mask])
         return tf.where(asv_loss > 0, asv_loss, 0.0)  # incase no loss are in the 75 quantile
 
     def train_step(self, data):

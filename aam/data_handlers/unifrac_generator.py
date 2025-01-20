@@ -8,46 +8,30 @@ import tensorflow as tf
 from biom import Table
 from biom.util import biom_open
 from skbio import DistanceMatrix
-from unifrac import faith_pd, unweighted
+from unifrac import unweighted
 
 from aam.data_handlers.generator_dataset import GeneratorDataset
 
 
 class UniFracGenerator(GeneratorDataset):
-    def __init__(self, tree_path: str, unifrac_metric="unifrac", **kwargs):
+    def __init__(self, unifrac_metric="unifrac", **kwargs):
         super(UniFracGenerator, self).__init__(**kwargs)
-        self.tree_path = tree_path
-        self.unifrac_metric = unifrac_metric
-
-        self._create_encoder_target(self.rarefy_table)
         self.encoder_dtype = np.float32
 
-    def _create_encoder_target(self, table: Table) -> DistanceMatrix:
+    def _create_encoder_target(self) -> DistanceMatrix:
+        super(UniFracGenerator, self)._create_encoder_target()
         print("creating unifrac targets...")
-        if not hasattr(self, "tree_path"):
-            return None
 
         random = np.random.random(1)[0]
         temp_path = f"/tmp/temp{random}.biom"
         with biom_open(temp_path, "w") as f:
-            table.to_hdf5(f, "aam")
-        if self.unifrac_metric == "unifrac":
-            distances = unweighted(temp_path, self.tree_path)
-        else:
-            distances = faith_pd(temp_path, self.tree_path)
+            self.rarefied_table.to_hdf5(f, "aam")
+        distances = unweighted(temp_path, self.tree_path)
         os.remove(temp_path)
-        self.encoder_target = distances
+        return distances
 
-    def _encoder_output(
-        self,
-        encoder_target: DistanceMatrix,
-        sample_ids: Iterable[str],
-        ob_ids: list[str],
-    ) -> np.ndarray[float]:
-        if self.unifrac_metric == "unifrac":
-            return encoder_target.filter(sample_ids).data
-        else:
-            return encoder_target.loc[sample_ids].to_numpy().reshape((-1, 1))
+    def _encoder_output(self, sample_ids: Iterable[str]) -> np.ndarray[float]:
+        return self.encoder_target.filter(sample_ids).data
 
 
 def get_dataset(gen: UniFracGenerator):
@@ -67,8 +51,8 @@ def get_dataset(gen: UniFracGenerator):
         enqueuer.get,
         output_signature=(
             (
-                tf.TensorSpec(shape=[gen.batch_size], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
                 tf.TensorSpec(shape=[None], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
             ),
@@ -91,9 +75,9 @@ if __name__ == "__main__":
         shift=0.0,
         scale=100.0,
         gen_new_tables=True,
-        return_sample_ids=True,
+        return_sample_ids=False,
     )
     dataset = get_dataset(ug)
     for x, y in dataset.take(1):
-        print(y)
+        print(x)
     ug.stop()
