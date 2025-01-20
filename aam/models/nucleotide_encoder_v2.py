@@ -84,15 +84,20 @@ class NucleotideEncoderV2(tf.keras.Model):
         embeddings = embeddings[:num_pairs]
         losses = self.asv_loss(y_true, embeddings)
 
-        mean_asv_loss = tf.reduce_mean(losses)
-        mean_mask = losses > mean_asv_loss
-        return tf.reduce_mean(losses[mean_mask]), mean_asv_loss
+        # want "hard" examples
+        # pairwise loss seems to follow an expontial distribution
+        # grab 75 quantile: -ln(1-p)/lambda where lambda = 1/E[X]
+        mean = tf.reduce_mean(losses)
+        quantile = -1 * tf.math.log(0.25) * mean
+        quantile_mask = losses > quantile
+        asv_loss = tf.reduce_mean(losses[quantile_mask])
+        return tf.where(asv_loss > 0, asv_loss, 0.0)  # incase no loss are in the 75 quantile
 
     def train_step(self, data):
         inputs, y_true = data
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
-            asv_loss, mean_asv_loss = self._compute_loss(y_true, embeddings)
+            asv_loss = self._compute_loss(y_true, embeddings)
             loss = asv_loss
             nuc_loss = tf.reduce_sum(self.losses)
             loss = nuc_loss + asv_loss
@@ -107,7 +112,7 @@ class NucleotideEncoderV2(tf.keras.Model):
 
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)
-        self.asv_tracker.update_state(mean_asv_loss)
+        self.asv_tracker.update_state(asv_loss)
         return {
             "loss": self.loss_tracker.result(),
             "nuc_loss": self.nuc_tracker.result(),
@@ -119,12 +124,12 @@ class NucleotideEncoderV2(tf.keras.Model):
         inputs, y_true = data
 
         embeddings = self(inputs, training=False)
-        asv_loss, mean_asv_loss = self._compute_loss(y_true, embeddings)
+        asv_loss = self._compute_loss(y_true, embeddings)
         nuc_loss = tf.reduce_sum(self.losses)
         loss = asv_loss + nuc_loss
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)
-        self.asv_tracker.update_state(mean_asv_loss)
+        self.asv_tracker.update_state(asv_loss)
         return {
             "loss": self.loss_tracker.result(),
             "nuc_loss": self.nuc_tracker.result(),
