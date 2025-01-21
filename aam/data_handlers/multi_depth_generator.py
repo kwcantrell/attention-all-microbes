@@ -7,6 +7,7 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
+from aam.data_handlers.generator_dataset import GeneratorDataset
 from aam.data_handlers.unifrac_generator import UniFracGenerator
 
 
@@ -26,13 +27,19 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
     ):
         if isinstance(table, str):
             table = load_table(table)
-
+        self.unifrac_metric = unifrac_metric
         kwargs["tree_path"] = tree_path
-        kwargs["unifrac_metric"] = unifrac_metric
-        self.generators = [
-            UniFracGenerator(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
-            for depth in sample_depths
-        ]
+        if unifrac_metric is not None:
+            kwargs["unifrac_metric"] = unifrac_metric
+            self.generators = [
+                UniFracGenerator(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
+                for depth in sample_depths
+            ]
+        else:
+            self.generators = [
+                GeneratorDataset(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
+                for depth in sample_depths
+            ]
         self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
         self.size = len(self.common_ids)
         self.sample_indices = np.arange(self.size)
@@ -77,8 +84,12 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
                 num_unique_asvs.append(len(obs_idx))
                 sparse_indices.append([[cur_row_indx, i] for i in range(len(obs_idx))])
-                obs_indices.append(obs_idx)
-                counts.append(sample_counts)
+
+                sorted_indices = np.argsort(sample_counts)
+                sorted_descending = sorted_indices[::-1]
+                obs_indices.append(obs_idx[sorted_descending])
+                counts.append(sample_counts[sorted_descending])
+
                 gen_is.append(gen_i)
                 cur_row_indx += 1
 
@@ -111,8 +122,12 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         tokens = np.concatenate([map(asv) for asv in unique_asvs], axis=0)
 
         y_true = np.concatenate([gen.y_data.loc[batch_sample_ids] for gen in self.generators], axis=None)[:, np.newaxis]
-        encoder_output = np.concatenate([gen._encoder_output(batch_sample_ids) for gen in self.generators], axis=0)
-        return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
+
+        if self.unifrac_metric:
+            encoder_output = np.concatenate([gen._encoder_output(batch_sample_ids) for gen in self.generators], axis=0)
+            return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
+        else:
+            return (tokens, sparse_indices, obs_indices, counts), y_true
 
 
 def get_dataset(gen: MultiDepthGenerator):
@@ -125,18 +140,32 @@ def get_dataset(gen: MultiDepthGenerator):
     else:
         y_type = tf.TensorSpec(shape=(gen.batch_size * len(gen.generators)), dtype=tf.string)
 
-    dataset = tf.data.Dataset.from_generator(
-        enqueuer.get,
-        output_signature=(
-            (
-                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+    if gen.unifrac_metric:
+        dataset = tf.data.Dataset.from_generator(
+            enqueuer.get,
+            output_signature=(
+                (
+                    tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+                ),
+                (tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32), y_type),
             ),
-            (tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32), y_type),
-        ),
-    )
+        )
+    else:
+        dataset = tf.data.Dataset.from_generator(
+            enqueuer.get,
+            output_signature=(
+                (
+                    tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+                ),
+                tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32),
+            ),
+        )
 
     dataset = dataset.prefetch(10)
     return dataset

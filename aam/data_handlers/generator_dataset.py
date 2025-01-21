@@ -111,8 +111,14 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
             num_unique_asvs.append(len(obs_idx))
             sparse_indices.append([[cur_row_indx, i] for i in range(len(obs_idx))])
-            obs_indices.append(obs_idx)
-            counts.append(sample_counts)
+
+            sorted_indices = np.argsort(sample_counts)
+            sorted_descending = sorted_indices[::-1]
+            obs_indices.append(obs_idx[sorted_descending])
+            counts.append(sample_counts[sorted_descending])
+
+            # obs_indices.append(obs_idx)
+            # counts.append(sample_counts)
             cur_row_indx += 1
 
         num_unique_asvs = np.array(num_unique_asvs, dtype=np.int32)
@@ -422,4 +428,4 @@ if __name__ == "__main__":
     print("tokens:", tokens.shape)
     print("batch_indices:", batch_indices.shape, batch_indices)
     print("obs indices:", obs_indices.shape)
-    print("counts:", counts.shape)
+    print("counts:", counts)

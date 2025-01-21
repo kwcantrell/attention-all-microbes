@@ -152,10 +152,11 @@ class UnifracDenoiser(tf.keras.Model):
         # want "hard" examples
         # pairwise loss seems to follow an expontial distribution
         # grab 50 quantile: -ln(1-p)/lambda where lambda = 1/E[X]
-        mean = tf.reduce_mean(losses)
-        mean_mask = losses >= mean
-        loss = tf.reduce_mean(losses[mean_mask])
-        return tf.where(loss > 0, loss, 0.0)
+        # mean = tf.reduce_mean(losses)
+        # mean_mask = losses >= mean
+        # loss = tf.reduce_mean(losses[mean_mask])
+        # return tf.where(loss > 0, loss, 0.0)
+        return tf.reduce_mean(losses)
 
     def _compute_denoise_loss(self, denoised_embeddings):
         denoise_loss = self.triplet_loss(denoised_embeddings)
@@ -187,7 +188,7 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
 
-        return denoise_unifrac_embeddings, y
+        return unifrac_embeddings, y
 
     def train_step(
         self,
@@ -213,33 +214,15 @@ class UnifracDenoiser(tf.keras.Model):
         shape = tf.shape(encoder_target)
         batch_dim = shape[0]
         group_dim = shape[-1]
-        groups = batch_dim // group_dim
-        # def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
 
         group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
-
-        # for i in range(groups):
-
-        # b1_batch_counts = batch_counts[0]
-        # b1_total = tf.reduce_sum(b1_batch_counts)
-        # b1_indices = indicies[:b1_total]
-        # b1_counts = counts[:b1_total]
-        # b1_embeddings, b1_mask = self._batch_embeddings(asv_embeddings, b1_batch_counts, b1_indices, b1_counts)
-
-        # b2_batch_counts = batch_counts[1]
-        # b2_indices = indicies[b1_total:]
-        # b2_counts = counts[b1_total:]
-        # b2_embeddings, b2_mask = self._batch_embeddings(asv_embeddings, b2_batch_counts, b2_indices, b2_counts)
 
         with tf.GradientTape() as tape:
             denoise_embeddings, unifrac_embeddings = [], []
             for i in range(2):
-                emb, mask = group_input[i]
-                _den, _uni = self.call(emb, attention_mask=mask, training=True)
+                _den, _uni = self.call(group_input[i], training=True)
                 denoise_embeddings.append(_den)
                 unifrac_embeddings.append(_uni)
-            # b1_denoise, b1_unifrac = self.call(b1_embeddings, attention_mask=b1_mask, training=True)
-            # b2_denoise, b2_unifrac = self.call(b2_embeddings, attention_mask=b2_mask, training=True)
 
             denoise_embeddings = tf.concat(denoise_embeddings, axis=0)
             unifrac_embeddings = tf.concat(unifrac_embeddings, axis=0)
@@ -247,10 +230,6 @@ class UnifracDenoiser(tf.keras.Model):
             loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, (denoise_embeddings, unifrac_embeddings))
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
-            # outputs = self(inputs, training=True)
-            # loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, outputs)
-            # if self.compute_dtype == "float16":
-            #     loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
         if self.compute_dtype == "float16":
             gradients = self.optimizer.get_unscaled_gradients(gradients)
@@ -292,12 +271,8 @@ class UnifracDenoiser(tf.keras.Model):
         batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
         max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
         batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
-        counts = tf.scatter_nd(batch_indicies, tf.squeeze(counts, axis=-1), shape=[batch_shape, max_unique])
-
-        sorted_indices = tf.argsort(counts, axis=1, direction="DESCENDING", stable=True)
-        sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=-1)
-        sorted_batch_embeddings = tf.gather(batch_embeddings, sorted_indices, axis=1, batch_dims=1)
-        return sorted_batch_embeddings, tf.cast(tf.expand_dims(sorted_counts, axis=-1) > 0, dtype=self.compute_dtype)
+        counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+        return batch_embeddings, counts
 
     def _extract_asv_embeddings(self, inputs):
         tokens, batch_indicies, asv_indicies, counts = inputs
@@ -328,12 +303,20 @@ class UnifracDenoiser(tf.keras.Model):
         return self._batch_embeddings(asv_embeddings, batch_indicies - group_index_shift, counts)
 
     def call(
-        self, inputs, attention_mask=None, return_asv_embeddings: bool = False, training: bool = False
+        self,
+        inputs,
+        attention_mask=None,
+        return_asv_embeddings: bool = False,
+        training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
         if isinstance(inputs, (tuple, list)):
-            asv_embeddings, attention_mask = self._extract_asv_embeddings(inputs)
+            if len(inputs) > 2:
+                asv_embeddings, counts = self._extract_asv_embeddings(inputs)
+            else:
+                asv_embeddings, counts = inputs
+            attention_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
         else:
             asv_embeddings = inputs
 
@@ -345,7 +328,7 @@ class UnifracDenoiser(tf.keras.Model):
         )
         print("UniFracDenoiser exit...", self.trainable)
         if return_asv_embeddings:
-            return asv_embeddings, attention_mask, denoised_unifrac_embeddings, unifrac_embeddings
+            return asv_embeddings, counts
         else:
             return denoised_unifrac_embeddings, unifrac_embeddings
 

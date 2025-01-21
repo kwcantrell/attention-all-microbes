@@ -788,7 +788,7 @@ def fit_sample_regressor(
     p_train_nuc_encoder: bool,
     p_include_count_encoder: bool,
 ):
-    from aam.data_handlers import CombinedGenerator, MultiDepthGenerator, TaxonomyGenerator, UniFracGenerator
+    from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
     from aam.models.sequence_regressor import SequenceRegressor
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -831,34 +831,32 @@ def fit_sample_regressor(
         "is_categorical": p_is_categorical,
     }
 
-    def tax_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
-        return TaxonomyGenerator(
-            table=table,
-            metadata=df,
-            taxonomy=p_taxonomy,
-            tax_level=p_taxonomy_level,
-            shuffle=shuffle,
-            shift=shift,
-            scale=scale,
-            epochs=epochs,
-            gen_new_tables=gen_new_tables,
-            max_bp=p_max_bp,
-            **common_kwargs,
-        )
+    # def tax_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
+    #     return TaxonomyGenerator(
+    #         table=table,
+    #         metadata=df,
+    #         taxonomy=p_taxonomy,
+    #         tax_level=p_taxonomy_level,
+    #         shuffle=shuffle,
+    #         shift=shift,
+    #         scale=scale,
+    #         epochs=epochs,
+    #         gen_new_tables=gen_new_tables,
+    #         max_bp=p_max_bp,
+    #         **common_kwargs,
+    #     )
 
     def unifrac_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
         common_kwargs = {
             "metadata_column": m_metadata_column,
             "max_token_per_sample": p_asv_limit,
-            "sample_depths": [100, 5000],
+            "sample_depths": [100, 1000],
             "batch_size": p_batch_size,
             "is_16S": True,
             "is_categorical": p_is_categorical,
             "max_bp": p_max_bp,
             "tree_path": p_tree,
             "metadata": df,
-            "unifrac_metric": p_unifrac_metric,
-            "repeat": 1,
         }
         # return UniFracGenerator(
         #     table=table,
@@ -880,36 +878,37 @@ def fit_sample_regressor(
             scale=scale,
             gen_new_tables=gen_new_tables,
             epochs=epochs,
+            unifrac_metric=None,
             **common_kwargs,
         )
 
-    def combine_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
-        return CombinedGenerator(
-            table=table,
-            metadata=df,
-            tree_path=p_tree,
-            taxonomy=p_taxonomy,
-            tax_level=p_taxonomy_level,
-            shuffle=shuffle,
-            shift=shift,
-            scale=scale,
-            epochs=epochs,
-            gen_new_tables=gen_new_tables,
-            max_bp=p_max_bp,
-            **common_kwargs,
-        )
+    # def combine_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
+    #     return CombinedGenerator(
+    #         table=table,
+    #         metadata=df,
+    #         tree_path=p_tree,
+    #         taxonomy=p_taxonomy,
+    #         tax_level=p_taxonomy_level,
+    #         shuffle=shuffle,
+    #         shift=shift,
+    #         scale=scale,
+    #         epochs=epochs,
+    #         gen_new_tables=gen_new_tables,
+    #         max_bp=p_max_bp,
+    #         **common_kwargs,
+    #     )
 
-    if p_unifrac_metric == "combined":
-        base_model = "combined"
-        generator = combine_gen
-    elif p_taxonomy is not None and p_tree is None:
-        base_model = "taxonomy"
-        generator = tax_gen
-    elif p_taxonomy is None and p_tree is not None:
-        base_model = p_unifrac_metric
-        generator = unifrac_gen
-    else:
-        raise Exception("Only taxonomy or UniFrac is supported.")
+    # if p_unifrac_metric == "combined":
+    #     base_model = "combined"
+    #     generator = combine_gen
+    # elif p_taxonomy is not None and p_tree is None:
+    #     base_model = "taxonomy"
+    #     generator = tax_gen
+    # elif p_taxonomy is None and p_tree is not None:
+    base_model = p_unifrac_metric
+    generator = unifrac_gen
+    # else:
+    #     raise Exception("Only taxonomy or UniFrac is supported.")
 
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
@@ -928,13 +927,17 @@ def fit_sample_regressor(
         df_fold = df.loc[fold_ids]
 
         gen = generator(table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables)
+        dataset = get_dataset(gen)
 
-        data = gen.get_data()
-        if hasattr(gen, "num_tokens"):
-            data["num_tokens"] = gen.num_tokens
-        else:
-            data["num_tokens"] = None
-        return data
+        data_obj = {
+            "shift": shift,
+            "scale": scale,
+            "dataset": dataset,
+            "generator": gen,
+            "num_tokens": None,
+            "steps_per_epoch": len(gen),
+        }
+        return data_obj
 
     if not p_is_categorical:
         print("non-stratified folds")
@@ -1001,14 +1004,15 @@ def fit_sample_regressor(
             class_weights=None,  # train_data["class_weights"],
             accumulation_steps=p_accumulation_steps,
             scale_losses=p_scale_loss,
+            use_linear_bias=True,
         )
         # for x, y in train_data["dataset"].take(1):
         #     model(x)
-        batch_counts = tf.TensorShape([None])
         token_shape = tf.TensorShape([None, 150])
+        batch_indicies = tf.TensorShape([None, 2])
         indicies_shape = tf.TensorShape([None])
         count_shape = tf.TensorShape([None, 1])
-        model.build([batch_counts, token_shape, indicies_shape, count_shape])
+        model.build([token_shape, batch_indicies, indicies_shape, count_shape])
         model.summary()
 
         fold_label = i + 1

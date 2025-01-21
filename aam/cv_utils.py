@@ -92,9 +92,11 @@ class CVModel:
             validation_data=self.val_data["dataset"],
             callbacks=[*callbacks, *core_callbacks, lr_scheduler],
             epochs=epochs,
-            steps_per_epoch=self.train_data["steps_pre_epoch"],
-            validation_steps=self.val_data["steps_pre_epoch"],
+            steps_per_epoch=self.train_data["steps_per_epoch"],
+            validation_steps=self.val_data["steps_per_epoch"],
         )
+        self.train_data["generator"].stop()
+        self.val_data["generator"].stop()
         self.model.set_weights(model_saver.best_weights)
         self.metric_value = self.model.evaluate_metric(self.val_data["dataset"], metric)
 
