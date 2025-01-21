@@ -187,7 +187,7 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         denoise_unifrac_embeddings, unifrac_embeddings = self.call(inputs, training=False)
 
-        return unifrac_embeddings, y
+        return denoise_unifrac_embeddings, y
 
     def train_step(
         self,
@@ -202,14 +202,25 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         y_target, encoder_target = y
 
-        # group_dim = tf.shape(encoder_target)[-1]
-        # batch_counts, tokens, indicies, counts = inputs
+        tokens, batch_indicies, asv_indicies, counts = inputs
 
-        # batch_counts = tf.reshape(batch_counts, shape=[-1, group_dim])
+        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
 
-        # asv_embeddings = self.asv_encoder(tokens, training=False)
+        asv_embeddings = self.asv_encoder(tokens, training=False)
+        asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+
+        shape = tf.shape(encoder_target)
+        batch_dim = shape[0]
+        group_dim = shape[-1]
+        groups = batch_dim // group_dim
+        # def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
+
+        group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
+
+        # for i in range(groups):
+
         # b1_batch_counts = batch_counts[0]
-
         # b1_total = tf.reduce_sum(b1_batch_counts)
         # b1_indices = indicies[:b1_total]
         # b1_counts = counts[:b1_total]
@@ -221,19 +232,25 @@ class UnifracDenoiser(tf.keras.Model):
         # b2_embeddings, b2_mask = self._batch_embeddings(asv_embeddings, b2_batch_counts, b2_indices, b2_counts)
 
         with tf.GradientTape() as tape:
+            denoise_embeddings, unifrac_embeddings = [], []
+            for i in range(2):
+                emb, mask = group_input[i]
+                _den, _uni = self.call(emb, attention_mask=mask, training=True)
+                denoise_embeddings.append(_den)
+                unifrac_embeddings.append(_uni)
             # b1_denoise, b1_unifrac = self.call(b1_embeddings, attention_mask=b1_mask, training=True)
             # b2_denoise, b2_unifrac = self.call(b2_embeddings, attention_mask=b2_mask, training=True)
 
-            # denoise_embeddings = tf.concat([b1_denoise, b2_denoise], axis=0)
-            # unifrac_embeddings = tf.concat([b1_unifrac, b2_unifrac], axis=0)
+            denoise_embeddings = tf.concat(denoise_embeddings, axis=0)
+            unifrac_embeddings = tf.concat(unifrac_embeddings, axis=0)
 
-            # loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, (denoise_embeddings, unifrac_embeddings))
-            # if self.compute_dtype == "float16":
-            #     loss = self.optimizer.get_scaled_loss(loss)
-            outputs = self(inputs, training=True)
-            loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, outputs)
+            loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, (denoise_embeddings, unifrac_embeddings))
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
+            # outputs = self(inputs, training=True)
+            # loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, outputs)
+            # if self.compute_dtype == "float16":
+            #     loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
         if self.compute_dtype == "float16":
             gradients = self.optimizer.get_unscaled_gradients(gradients)
@@ -271,14 +288,17 @@ class UnifracDenoiser(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    # def _batch_embeddings(self, embeddings, batch_counts, indicies, counts):
-    #     indicies = tf.cast(tf.squeeze(indicies), dtype=tf.int32)
-    #     embeddings = tf.gather(embeddings, indicies)
-    #     embeddings = to_batch(embeddings, batch_counts, indicies)
+    def _batch_embeddings(self, asv_embeddings, batch_indicies, counts):
+        batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+        max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+        batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
+        counts = tf.scatter_nd(batch_indicies, tf.squeeze(counts, axis=-1), shape=[batch_shape, max_unique])
 
-    #     counts = to_batch(counts, batch_counts)
-    #     embeddings, counts = sort_using_counts(embeddings, counts)
-    #     return embeddings, tf.cast(counts > 0, dtype=self.compute_dtype)
+        sorted_indices = tf.argsort(counts, axis=1, direction="DESCENDING", stable=True)
+        sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=-1)
+        sorted_batch_embeddings = tf.gather(batch_embeddings, sorted_indices, axis=1, batch_dims=1)
+        tf.print("batch_shape:", tf.shape(sorted_batch_embeddings))
+        return sorted_batch_embeddings, tf.cast(tf.expand_dims(sorted_counts, axis=-1) > 0, dtype=self.compute_dtype)
 
     def _extract_asv_embeddings(self, inputs):
         tokens, batch_indicies, asv_indicies, counts = inputs
@@ -289,15 +309,24 @@ class UnifracDenoiser(tf.keras.Model):
         asv_embeddings = self.asv_encoder(tokens, training=False)
         asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
 
-        batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
-        max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-        batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
-        counts = tf.scatter_nd(batch_indicies, tf.squeeze(counts, axis=-1), shape=[batch_shape, max_unique])
+        return self._batch_embeddings(asv_embeddings, batch_indicies, counts)
 
-        sorted_indices = tf.argsort(counts, axis=1, direction="DESCENDING", stable=True)
-        sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=-1)
-        sorted_batch_embeddings = tf.gather(batch_embeddings, sorted_indices, axis=1, batch_dims=1)
-        return sorted_batch_embeddings, tf.cast(tf.expand_dims(sorted_counts, axis=-1) > 0, dtype=self.compute_dtype)
+    def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
+        batch_indicies, counts = inputs
+
+        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        row_indices = tf.expand_dims(tf.range(group, group + samples_per_group, 1, dtype=tf.int32), axis=0)
+        row_mask = tf.math.reduce_any(row_indices == batch_indicies[:, :1], axis=-1)
+        row_indices = tf.squeeze(tf.where(row_mask))
+
+        asv_embeddings = tf.gather(asv_embeddings, row_indices)
+        batch_indicies = tf.gather(batch_indicies, row_indices)
+        counts = tf.gather(counts, row_indices)
+
+        group_size = tf.shape(batch_indicies)[0]
+        group_shift = tf.reduce_min(batch_indicies[:, 0])
+        group_index_shift = tf.repeat([[group_shift, 0]], repeats=group_size, axis=0)
+        return self._batch_embeddings(asv_embeddings, batch_indicies - group_index_shift, counts)
 
     def call(
         self, inputs, attention_mask=None, return_asv_embeddings: bool = False, training: bool = False
