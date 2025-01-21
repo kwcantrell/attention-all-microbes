@@ -297,7 +297,6 @@ class UnifracDenoiser(tf.keras.Model):
         sorted_indices = tf.argsort(counts, axis=1, direction="DESCENDING", stable=True)
         sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=-1)
         sorted_batch_embeddings = tf.gather(batch_embeddings, sorted_indices, axis=1, batch_dims=1)
-        tf.print("batch_shape:", tf.shape(sorted_batch_embeddings))
         return sorted_batch_embeddings, tf.cast(tf.expand_dims(sorted_counts, axis=-1) > 0, dtype=self.compute_dtype)
 
     def _extract_asv_embeddings(self, inputs):
