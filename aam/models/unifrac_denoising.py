@@ -149,18 +149,11 @@ class UnifracDenoiser(tf.keras.Model):
             fn_output_signature=tf.float32,
         )
 
-        # want "hard" examples
-        # pairwise loss seems to follow an expontial distribution
-        # grab 50 quantile: -ln(1-p)/lambda where lambda = 1/E[X]
-        # mean = tf.reduce_mean(losses)
-        # mean_mask = losses >= mean
-        # loss = tf.reduce_mean(losses[mean_mask])
-        # return tf.where(loss > 0, loss, 0.0)
         return tf.reduce_mean(losses)
 
     def _compute_denoise_loss(self, denoised_embeddings):
         denoise_loss = self.triplet_loss(denoised_embeddings)
-        return tf.reduce_mean(denoise_loss)
+        return tf.reduce_mean(0.1 * denoise_loss)
 
     def _compute_loss(
         self,
@@ -171,10 +164,9 @@ class UnifracDenoiser(tf.keras.Model):
 
         unifrac_loss = self._compute_unifrac_loss(unifrac_distances, unifrac_embeddings)
 
-        denoise_loss = self.triplet_loss(denoised_embeddings)
-        denoise_loss = 0.1 * tf.reduce_mean(denoise_loss)
+        denoise_loss = self._compute_denoise_loss(denoised_embeddings)
 
-        loss = tf.reduce_mean(unifrac_loss) + denoise_loss
+        loss = unifrac_loss + denoise_loss
 
         return loss, unifrac_loss, denoise_loss
 

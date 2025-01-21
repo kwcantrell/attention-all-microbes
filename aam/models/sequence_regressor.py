@@ -168,6 +168,17 @@ class SequenceRegressor(tf.keras.Model):
             self.pos_emb = tfm.nlp.layers.PositionEmbedding(
                 self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
             )
+
+        self._rezero_count = self.add_weight(
+            name="rezero_alpha_count", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+        )
+        self._count_embedding = self.add_weight(
+            name="count_embedding",
+            shape=[1, 1, self.embedding_dim],
+            initializer="glorot_uniform",
+            trainable=True,
+            dtype=tf.float32,
+        )
         self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(SequenceRegressor, self).build(input_shape)
@@ -214,8 +225,7 @@ class SequenceRegressor(tf.keras.Model):
         embedding_loss = 0.0
 
         # step 2: minimize mse
-        mse_loss = tf.square(y_true - y_pred)
-        tf.print(tf.shape(y_true), tf.shape(y_pred))
+        mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
         return mse_loss + embedding_loss, mse_loss, embedding_loss
 
     def _compute_metric(
@@ -258,23 +268,29 @@ class SequenceRegressor(tf.keras.Model):
     ):
         inputs, y_true = data
 
-        # tokens, batch_indicies, asv_indicies, counts = inputs
+        tokens, batch_indicies, asv_indicies, counts = inputs
 
-        # batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
-        # asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
+        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
 
-        # asv_embeddings = self.base_model.asv_encoder(tokens, training=False)
-        # asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+        asv_embeddings = self.base_model.asv_encoder(tokens, training=False)
+        asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
 
-        # shape = tf.shape(y_true)
-        # batch_dim = shape[0]
-        # group_dim = shape[-1] / 2
+        group_dim = tf.shape(y_true)[0] // 2
 
-        # group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
+        group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
 
         with tf.GradientTape() as tape:
-            outputs = self(inputs, training=True)
-            loss, target_loss, embedding_loss = self._compute_loss(y_true, outputs)
+            sample_embeddings, y_preds = [], []
+            for i in range(2):
+                _den, _uni = self.call(group_input[i], training=True)
+                sample_embeddings.append(_den)
+                y_preds.append(_uni)
+
+            sample_embeddings = tf.concat(sample_embeddings, axis=0)
+            y_preds = tf.concat(y_preds, axis=0)
+            # outputs = self(inputs, training=True)
+            loss, target_loss, embedding_loss = self._compute_loss(y_true, (sample_embeddings, y_preds))
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
 
@@ -285,7 +301,7 @@ class SequenceRegressor(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
         self.embedding_tracker.update_state(embedding_loss)
-        self._compute_metric(y_true, outputs)
+        self._compute_metric(y_true, (sample_embeddings, y_preds))
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
@@ -357,8 +373,12 @@ class SequenceRegressor(tf.keras.Model):
         return counts, random_mask
 
     def _extract_asv_embeddings(self, inputs):
-        asv_embeddings, attention_mask = self.base_model(inputs, return_asv_embeddings=True, training=False)
-        return asv_embeddings, attention_mask
+        asv_embeddings, counts = self.base_model(inputs, return_asv_embeddings=True, training=False)
+        return asv_embeddings, counts
+
+    def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
+        base_inputs = self.base_model._group_embeddings(asv_embeddings, inputs, group, samples_per_group)
+        return self.base_model(base_inputs, return_asv_embeddings=True, training=False)
 
     def call(
         self, inputs, attention_mask=None, return_asv_embeddings: bool = False, training: bool = False
@@ -369,13 +389,24 @@ class SequenceRegressor(tf.keras.Model):
         training = training and self.trainable
 
         if isinstance(inputs, (tuple, list)):
-            asv_embeddings, attention_mask = self._extract_asv_embeddings(inputs)
+            if len(inputs) > 2:
+                asv_embeddings, counts = self._extract_asv_embeddings(inputs)
+            else:
+                asv_embeddings, counts = inputs
+            attention_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
         else:
             asv_embeddings = inputs
 
         if not self.use_linear_bias:
+            print("adding non linear bias")
             asv_embeddings = asv_embeddings + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_embeddings)
 
+        rel_counts = tf.cast(tf.squeeze(counts, axis=-1), dtype=tf.float32)
+        rel_counts = rel_counts / tf.reduce_sum(rel_counts, axis=-1, keepdims=True)
+        rel_counts = tf.expand_dims(rel_counts, axis=-1)
+        asv_embeddings = asv_embeddings + tf.cast(
+            tf.cast(self._rezero_count * self._count_embedding, dtype=tf.float32) * rel_counts, dtype=self.compute_dtype
+        )
         asv_embeddings = self.encoder(asv_embeddings, mask=attention_mask, training=training)
 
         sample_embeddings = self.attention_pooling(asv_embeddings, mask=attention_mask, training=training)

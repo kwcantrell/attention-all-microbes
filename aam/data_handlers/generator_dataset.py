@@ -153,7 +153,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
 
     def on_epoch_end(self):
-        if self.gen_new_tables and self.epochs_since_last_table >= self.gen_new_table_frequency:
+        if self.gen_new_tables and self.epochs_since_last_table > self.gen_new_table_frequency:
             print("resampling dataset...")
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
             self.epochs_since_last_table = 0

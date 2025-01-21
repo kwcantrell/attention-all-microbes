@@ -84,13 +84,6 @@ class NucleotideEncoderV2(tf.keras.Model):
         embeddings = embeddings[:num_pairs]
         losses = self.asv_loss(y_true, embeddings)
 
-        # # want "hard" examples
-        # # pairwise loss seems to follow an expontial distribution
-        # # the goal is to drive the mean towards 0
-        # mean = tf.reduce_mean(losses)
-        # mean_mask = losses >= mean
-        # asv_loss = tf.reduce_mean(losses[mean_mask])
-        # return tf.where(asv_loss > 0, asv_loss, 0.0)  # incase no loss are in the 75 quantile
         return tf.reduce_mean(losses)
 
     def train_step(self, data):
