@@ -99,7 +99,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         return valid_differences
 
 
-def triplet_loss(embeddings, groups=2, hard_margin=0.2, soft_margin=0.5):
+def triplet_loss(embeddings, groups=2, hard_margin=0.1, soft_margin=0.5):
     emb_shape = tf.shape(embeddings, out_type=tf.int32)
     batch_dim = emb_shape[0]
     group_size = batch_dim // tf.cast(groups, dtype=tf.int32)

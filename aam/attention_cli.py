@@ -423,11 +423,11 @@ def fit_denoised_unifrac_regressor(
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     #
 
-    batch_counts = tf.TensorShape([None])
-    token_shape = tf.TensorShape([None, 1])
+    token_shape = tf.TensorShape([None, 150])
+    batch_indicies = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
-    model.build([batch_counts, token_shape, indicies_shape, count_shape])
+    model.build([token_shape, batch_indicies, indicies_shape, count_shape])
     model.summary()
     model.compile(
         optimizer=optimizer,
