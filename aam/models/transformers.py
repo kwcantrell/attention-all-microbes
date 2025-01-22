@@ -105,9 +105,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 self.encoder_layers[layer_idx]([output_tensor, attention_mask], training=training), dtype=self.compute_dtype
             )
 
-        # if self.use_residual_connections:
-        #     print("Encoder residual connection...")
-        #     output_tensor = inputs + self._rezero * output_tensor
+        if self.use_residual_connections:
+            print("Encoder residual connection...")
+            output_tensor = inputs + self._rezero * output_tensor
 
         if self.normalize_outputs:
             print("Encoder normalizing outputs...")
