@@ -17,10 +17,12 @@ class ASVGenerator(tf.keras.utils.Sequence):
         subsample: float = 1.0,
         seed=None,
         return_asv_ids=False,
+        drop_remainder=True,
     ):
         tree = parse_newick(open(tree).read())
         self.tree_node = to_skbio_treenode(tree)
         self.return_asv_ids = return_asv_ids
+        self.drop_remainder = drop_remainder
 
         # extracting ASV tokens
         # step 1: find which nodes represent 150bp ASVs
@@ -30,7 +32,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
             "a": 1,
             "c": 2,
             "g": 3,
-            "t": 3,
+            "t": 4,
         }
         asv_preorderpos = []
         obs_encodings = []
@@ -83,6 +85,8 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
         self.size = int(len(self.obs_encodings) * subsample)
         self.steps_per_epoch = max(self.size // self.samples_per_minibatch, 1)
+        if not self.drop_remainder and self.steps_per_epoch * self.samples_per_minibatch < self.size:
+            self.steps_per_epoch += 1
 
         self.sample_indices = np.arange(len(self.obs_encodings), dtype=np.int32)
         self.on_epoch_end()
@@ -178,14 +182,16 @@ def get_dataset(gen: ASVGenerator):
     enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
     gen.stop = lambda: enqueuer.stop(0.1)
 
+    batch_dim = gen.samples_per_minibatch if gen.drop_remainder else None
+    pairwise_batch_size = gen.pairwise_batch_size if gen.drop_remainder else None
     if not gen.return_asv_ids:
-        y_type = tf.TensorSpec(shape=(gen.pairwise_batch_size, gen.pairwise_batch_size), dtype=tf.float32)
+        y_type = tf.TensorSpec(shape=(pairwise_batch_size, pairwise_batch_size), dtype=tf.float32)
     else:
-        y_type = tf.TensorSpec(shape=(gen.samples_per_minibatch), dtype=tf.string)
+        y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
 
     dataset = tf.data.Dataset.from_generator(
         enqueuer.get,
-        output_signature=(tf.TensorSpec(shape=(gen.samples_per_minibatch, 150), dtype=tf.int32), y_type),
+        output_signature=(tf.TensorSpec(shape=(batch_dim, 150), dtype=tf.int32), y_type),
     )
 
     # dataset = dataset.prefetch(10)

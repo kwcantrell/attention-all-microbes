@@ -7,8 +7,8 @@ from aam.models.multihead_attention_with_linear_biases import MultiHeadAttention
 
 @tf.keras.saving.register_keras_serializable(package="MultiHeadAttentionPooling")
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, normalize_output, num_heads=4, use_residual_connections=True, use_linear_bias=False):
-        super(MultiHeadAttentionPooling, self).__init__()
+    def __init__(self, normalize_output, num_heads=4, use_residual_connections=True, use_linear_bias=False, **kwargs):
+        super(MultiHeadAttentionPooling, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.normalize_output = normalize_output
         self.use_residual_connections = use_residual_connections
@@ -22,14 +22,14 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
             self.attention = MultiHeadAttention(
                 self.num_heads,
                 key_dim=key_dim,
-                dropout=0.0,
+                dropout=0.1,
             )
 
         else:
             self.attention = tf.keras.layers.MultiHeadAttention(
                 self.num_heads,
                 key_dim=key_dim,
-                dropout=0.0,
+                dropout=0.1,
             )
         if self.use_residual_connections:
             self._rezero = self.add_weight(
@@ -41,7 +41,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
 
         Args:
             inputs: A tensor with shape (batch_size, input_length, hidden_size)
-            mask: A boolean tensor with shape (batch_size, ..., input_length, 1).
+            mask: A boolean tensor with shape (batch_size, input_length, 1).
               All positions with False will be ignored during self attention
             training: Defaults to False.
 

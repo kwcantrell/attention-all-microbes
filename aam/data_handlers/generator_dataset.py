@@ -117,8 +117,6 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             obs_indices.append(obs_idx[sorted_descending])
             counts.append(sample_counts[sorted_descending])
 
-            # obs_indices.append(obs_idx)
-            # counts.append(sample_counts)
             cur_row_indx += 1
 
         num_unique_asvs = np.array(num_unique_asvs, dtype=np.int32)
@@ -133,7 +131,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             "a": 1,
             "c": 2,
             "g": 3,
-            "t": 3,
+            "t": 4,
         }
 
         def map(asv):

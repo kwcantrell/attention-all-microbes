@@ -170,7 +170,7 @@ def fit_asv_encoder(
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    token_shape = tf.TensorShape([None, 1])
+    token_shape = tf.TensorShape([None, 150])
     model.build(token_shape)
     model.compile(
         include_bert_loss=p_include_bert_loss,
