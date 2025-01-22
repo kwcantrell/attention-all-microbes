@@ -63,7 +63,7 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         if self.built:
             print("BaseSequenceEncoder is already built")
             return
-        # layers used in model
+
         if self.asv_encoder is not None:
             print("building ASVEncoder...")
             if not isinstance(self.asv_encoder, ASVEncoder):
@@ -107,65 +107,6 @@ class BaseSequenceEncoder(tf.keras.layers.Layer):
         asv_embeddings = self._split_asvs(embeddings, training=training)
         print("BaseSequenceEncoder exit...", self.trainable)
         return asv_embeddings
-
-    # def base_embeddings(
-    #     self, inputs: tf.Tensor, training: bool = False
-    # ) -> tuple[tf.Tensor, tf.Tensor]:
-    #     # need to cast inputs to int32 to avoid error
-    #     # because keras converts all inputs
-    #     # to float when calling build()
-    #     asv_input = tf.cast(inputs, dtype=tf.int32)
-
-    #     embeddings = self.asv_encoder(asv_input, training=training)
-    #     embeddings = self.asv_scale(embeddings)
-    #     asv_embeddings, nucleotides = self._split_asvs(embeddings)
-
-    #     asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
-    #     padded_asv_mask = tf.pad(asv_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-
-    #     # padded embeddings are the skip connection
-    #     # normal asv embeddings continue through next block
-    #     padded_asv_embeddings = tf.pad(
-    #         asv_embeddings, [[0, 0], [1, 0], [0, 0]], constant_values=0
-    #     )
-
-    #     sample_gated_embeddings = self._add_sample_token(asv_embeddings)
-    #     sample_gated_embeddings = self.sample_encoder(
-    #         sample_gated_embeddings, mask=padded_asv_mask, training=training
-    #     )
-
-    #     sample_embeddings = (
-    #         padded_asv_embeddings + sample_gated_embeddings * self._base_alpha
-    #     )
-    #     return sample_embeddings
-
-    def asv_embeddings(self, inputs: tf.Tensor, training: bool = False) -> tuple[tf.Tensor, tf.Tensor]:
-        # need to cast inputs to int32 to avoid error
-        # because keras converts all inputs
-        # to float when calling build()
-        asv_input = tf.cast(inputs, dtype=tf.int32)
-        # boolean mask used to select non-pad tokens
-        mask = tf.reduce_sum(asv_input, axis=-1) > 0  # shape [B, A]
-        mask = tf.reshape(mask, shape=[-1])  # shape [B * A]
-
-        # create indices for non-pad locations
-        indices = tf.where(mask)
-
-        embeddings, _, _ = self.asv_encoder(asv_input, training=training)
-        return self._split_asvs(embeddings, mask, indices, training=training)
-
-    def asv_gradient(self, inputs: tf.Tensor, asv_embeddings) -> tuple[tf.Tensor, tf.Tensor]:
-        asv_mask = float_mask(tf.reduce_sum(inputs, axis=-1, keepdims=True))
-
-        if self.add_token:
-            asv_mask = tf.pad(asv_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1)
-            sample_embeddings = self._add_sample_token(asv_embeddings)
-        else:
-            sample_embeddings = asv_embeddings
-
-        sample_gated_embeddings = self.sample_encoder(sample_embeddings, mask=asv_mask, training=False)
-        sample_embeddings = sample_embeddings + sample_gated_embeddings
-        return sample_embeddings
 
     def get_config(self):
         config = super(BaseSequenceEncoder, self).get_config()

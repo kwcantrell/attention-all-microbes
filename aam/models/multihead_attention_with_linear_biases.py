@@ -471,20 +471,32 @@ class MultiHeadAttention(Layer):
         query_len = shape[2]
         num_heads = shape[1]
 
-        bias = tf.repeat(tf.expand_dims(tf.range(0, query_len, 1, dtype=tf.float32), axis=0), repeats=query_len, axis=0)
-        bias_mask = tf.cast(tf.expand_dims(tf.range(0, query_len, 1, dtype=tf.float32), axis=-1) >= bias, dtype=tf.float32)
+        bias = tf.repeat(
+            tf.expand_dims(tf.range(0, query_len, 1, dtype=tf.float32), axis=0),
+            repeats=query_len,
+            axis=0,
+        )
+        bias_mask = tf.cast(
+            tf.expand_dims(tf.range(0, query_len, 1, dtype=tf.float32), axis=-1) >= bias,
+            dtype=tf.float32,
+        )
         bias = -1 * tf.sort(bias * bias_mask, direction="DESCENDING")
         bias = tf.expand_dims(bias, axis=0)
         bias = tf.expand_dims(bias, axis=0)
+
+        start = tf.math.log(tf.cast(num_heads, dtype=tf.float32)) / tf.math.log(2.0)
+        start = 2 ** (-(2 ** -(start - 3)))
         m = tf.map_fn(
-            lambda x: 1 / (2 ** (x + 1)),
+            lambda i: start * tf.pow(start, i),
             tf.range(num_heads, dtype=tf.float32),
             fn_output_signature=tf.TensorSpec(shape=(), dtype=tf.float32),
         )
+
         m = tf.expand_dims(m, axis=0)
         m = tf.expand_dims(m, axis=-1)
         m = tf.expand_dims(m, axis=-1)
-        return tf.cast(bias * m, dtype=self.compute_dtype)
+        alibi = bias * m
+        return tf.cast(alibi + tf.transpose(alibi, perm=[0, 1, 3, 2]), dtype=self.compute_dtype)
 
     def _softmax(self, inputs, mask=None):
         if mask is not None:

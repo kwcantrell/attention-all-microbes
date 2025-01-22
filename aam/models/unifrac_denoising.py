@@ -141,7 +141,7 @@ class UnifracDenoiser(tf.keras.Model):
 
         def _unifrac_loss(inputs):
             uni_dist, uni_emb = inputs
-            return self.pairwise_loss(uni_dist, uni_emb)
+            return tf.reduce_mean(self.pairwise_loss(uni_dist, uni_emb))
 
         losses = tf.map_fn(
             _unifrac_loss,
@@ -207,17 +207,47 @@ class UnifracDenoiser(tf.keras.Model):
         batch_dim = shape[0]
         group_dim = shape[-1]
 
-        group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
+        # group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
+        # group_input = tf.map_fn(
+        #     lambda i: self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim),
+        #     tf.range(2),
+        #     fn_output_signature=(tf.float32, tf.int32),
+        #     # fn_output_signature=(
+        #     #     tf.RaggedTensorSpec(shape=[None, None, self.embedding_dim], dtype=self.compute_dtype),
+        #     #     tf.RaggedTensorSpec(shape=[None, None, 1], dtype=tf.int32),
+        #     # ),
+        # )
+        def run_group(i):
+            groupt_input = self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim)
+
+            return self.call(groupt_input, training=True)
 
         with tf.GradientTape() as tape:
-            denoise_embeddings, unifrac_embeddings = [], []
-            for i in range(2):
-                _den, _uni = self.call(group_input[i], training=True)
-                denoise_embeddings.append(_den)
-                unifrac_embeddings.append(_uni)
+            # # denoise_embeddings, unifrac_embeddings = [], []
+            # # for i in range(2):
+            # #     _den, _uni = self.call(group_input[i], training=True)
+            # #     denoise_embeddings.append(_den)
+            # #     unifrac_embeddings.append(_uni)
+            # outputs = tf.map_fn(
+            #     lambda i: self.call(group_input[i], training=True),
+            #     tf.range(2),
+            #     fn_output_signature=(tf.float32, tf.float32),
+            # )
+            # denoise_embeddings, unifrac_embeddings = tf.nest.flatten(outputs)
 
-            denoise_embeddings = tf.concat(denoise_embeddings, axis=0)
-            unifrac_embeddings = tf.concat(unifrac_embeddings, axis=0)
+            # denoise_embeddings = tf.concat(denoise_embeddings, axis=0)
+            # unifrac_embeddings = tf.concat(unifrac_embeddings, axis=0)
+            outputs = tf.map_fn(
+                run_group,
+                tf.range(2),
+                fn_output_signature=(
+                    tf.TensorSpec(shape=[None, self.embedding_dim], dtype=tf.float32),
+                    tf.TensorSpec(shape=[None, self.embedding_dim], dtype=tf.float32),
+                ),
+            )
+            denoise_embeddings, unifrac_embeddings = tf.nest.flatten(outputs)
+            denoise_embeddings = tf.reshape(denoise_embeddings, shape=(-1, self.embedding_dim))
+            unifrac_embeddings = tf.reshape(unifrac_embeddings, shape=(-1, self.embedding_dim))
 
             loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, (denoise_embeddings, unifrac_embeddings))
             if self.compute_dtype == "float16":
@@ -312,6 +342,8 @@ class UnifracDenoiser(tf.keras.Model):
         else:
             asv_embeddings = inputs
 
+        # ensure asv_embeddings match the expected compute type
+        asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype)
         asv_embeddings, unifrac_embeddings = self.unifrac_encoder(
             asv_embeddings, attention_mask=attention_mask, training=training
         )

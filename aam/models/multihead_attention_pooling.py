@@ -36,26 +36,23 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
                 name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
             )
 
-    def get_config(self):
-        config = super(MultiHeadAttentionPooling, self).get_config()
-        config.update(
-            {
-                "normalize_output": self.normalize_output,
-                "num_heads": self.num_heads,
-                "use_residual_connections": self.use_residual_connections,
-                "use_linear_bias": self.use_linear_bias,
-            }
-        )
-        return config
-
     def call(self, inputs, mask=None, training=False):
+        """Extracts a single embedding vector for a set of embeddings
+
+        Args:
+            inputs: A tensor with shape (batch_size, input_length, hidden_size)
+            mask: A boolean tensor with shape (batch_size, ..., input_length, 1).
+              All positions with False will be ignored during self attention
+            training: Defaults to False.
+
+        Returns:
+            Tensor with shape (batch_size, hidden_size)
+        """
         attention_mask = mask
         if mask is not None:
             attention_mask = tf.cast(attention_mask, dtype=self.compute_dtype)
             attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
-
-        # disable dropout
-        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=False)
+        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=training)
 
         if self.use_residual_connections:
             print("Pooler residual connection...")
@@ -78,3 +75,15 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
                 output = tf.cast(output, dtype=tf.float16)
         print("Pooler exit...", self.trainable)
         return output
+
+    def get_config(self):
+        config = super(MultiHeadAttentionPooling, self).get_config()
+        config.update(
+            {
+                "normalize_output": self.normalize_output,
+                "num_heads": self.num_heads,
+                "use_residual_connections": self.use_residual_connections,
+                "use_linear_bias": self.use_linear_bias,
+            }
+        )
+        return config

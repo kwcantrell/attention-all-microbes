@@ -101,16 +101,12 @@ class ASVEncoder(tf.keras.layers.Layer):
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs_shape = tf.shape(inputs)
 
-        # boolean mask used to select non-pad tokens
-        mask = tf.reduce_sum(inputs, axis=-1) > 0  # shape [B, A]
-        mask = tf.reshape(mask, shape=[-1])  # shape [B * A]
-
         # mask for non-pad tokens (used during the creation of random_mask)
         valid_mask = tf.cast(inputs > 0, dtype=tf.int32)
 
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
-        random_mask = create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         masked_inputs = inputs
+        random_mask = create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         if include_bert_random_mask and training and self.trainable:
             print("applying bert mask")
             # of the masked tokens, select 20% to either keep or change to
@@ -147,11 +143,14 @@ class ASVEncoder(tf.keras.layers.Layer):
         asv_tokens = masked_inputs + self.nucleotide_position
         asv_input = self.emb_layer(asv_tokens)
 
+        # only add positional embeddings if using vanilla Transforer
         if not self.use_linear_bias:
             asv_input = asv_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_input)
 
+        # pass embeddings through Transformer
         output = self.asv_attention(asv_input, training=training)
 
+        # generate training loss
         asv_tokens = inputs + self.nucleotide_position
         loss = self._compute_nuc_loss(asv_tokens, output, random_mask)
         if include_bert_random_mask and self.trainable:

@@ -99,7 +99,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         return valid_differences
 
 
-def triplet_loss(embeddings, groups=2, hard_margin=0.1, soft_margin=0.5):
+def triplet_loss(embeddings, groups=2, hard_margin=0.1, soft_margin=0.2):
     emb_shape = tf.shape(embeddings, out_type=tf.int32)
     batch_dim = emb_shape[0]
     group_size = batch_dim // tf.cast(groups, dtype=tf.int32)
@@ -110,7 +110,7 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.1, soft_margin=0.5):
     non_matching_mask = tf.cast((1 - matching_mask) * off_diag, dtype=tf.bool)
     matching_mask = tf.cast(matching_mask * off_diag, dtype=tf.bool)
 
-    distances = _pairwise_cosine_distance(embeddings)
+    distances = _pairwise_distances(embeddings)
 
     matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
     non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
@@ -123,13 +123,5 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.1, soft_margin=0.5):
     semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + soft_margin, dtype=tf.float32) * (1 - hard_mask)
     semi_hard_loss = triplet_loss[tf.cast(semi_hard_mask, tf.bool)]
 
-    # mean = tf.reduce_mean(semi_hard_loss)
-    # std = tf.math.reduce_std(semi_hard_loss)
-    # l_std = mean - std
-    # r_std = mean + std
-    # mask = (semi_hard_loss >= l_std) & (semi_hard_loss <= r_std)
-
-    # loss = tf.reduce_mean(semi_hard_loss[mask])
-    # return tf.where(loss > 0, loss, 0.0)
     loss = tf.reduce_mean(semi_hard_loss)
     return tf.where(loss > 0, loss, 0.0)
