@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tensorflow as tf
 
-from aam.models.multihead_attention_with_linear_biases import MultiHeadAttention
+from aam.models.linear_attention_bias import LinearBiasSoftmax
 
 
 @tf.keras.saving.register_keras_serializable(package="MultiHeadAttentionPooling")
@@ -18,19 +18,17 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         hidden_dim = input_shape[-1]
         key_dim = int(hidden_dim // self.num_heads)
         self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
-        if self.use_linear_bias:
-            self.attention = MultiHeadAttention(
-                self.num_heads,
-                key_dim=key_dim,
-                dropout=0.1,
-            )
 
-        else:
-            self.attention = tf.keras.layers.MultiHeadAttention(
-                self.num_heads,
-                key_dim=key_dim,
-                dropout=0.1,
-            )
+        self.attention = tf.keras.layers.MultiHeadAttention(
+            self.num_heads,
+            key_dim=key_dim,
+            dropout=0.1,
+        )
+        self.attention._build_from_signature(input_shape, input_shape)
+
+        if self.use_linear_bias:
+            setattr(self.attention, "_softmax", LinearBiasSoftmax())
+
         if self.use_residual_connections:
             self._rezero = self.add_weight(
                 name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
@@ -52,7 +50,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         if mask is not None:
             attention_mask = tf.cast(attention_mask, dtype=self.compute_dtype)
             attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
-        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=training)
+        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=False)
 
         if self.use_residual_connections:
             print("Pooler residual connection...")

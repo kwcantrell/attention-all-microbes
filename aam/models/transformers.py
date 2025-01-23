@@ -3,7 +3,7 @@ from __future__ import annotations
 import tensorflow as tf
 import tensorflow_models as tfm
 
-from aam.models.rezero_transformer_with_linear_biases import ReZeroTransformerLinearBiases
+from aam.models.linear_attention_bias import LinearBiasSoftmax
 
 
 @tf.keras.saving.register_keras_serializable(package="TransformerEncoder")
@@ -40,26 +40,32 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.hidden_dim = input_shape[-1]
-
         if self.use_residual_connections:
             self._rezero = self.add_weight(
                 name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
             )
+        linear_bias_softmax = LinearBiasSoftmax()
 
-        ReZeroTransformer = tfm.nlp.layers.ReZeroTransformer if not self.use_linear_bias else ReZeroTransformerLinearBiases
+        def get_transformer(i):
+            transformer = tfm.nlp.layers.ReZeroTransformer(
+                num_attention_heads=self.num_attention_heads,
+                inner_dim=self._intermediate_size,
+                inner_activation=self._activation,
+                dropout_rate=self._dropout_rate,
+                attention_dropout_rate=self._dropout_rate,
+                share_rezero=True,
+                name=("layer_%d" % i),
+            )
+            transformer.build(input_shape)
+            transformer._attention_layer._build_from_signature(input_shape, input_shape)
+
+            if self.use_linear_bias:
+                setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
+            return transformer
+
         self.encoder_layers = []
         for i in range(self.num_layers):
-            self.encoder_layers.append(
-                ReZeroTransformer(
-                    num_attention_heads=self.num_attention_heads,
-                    inner_dim=self._intermediate_size,
-                    inner_activation=self._activation,
-                    dropout_rate=self._dropout_rate,
-                    attention_dropout_rate=self._dropout_rate,
-                    share_rezero=True,
-                    name=("layer_%d" % i),
-                )
-            )
+            self.encoder_layers.append(get_transformer(i))
         if self.normalize_outputs:
             self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
         super(TransformerEncoder, self).build(input_shape)
