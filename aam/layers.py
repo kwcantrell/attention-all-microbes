@@ -93,7 +93,6 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32)
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
-        self._softmax.build([None, self.base_tokens * self.max_bp])
         super().build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):

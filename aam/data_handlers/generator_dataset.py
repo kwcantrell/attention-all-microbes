@@ -30,10 +30,10 @@ def add_lock(func):
     return wrapper
 
 
-@tf.function(reduce_retracing=True)
-def batch_embeddings(asv_embeddings, asv_indicies, batch_indicies, counts):
+def batch_embeddings(asv_embeddings, batch_indicies, counts, asv_indices=None):
     emb_dim = tf.shape(asv_embeddings)[-1]
-    asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+    if asv_indices is not None:
+        asv_embeddings = tf.gather(asv_embeddings, asv_indices)
     batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
     max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
     batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
@@ -96,6 +96,8 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         self.encoder_output_type = None
         self.sample_ids = None
         self.asv_ids = None
+
+        print("rarefy table...")
         self.rarefied_table: Table = self.table.subsample(rarefy_depth)
 
         if self.tree_path is not None:
@@ -183,13 +185,16 @@ class GeneratorDataset(tf.keras.utils.Sequence):
     @rarefied_table.setter
     def rarefied_table(self, table: Table):
         self._rarefied_table = table
+        print("removing empty sample/obs from table")
         self._rarefied_table.remove_empty()
-        if self.metadata_column is None or self.metadata is None:
-            return
+
         self.sample_ids = self._rarefied_table.ids()
         self.asv_ids = self._rarefied_table.ids(axis="observation")
         self.sample_indices = np.arange(len(self.sample_ids))
+
+        print("creating encoder target...")
         self.encoder_target = self._create_encoder_target()
+        print("encoder target created")
 
     def _create_encoder_target(self) -> None:
         return None
@@ -222,11 +227,13 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         if self.metadata_column not in metadata.columns:
             raise Exception(f"Invalid metadata column {self.metadata_column}")
 
+        print("aligning table with metadata")
         samp_ids = np.intersect1d(self.table.ids(axis="sample"), metadata.index)
         self.table.filter(samp_ids, axis="sample", inplace=True)
+        self.table.remove_empty()
         metadata = metadata.loc[self.table.ids(), self.metadata_column]
-        print(f"Unrarefied table shape: {self.table.shape}")
-        print(f"metadata shape: {metadata.shape}")
+        print(f"aligned table shape: {self.table.shape}")
+        print(f"aligned metadata shape: {metadata.shape}")
         if not self.is_categorical:
             metadata = metadata.astype(np.float32)
             # if not isinstance(self.scale, (str, float)):
@@ -243,6 +250,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
             metadata = (metadata - self.shift) / self.scale
         self._metadata = metadata.reindex(self.table.ids())
+        print("done preprocessing metadata")
 
     # def create_rarefied_table(self, table):
     #     rarefied_table = table.subsample(self.rarefy_depth, seed=self.seed)
@@ -442,3 +450,5 @@ if __name__ == "__main__":
     print("batch_indices:", batch_indices.shape, batch_indices)
     print("obs indices:", obs_indices.shape)
     print("counts:", counts)
+    print("y_true", y[0].shape)
+    print("encoder output", y[1].shape)

@@ -74,60 +74,35 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         return self._batch_data(batch_sample_ids)
 
     def _batch_data(self, batch_sample_ids):
-        num_unique_asvs, sparse_indices, obs_indices, counts = [], [], [], []
-        cur_row_indx = 0
-        gen_is = []
+        tokens, sparse_indices, counts = [], [], []
+        y_true, encoder_output = [], []
         for gen_i, generator in enumerate(self.generators):
-            for s_id in batch_sample_ids:
-                sample_data = generator.rarefied_table.data(s_id, dense=False).tocoo()
-                (obs_idx, _), sample_counts = sample_data.coords, sample_data.data
+            (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts), (gen_y_true, gen_encoder_output) = (
+                generator._batch_data(batch_sample_ids)
+            )
+            gen_tokens = gen_tokens[gen_obs_indices]
+            tokens.append(gen_tokens)
 
-                num_unique_asvs.append(len(obs_idx))
-                sparse_indices.append([[cur_row_indx, i] for i in range(len(obs_idx))])
+            gen_sparse_indices[:, 0] += len(batch_sample_ids) * gen_i
+            sparse_indices.append(gen_sparse_indices)
 
-                sorted_indices = np.argsort(sample_counts)
-                sorted_descending = sorted_indices[::-1]
-                obs_indices.append(obs_idx[sorted_descending])
-                counts.append(sample_counts[sorted_descending])
+            counts.append(gen_counts)
 
-                gen_is.append(gen_i)
-                cur_row_indx += 1
+            y_true.append(gen_y_true)
+            encoder_output.append(gen_encoder_output)
 
-        num_unique_asvs = np.array(num_unique_asvs, dtype=np.int32)
-        sparse_indices = np.vstack(sparse_indices, dtype=np.int32)
-        obs_indices = obs_indices
-        counts = np.hstack(counts, dtype=np.float32)[:, np.newaxis]
+        tokens = np.concatenate(tokens, axis=0)
+        sparse_indices = np.concatenate(sparse_indices, axis=0)
+        counts = np.concatenate(counts, axis=0)
+        y_true = np.concatenate(y_true, axis=0)
+        encoder_output = np.concatenate(encoder_output, axis=0)
 
-        # first cast obs_indices to obs_ids
-        def idx_to_asv(indices, gen_i):
-            asvs = []
-            for i in indices:
-                asvs.append(self.generators[gen_i].asv_ids[i])
-            return asvs
-
-        asvs = np.hstack([idx_to_asv(indices, gen_i) for indices, gen_i in zip(obs_indices, gen_is)])
-        unique_asvs, obs_indices = np.unique(asvs, return_inverse=True)
-
-        lookup = {
-            "a": 1,
-            "c": 2,
-            "g": 3,
-            "t": 3,
-        }
-
-        def map(asv):
-            asv = asv.lower()
-            return np.array([lookup[c] for c in asv], dtype=np.int32)[np.newaxis, :]
-
-        tokens = np.concatenate([map(asv) for asv in unique_asvs], axis=0)
-
-        y_true = np.concatenate([gen.y_data.loc[batch_sample_ids] for gen in self.generators], axis=None)[:, np.newaxis]
+        unique_tokens, obs_indices = np.unique(tokens, axis=0, return_inverse=True)
 
         if self.unifrac_metric:
-            encoder_output = np.concatenate([gen._encoder_output(batch_sample_ids) for gen in self.generators], axis=0)
-            return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
+            return (unique_tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
         else:
-            return (tokens, sparse_indices, obs_indices, counts), y_true
+            return (unique_tokens, sparse_indices, obs_indices, counts), y_true
 
 
 def get_dataset(gen: MultiDepthGenerator):

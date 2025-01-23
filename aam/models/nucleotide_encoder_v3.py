@@ -84,8 +84,7 @@ class NucleotideEncoderV3(tf.keras.Model):
         num_pairs = tf.shape(y_true)[-1]
         embeddings = embeddings[:num_pairs]
         losses = self.asv_loss(y_true, embeddings)
-        mask = losses > tf.reduce_mean(losses)
-        return tf.reduce_mean(losses[mask])
+        return tf.reduce_mean(losses)
 
     def train_step(self, data):
         inputs, y_true = data

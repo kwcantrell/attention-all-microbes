@@ -196,21 +196,21 @@ class UnifracDenoiser(tf.keras.Model):
         inputs, y = data
         y_target, encoder_target = y
 
-        tokens, batch_indicies, asv_indicies, counts = inputs
+        tokens, batch_indices, asv_indices, counts = inputs
 
-        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
-        asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
         asv_embeddings = self.asv_encoder(tokens, training=False)
-        asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+        asv_embeddings = tf.gather(asv_embeddings, asv_indices)
 
         shape = tf.shape(encoder_target)
         batch_dim = shape[0]
         group_dim = shape[-1]
 
-        # group_input = [self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim) for i in range(2)]
+        # group_input = [self._group_embeddings(asv_embeddings, (batch_indices, counts), i, group_dim) for i in range(2)]
         # group_input = tf.map_fn(
-        #     lambda i: self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim),
+        #     lambda i: self._group_embeddings(asv_embeddings, (batch_indices, counts), i, group_dim),
         #     tf.range(2),
         #     fn_output_signature=(tf.float32, tf.int32),
         #     # fn_output_signature=(
@@ -219,7 +219,7 @@ class UnifracDenoiser(tf.keras.Model):
         #     # ),
         # )
         def run_group(i):
-            groupt_input = self._group_embeddings(asv_embeddings, (batch_indicies, counts), i, group_dim)
+            groupt_input = self._group_embeddings(asv_embeddings, (batch_indices, counts), i, group_dim)
 
             return self.call(groupt_input, training=True)
 
@@ -290,41 +290,41 @@ class UnifracDenoiser(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def _batch_embeddings(self, asv_embeddings, asv_indices, batch_indicies, counts):
-        # batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
-        # max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-        # batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
-        # counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+    def _batch_embeddings(self, asv_embeddings, batch_indices, counts, asv_indices=None):
+        # batch_shape = tf.reduce_max(batch_indices[:, 0]) + 1
+        # max_unique = tf.reduce_max(batch_indices[:, 1]) + 1
+        # batch_embeddings = tf.scatter_nd(batch_indices, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
+        # counts = tf.scatter_nd(batch_indices, counts, shape=[batch_shape, max_unique, 1])
         # return batch_embeddings, counts
-        return batch_embeddings(asv_embeddings, asv_indices, batch_indicies, counts)
+        return batch_embeddings(asv_embeddings, batch_indices, counts, asv_indices=asv_indices)
 
     def _extract_asv_embeddings(self, inputs):
-        tokens, batch_indicies, asv_indicies, counts = inputs
+        tokens, batch_indices, asv_indices, counts = inputs
 
-        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
-        asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
         asv_embeddings = self.asv_encoder(tokens, training=False)
-        # asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+        # asv_embeddings = tf.gather(asv_embeddings, asv_indices)
 
-        return self._batch_embeddings(asv_embeddings, asv_indicies, batch_indicies, counts)
+        return self._batch_embeddings(asv_embeddings, batch_indices, counts, asv_indices=asv_indices)
 
     def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
-        batch_indicies, counts = inputs
+        batch_indices, counts = inputs
 
-        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
         row_indices = tf.expand_dims(tf.range(group, group + samples_per_group, 1, dtype=tf.int32), axis=0)
-        row_mask = tf.math.reduce_any(row_indices == batch_indicies[:, :1], axis=-1)
+        row_mask = tf.math.reduce_any(row_indices == batch_indices[:, :1], axis=-1)
         row_indices = tf.squeeze(tf.where(row_mask))
 
         asv_embeddings = tf.gather(asv_embeddings, row_indices)
-        batch_indicies = tf.gather(batch_indicies, row_indices)
+        batch_indices = tf.gather(batch_indices, row_indices)
         counts = tf.gather(counts, row_indices)
 
-        group_size = tf.shape(batch_indicies)[0]
-        group_shift = tf.reduce_min(batch_indicies[:, 0])
+        group_size = tf.shape(batch_indices)[0]
+        group_shift = tf.reduce_min(batch_indices[:, 0])
         group_index_shift = tf.repeat([[group_shift, 0]], repeats=group_size, axis=0)
-        return self._batch_embeddings(asv_embeddings, batch_indicies - group_index_shift, counts)
+        return self._batch_embeddings(asv_embeddings, batch_indices - group_index_shift, counts)
 
     def call(
         self,
@@ -410,9 +410,9 @@ class UnifracDenoiser(tf.keras.Model):
 
         model = cls(**config)
         token_shape = tf.TensorShape([None, 150])
-        batch_indicies = tf.TensorShape([None, 2])
+        batch_indices = tf.TensorShape([None, 2])
         indicies_shape = tf.TensorShape([None])
         count_shape = tf.TensorShape([None, 1])
         if input_shape is not None:
-            model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+            model.build([token_shape, batch_indices, indicies_shape, count_shape])
         return model

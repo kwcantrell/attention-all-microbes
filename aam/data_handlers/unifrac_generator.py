@@ -4,6 +4,7 @@ import os
 from typing import Iterable
 
 import numpy as np
+import skbio.diversity as diversity
 import tensorflow as tf
 from biom import Table
 from biom.util import biom_open
@@ -11,7 +12,6 @@ from skbio import DistanceMatrix
 from unifrac import unweighted
 
 from aam.data_handlers.generator_dataset import GeneratorDataset
-import skbio.diversity as diversity
 
 
 class UniFracGenerator(GeneratorDataset):
@@ -32,6 +32,7 @@ class UniFracGenerator(GeneratorDataset):
         )
 
     def _encoder_output(self, sample_ids: Iterable[str]) -> np.ndarray[float]:
+        print("fetching encoder output...")
         counts = np.vstack([self.rarefied_table.data(s_id) for s_id in sample_ids])
         return self.encoder_target(counts).data
 

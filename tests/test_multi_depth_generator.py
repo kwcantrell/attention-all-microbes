@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from biom import load_table
 
-from aam.data_handlers.generator_dataset import GeneratorDataset, batch_embeddings
+from aam.data_handlers.multi_depth_generator import MultiDepthGenerator
 
 lookup = [
     "",
@@ -24,7 +24,7 @@ def test_sample_info():
     table_path = "agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom"
     metadata_path = "agp-healthy.txt"
     batch_size = 8
-    gd = GeneratorDataset(
+    gd = MultiDepthGenerator(
         table=table_path,
         metadata=metadata_path,
         metadata_column="host_age",
@@ -53,7 +53,7 @@ def test_sample_info():
         table_batch = [_extract_sample(s_id) for s_id in batch_ids]
 
         (tokens, indices, asv_indices, counts), y = gd[i]
-        batch_tokens, batch_counts = batch_embeddings(tokens, indices, counts, asv_indices=asv_indices)
+        batch_tokens, batch_counts = batch_embeddings(tokens, asv_indices, indices, counts)
         batch_gen = []
         for sample, counts in zip(list(batch_tokens.numpy()), list(batch_counts.numpy())):
             sample_asvs = []
