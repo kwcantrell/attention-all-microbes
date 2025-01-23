@@ -136,8 +136,8 @@ class ASVGenerator(tf.keras.utils.Sequence):
             asv_pos = self.asv_preorderpos[samples]
             return tokens, np.array([self.preorder_nodes[i].name for i in asv_pos])
 
-        num_asvs = self.pairwise_batch_size
-        tip_tip_samples = samples[:num_asvs]
+        tip_tip_samples = samples[: self.pairwise_batch_size]
+        num_asvs = len(tip_tip_samples)
         asv_pos = self.asv_preorderpos[tip_tip_samples]
         post_order_pos = np.array([self.preorder_nodes[i].postorder_pos for i in asv_pos], dtype=np.int32)
         sorted_post_indx = np.argsort(post_order_pos)

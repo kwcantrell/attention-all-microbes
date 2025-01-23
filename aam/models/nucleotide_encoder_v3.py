@@ -84,8 +84,8 @@ class NucleotideEncoderV3(tf.keras.Model):
         num_pairs = tf.shape(y_true)[-1]
         embeddings = embeddings[:num_pairs]
         losses = self.asv_loss(y_true, embeddings)
-
-        return tf.reduce_mean(losses)
+        mask = losses > tf.reduce_mean(losses)
+        return tf.reduce_mean(losses[mask])
 
     def train_step(self, data):
         inputs, y_true = data
@@ -93,7 +93,10 @@ class NucleotideEncoderV3(tf.keras.Model):
             embeddings = self(inputs, training=True)
             asv_loss = self._compute_loss(y_true, embeddings)
             loss = asv_loss
-            nuc_loss = tf.reduce_sum(self.losses)
+            if self.include_bert_loss:
+                nuc_loss = tf.reduce_sum(self.losses)
+            else:
+                nuc_loss = 0.0
             loss = nuc_loss + asv_loss
 
             if self.compute_dtype == "float16":
@@ -119,7 +122,10 @@ class NucleotideEncoderV3(tf.keras.Model):
 
         embeddings = self(inputs, training=False)
         asv_loss = self._compute_loss(y_true, embeddings)
-        nuc_loss = tf.reduce_sum(self.losses)
+        if self.include_bert_loss:
+            nuc_loss = tf.reduce_sum(self.losses)
+        else:
+            nuc_loss = 0.0
         loss = asv_loss + nuc_loss
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)

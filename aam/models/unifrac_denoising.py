@@ -4,6 +4,7 @@ from typing import Union
 
 import tensorflow as tf
 
+from aam.data_handlers.generator_dataset import batch_embeddings
 from aam.losses import PairwiseLoss, triplet_loss
 from aam.models.unifrac_encoder import UnifracEncoder
 from aam.models.utils import sort_using_counts, to_batch
@@ -289,12 +290,13 @@ class UnifracDenoiser(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def _batch_embeddings(self, asv_embeddings, batch_indicies, counts):
-        batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
-        max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-        batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
-        counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
-        return batch_embeddings, counts
+    def _batch_embeddings(self, asv_embeddings, asv_indices, batch_indicies, counts):
+        # batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+        # max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+        # batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, self.embedding_dim])
+        # counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+        # return batch_embeddings, counts
+        return batch_embeddings(asv_embeddings, asv_indices, batch_indicies, counts)
 
     def _extract_asv_embeddings(self, inputs):
         tokens, batch_indicies, asv_indicies, counts = inputs
@@ -303,9 +305,9 @@ class UnifracDenoiser(tf.keras.Model):
         asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
 
         asv_embeddings = self.asv_encoder(tokens, training=False)
-        asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+        # asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
 
-        return self._batch_embeddings(asv_embeddings, batch_indicies, counts)
+        return self._batch_embeddings(asv_embeddings, asv_indicies, batch_indicies, counts)
 
     def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
         batch_indicies, counts = inputs

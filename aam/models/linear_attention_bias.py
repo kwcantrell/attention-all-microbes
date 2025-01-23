@@ -97,7 +97,8 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
     def build(self, input_shape):
         shape = [s if s is not None else 1 for s in input_shape]
         t = tf.ones(shape)
-        self.bias = lambda: _construct_bias(t)
+        bias = _construct_bias(t)
+        self.bias = lambda: bias
 
     def call(self, inputs, mask=None):
         if mask is not None:

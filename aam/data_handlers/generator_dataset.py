@@ -29,6 +29,17 @@ def add_lock(func):
     return wrapper
 
 
+@tf.function(reduce_retracing=True)
+def batch_embeddings(asv_embeddings, asv_indicies, batch_indicies, counts):
+    emb_dim = tf.shape(asv_embeddings)[-1]
+    asv_embeddings = tf.gather(asv_embeddings, asv_indicies)
+    batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+    max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+    batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
+    counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+    return batch_embeddings, counts
+
+
 class GeneratorDataset(tf.keras.utils.Sequence):
     def __init__(
         self,
