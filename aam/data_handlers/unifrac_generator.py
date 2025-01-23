@@ -11,6 +11,7 @@ from skbio import DistanceMatrix
 from unifrac import unweighted
 
 from aam.data_handlers.generator_dataset import GeneratorDataset
+import skbio.diversity as diversity
 
 
 class UniFracGenerator(GeneratorDataset):
@@ -21,17 +22,18 @@ class UniFracGenerator(GeneratorDataset):
     def _create_encoder_target(self) -> DistanceMatrix:
         super(UniFracGenerator, self)._create_encoder_target()
         print("creating unifrac targets...")
-
-        random = np.random.random(1)[0]
-        temp_path = f"/tmp/temp{random}.biom"
-        with biom_open(temp_path, "w") as f:
-            self.rarefied_table.to_hdf5(f, "aam")
-        distances = unweighted(temp_path, self.tree_path)
-        os.remove(temp_path)
-        return distances
+        return lambda counts: diversity.beta_diversity(
+            "unweighted_unifrac",
+            counts,
+            taxa=self.rarefied_table.ids(
+                axis="observation",
+            ),
+            tree=self.tree,
+        )
 
     def _encoder_output(self, sample_ids: Iterable[str]) -> np.ndarray[float]:
-        return self.encoder_target.filter(sample_ids).data
+        counts = np.vstack([self.rarefied_table.data(s_id) for s_id in sample_ids])
+        return self.encoder_target(counts).data
 
 
 def get_dataset(gen: UniFracGenerator):
@@ -77,7 +79,8 @@ if __name__ == "__main__":
         gen_new_tables=True,
         return_sample_ids=False,
     )
+    # print(ug[0])
     dataset = get_dataset(ug)
     for x, y in dataset.take(1):
-        print(x)
+        print(x, y)
     ug.stop()

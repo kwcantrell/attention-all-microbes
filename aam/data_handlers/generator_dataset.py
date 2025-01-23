@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
+from bp import parse_newick, to_skbio_treenode
 
 
 def add_lock(func):
@@ -96,6 +97,9 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         self.sample_ids = None
         self.asv_ids = None
         self.rarefied_table: Table = self.table.subsample(rarefy_depth)
+
+        if self.tree_path is not None:
+            self.tree = to_skbio_treenode(parse_newick(open(self.tree_path).read()))
 
         self.size = self.rarefied_table.shape[1]
         self.steps_per_epoch = self.size // self.batch_size
