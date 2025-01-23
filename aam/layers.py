@@ -91,7 +91,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             use_linear_bias=self.use_linear_bias,
         )
 
-        self.nuc_pred = tf.keras.layers.Dense(self.base_tokens * self.max_bp, use_bias=True, dtype=tf.float32)
+        self.nuc_pred = tf.keras.layers.Dense(self.num_tokens, use_bias=True, dtype=tf.float32)
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         super().build(input_shape)
 
@@ -105,7 +105,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         masked_inputs = inputs
-        random_mask = create_random_mask(inputs_shape, percent=0.02, dtype=tf.int32) * valid_mask
+        random_mask = create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
         if include_bert_random_mask and training and self.trainable:
             print("applying bert mask")
             # of the masked tokens, select 20% to either keep or change to
@@ -162,7 +162,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         tokens = tokens[mask]
         embeddings = embeddings[mask]
         nuc_pred = self._softmax(self.nuc_pred(embeddings))
-        tokens = tf.one_hot(tokens, self.base_tokens * self.max_bp)
+        tokens = tf.one_hot(tokens, tf.shape(nuc_pred)[-1])
         return self.nuc_loss(tokens, nuc_pred)
 
     def get_config(self):

@@ -202,7 +202,7 @@ class UnifracDenoiser(tf.keras.Model):
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
         asv_embeddings = self.asv_encoder(tokens, training=False)
-        asv_embeddings = tf.gather(asv_embeddings, asv_indices)
+        # asv_embeddings = tf.gather(asv_embeddings, asv_indices)
 
         shape = tf.shape(encoder_target)
         batch_dim = shape[0]
