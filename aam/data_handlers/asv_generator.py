@@ -172,7 +172,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
                 # distance from i to j
                 pairwise_distance = (i_to_root - lca_to_root) + (j_to_root - lca_to_root)
-                dists[_ri, _rj] = pairwise_distance / self.max_dist_to_root
+                dists[_ri, _rj] = pairwise_distance
 
         return tokens, dists + dists.T
 
