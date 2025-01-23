@@ -157,13 +157,11 @@ def fit_asv_encoder(
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
             "bias",
-            "rezero_alpha",
             "layer_norm",
             "LayerNorm",
         ],
         exclude_from_layer_adaptation=[
             "bias",
-            "rezero_alpha",
             "layer_norm",
             "LayerNorm",
         ],

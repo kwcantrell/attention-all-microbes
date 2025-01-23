@@ -193,8 +193,6 @@ def get_dataset(gen: ASVGenerator):
         enqueuer.get,
         output_signature=(tf.TensorSpec(shape=(batch_dim, 150), dtype=tf.int32), y_type),
     )
-
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
 
 
