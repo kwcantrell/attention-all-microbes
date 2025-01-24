@@ -45,6 +45,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
             )
         linear_bias_softmax = LinearBiasSoftmax()
+        print("Using linear bias")
 
         def get_transformer(i):
             transformer = tfm.nlp.layers.ReZeroTransformer(

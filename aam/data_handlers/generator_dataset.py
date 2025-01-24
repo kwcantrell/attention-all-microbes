@@ -97,11 +97,11 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         self.sample_ids = None
         self.asv_ids = None
 
-        print("rarefy table...")
-        self.rarefied_table: Table = self.table.subsample(rarefy_depth)
-
         if self.tree_path is not None:
             self.tree = to_skbio_treenode(parse_newick(open(self.tree_path).read()))
+
+        print("rarefy table...")
+        self.rarefied_table: Table = self.table.subsample(rarefy_depth)
 
         self.size = self.rarefied_table.shape[1]
         self.steps_per_epoch = self.size // self.batch_size

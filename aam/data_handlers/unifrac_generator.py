@@ -22,19 +22,11 @@ class UniFracGenerator(GeneratorDataset):
     def _create_encoder_target(self) -> DistanceMatrix:
         super(UniFracGenerator, self)._create_encoder_target()
         print("creating unifrac targets...")
-        return lambda counts: diversity.beta_diversity(
-            "unweighted_unifrac",
-            counts,
-            taxa=self.rarefied_table.ids(
-                axis="observation",
-            ),
-            tree=self.tree,
-        )
+
+        return unweighted(self.rarefied_table, self.tree)
 
     def _encoder_output(self, sample_ids: Iterable[str]) -> np.ndarray[float]:
-        print("fetching encoder output...")
-        counts = np.vstack([self.rarefied_table.data(s_id) for s_id in sample_ids])
-        return self.encoder_target(counts).data
+        return self.encoder_target.filter(sample_ids).data
 
 
 def get_dataset(gen: UniFracGenerator):
@@ -80,8 +72,8 @@ if __name__ == "__main__":
         gen_new_tables=True,
         return_sample_ids=False,
     )
-    # print(ug[0])
-    dataset = get_dataset(ug)
-    for x, y in dataset.take(1):
-        print(x, y)
-    ug.stop()
+    print(ug[0])
+    # dataset = get_dataset(ug)
+    # for x, y in dataset.take(1):
+    #     print(x, y)
+    # ug.stop()
