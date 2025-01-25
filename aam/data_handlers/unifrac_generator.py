@@ -23,6 +23,9 @@ class UniFracGenerator(GeneratorDataset):
         super(UniFracGenerator, self)._create_encoder_target()
         print("creating unifrac targets...")
 
+        # NOTE: unweighted returns an "approximation" and may
+        # introduce a bit of noise although it should be highly
+        # negligible
         return unweighted(self.rarefied_table, self.tree)
 
     def _encoder_output(self, sample_ids: Iterable[str]) -> np.ndarray[float]:
