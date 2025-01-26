@@ -276,8 +276,6 @@ class UnifracDenoiser(tf.keras.Model):
     def _create_unifrac_embeddings(self, asv_embeddings, counts, training):
         attention_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
 
-        asv_embeddings = self.asv_input_ff(asv_embeddings)
-
         asv_embeddings, denoised_unifrac_embeddings = self.unifrac_denoiser(
             asv_embeddings, attention_mask=attention_mask, training=training
         )
@@ -298,6 +296,8 @@ class UnifracDenoiser(tf.keras.Model):
 
         tokens, batch_indices, asv_indices, counts = inputs
         asv_embeddings = tf.cast(self.asv_encoder(tokens, training=False), dtype=self.compute_dtype)
+        asv_embeddings = self.asv_input_ff(asv_embeddings)
+
         batch_indices = tf.cast(batch_indices, dtype=tf.int32)
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
@@ -311,8 +311,10 @@ class UnifracDenoiser(tf.keras.Model):
                 group_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
                     group_asv_embeddings, group_counts, training
                 )
+
+                group_seq = tf.shape(group_asv_embeddings)[1]
                 return (
-                    tf.pad(group_asv_embeddings, [[0, 0], [0, max_seq], [0, 0]]),
+                    tf.pad(group_asv_embeddings, [[0, 0], [0, max_seq - group_seq], [0, 0]]),
                     unifrac_embeddings,
                     denoised_unifrac_embeddings,
                 )
@@ -326,7 +328,6 @@ class UnifracDenoiser(tf.keras.Model):
                     tf.TensorSpec(shape=[None, self.embedding_dim], dtype=tf.float32),
                 ),
             )
-            tf.print(outputs)
             batch_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = tf.nest.flatten(outputs)
 
             batch_shape = tf.reduce_max(batch_indices[:, 0]) + 1
