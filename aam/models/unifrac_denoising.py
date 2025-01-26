@@ -165,8 +165,8 @@ class UnifracDenoiser(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         unifrac_embeddings, denoised_embeddings = outputs
 
-        denoise_loss = self._compute_denoise_loss(denoised_embeddings)
         unifrac_loss = self._compute_unifrac_loss(unifrac_distances, unifrac_embeddings)
+        denoise_loss = self._compute_denoise_loss(denoised_embeddings)
 
         loss = unifrac_loss + denoise_loss
         return loss, unifrac_loss, denoise_loss
@@ -276,11 +276,14 @@ class UnifracDenoiser(tf.keras.Model):
     def _create_unifrac_embeddings(self, asv_embeddings, counts, training):
         attention_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
 
-        asv_embeddings, denoised_unifrac_embeddings = self.unifrac_denoiser(
+        asv_embeddings, unifrac_embeddings = self.unifrac_encoder(
             asv_embeddings, attention_mask=attention_mask, training=training
         )
 
-        asv_embeddings, unifrac_embeddings = self.unifrac_encoder(
+        asv_embeddings, counts = sort_using_counts(asv_embeddings, counts)
+        attention_mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+
+        asv_embeddings, denoised_unifrac_embeddings = self.unifrac_denoiser(
             asv_embeddings, attention_mask=attention_mask, training=training
         )
         return asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings
