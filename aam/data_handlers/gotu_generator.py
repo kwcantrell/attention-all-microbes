@@ -119,15 +119,18 @@ class GOTUGenerator(tf.keras.utils.Sequence):
             gotu_y_true,
         ) = _get_data(self.gotu_generator)
         return (
-            (unique_tokens, sparse_indices, obs_indices, counts),
             (
-                y_true,
-                encoder_output,
+                (unique_tokens, sparse_indices, obs_indices, counts),
+                (y_true, encoder_output),
             ),
-            (gotu_unique_tokens, gotu_sparse_indices, gotu_obs_indices, gotu_counts),
             (
-                gotu_y_true,
-                gotu_encoder_output,
+                (
+                    gotu_unique_tokens,
+                    gotu_sparse_indices,
+                    gotu_obs_indices,
+                    gotu_counts,
+                ),
+                (gotu_y_true, gotu_encoder_output),
             ),
         )
 
@@ -139,18 +142,16 @@ def get_dataset(gen: GOTUGenerator):
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(
-            shape=[gen.batch_size * len(gen.generators), gen.batch_size],
+            shape=[gen.batch_size, gen.batch_size],
             dtype=tf.float32,
         )
     else:
-        y_type = tf.TensorSpec(
-            shape=(gen.batch_size * len(gen.generators)), dtype=tf.string
-        )
+        y_type = tf.TensorSpec(shape=(gen.batch_size), dtype=tf.string)
 
-    if gen.unifrac_metric:
-        dataset = tf.data.Dataset.from_generator(
-            enqueuer.get,
-            output_signature=(
+    dataset = tf.data.Dataset.from_generator(
+        enqueuer.get,
+        output_signature=(
+            (
                 (
                     tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
@@ -159,28 +160,29 @@ def get_dataset(gen: GOTUGenerator):
                 ),
                 (
                     tf.TensorSpec(
-                        shape=[gen.batch_size * len(gen.generators), 1],
+                        shape=[gen.batch_size, 1],
                         dtype=tf.float32,
                     ),
                     y_type,
                 ),
             ),
-        )
-    else:
-        dataset = tf.data.Dataset.from_generator(
-            enqueuer.get,
-            output_signature=(
+            (
                 (
-                    tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
                     tf.TensorSpec(shape=[None], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
-                tf.TensorSpec(
-                    shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32
+                (
+                    tf.TensorSpec(
+                        shape=[gen.batch_size, 1],
+                        dtype=tf.float32,
+                    ),
+                    y_type,
                 ),
             ),
-        )
+        ),
+    )
 
     return dataset
 
@@ -199,4 +201,10 @@ if __name__ == "__main__":
         asv_rarefy_depth=1000,
         gotu_rarefy_depth=100000,
     )
-    print(gotu_gen[0])
+    dataset = get_dataset(gotu_gen)
+    for x, y in dataset.take(1):
+        print(x)
+        print(y)
+        break
+
+    gotu_gen.stop()
