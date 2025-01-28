@@ -1280,7 +1280,7 @@ def fit_gotu(
     p_scale_loss: bool,
     p_normalize_outputs: bool,
 ):
-    from aam.data_handlers import GOTUGenerator
+    from aam.data_handlers.gotu_generator import GOTUGenerator
     from aam.models.gotu_model import GOTUModel
     from aam.models.unifrac_encoder import UnifracEncoder
     from aam.models.utils import cos_decay_with_warmup
