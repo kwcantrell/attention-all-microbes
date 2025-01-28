@@ -77,31 +77,6 @@ class GOTUModel(tf.keras.Model):
             self.embedding_dim,
         )
 
-        self.gotu_pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_gotu + 3, seq_axis=1, initializer="zeros")
-        if self.asv_embedding_layer is None:
-            self.asv_embedding_layer = UnifracEncoder(
-                output_dim=self.output_dim,
-                token_limit=self.token_limit,
-                encoder_type=self.encoder_type,
-                dropout_rate=self.dropout_rate,
-                embedding_dim=self.embedding_dim,
-                attention_heads=self.attention_heads,
-                attention_layers=self.attention_layers,
-                intermediate_size=self.intermediate_size,
-                intermediate_activation=self.intermediate_activation,
-                max_bp=self.max_bp,
-                is_16S=self.is_16S,
-                vocab_size=self.vocab_size,
-                add_token=self.add_token,
-                asv_dropout_rate=self.asv_dropout_rate,
-                accumulation_steps=self.accumulation_steps,
-                nucleotide_encoder=self.nucleotide_encoder,
-                pairwise_loss_type=self.pairwise_loss_type,
-            )
-        if freeze_base_weights is True:
-            print("freezing base weights...")
-            self.asv_embedding_layer.trainable = False
-
         self.gotu_decoder = TransformerDecoder(
             num_attention_heads=self.attention_heads,
             num_layers=self.attention_layers,
@@ -109,31 +84,10 @@ class GOTUModel(tf.keras.Model):
             activation=self.intermediate_activation,
             dropout_rate=self.dropout_rate,
             attention_dropout_rate=self.dropout_rate,
+            use_linear_bias=True,
         )
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         self.gotu_output = tf.keras.layers.Dense(self.gotu_count + 2)
-
-        # asv_batch_counts, asv_tokens, asv_indices, asv_counts = [
-        #     1,
-        #     [None, self.max_bp],
-        #     [None],
-        #     [None, 1],
-        # ]
-        # gotu_batch_counts, gotu_tokens, gotu_counts = [1, [None, 1], [None, 1]]
-        # self.inputs = [
-        #     (
-        #         tf.keras.Input(asv_batch_counts),
-        #         tf.keras.Input(asv_tokens),
-        #         tf.keras.Input(asv_indices),
-        #         tf.keras.Input(asv_counts),
-        #     ),
-        #     (
-        #         tf.keras.Input(gotu_batch_counts),
-        #         tf.keras.Input(gotu_tokens),
-        #         tf.keras.Input(gotu_counts),
-        #     ),
-        # ]
-        # self.outputs = self.call(self.inputs)
 
     def get_config(self):
         config = super(GOTUModel, self).get_config()
@@ -174,18 +128,12 @@ class GOTUModel(tf.keras.Model):
         asv_batch_counts, asv_tokens, asv_indicies, _ = asv_inputs
         gotu_batch_counts, gotu_tokens, gotu_counts = gotu_inputs
         gotu_pred, unifrac_pred = outputs
-
-        # compute nucleotide loss
-        # asv_tokens = asv_tokens + self.asv_embedding_layer.base_encoder.asv_encoder.nucleotide_position
-        # asv_tokens = tf.reshape(asv_tokens, shape=[-1])
-        # nuc_mask = tf.reshape(nuc_mask, shape=[-1])
-        # asv_tokens = asv_tokens[nuc_mask]
-        # asv_tokens = tf.one_hot(asv_tokens, tf.shape(nuc_pred)[-1])
-        # nuc_loss = self.nuc_loss(asv_tokens, nuc_pred)
-        # nuc_loss = tf.reduce_mean(nuc_loss)
         nuc_loss = self.asv_embedding_layer.losses
+
         # compute unifrac loss
-        unifrac_loss = self.asv_embedding_layer._compute_unifrac_loss(asv_unifrac_dist, unifrac_pred)
+        unifrac_loss = self.asv_embedding_layer._compute_unifrac_loss(
+            asv_unifrac_dist, unifrac_pred
+        )
 
         # compute decoder loss
         gotu_tokens = to_batch(gotu_tokens, gotu_batch_counts)
@@ -200,8 +148,12 @@ class GOTUModel(tf.keras.Model):
         gotu_mask = tf.reshape(gotu_tokens > 1, shape=[-1])
         gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
         gotu_tokens = tf.one_hot(gotu_tokens, tf.shape(gotu_pred)[-1])
-        gotu_tokens = tf.reshape(gotu_tokens, shape=[-1, tf.shape(gotu_pred)[-1]])[gotu_mask]
-        gotu_pred = tf.reshape(gotu_pred, shape=[-1, tf.shape(gotu_pred)[-1]])[gotu_mask]
+        gotu_tokens = tf.reshape(gotu_tokens, shape=[-1, tf.shape(gotu_pred)[-1]])[
+            gotu_mask
+        ]
+        gotu_pred = tf.reshape(gotu_pred, shape=[-1, tf.shape(gotu_pred)[-1]])[
+            gotu_mask
+        ]
         gotu_loss = self.gotu_loss(gotu_tokens, gotu_pred)
         gotu_loss = tf.reduce_mean(gotu_loss)
 
@@ -226,7 +178,9 @@ class GOTUModel(tf.keras.Model):
         gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
         with tf.GradientTape() as tape:
             outputs = self((asv_inputs, gotu_inputs), training=True)
-            loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(asv_inputs, gotu_inputs, asv_unifrac, outputs)
+            loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(
+                asv_inputs, gotu_inputs, asv_unifrac, outputs
+            )
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -266,7 +220,9 @@ class GOTUModel(tf.keras.Model):
         asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
         gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
         outputs = self((asv_inputs, gotu_inputs), training=False)
-        loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(asv_inputs, gotu_inputs, asv_unifrac, outputs)
+        loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(
+            asv_inputs, gotu_inputs, asv_unifrac, outputs
+        )
 
         self.loss_tracker.update_state(loss)
         self.gotu_tracker.update_state(gotu_loss)
@@ -327,7 +283,9 @@ class GOTUModel(tf.keras.Model):
             asv_inputs,
             **kwargs,
         )
-        gotu_pred = self.gotu_decoder(asv_embeddings, gotu_embeddings, asv_mask, gotu_mask, training=training)
+        gotu_pred = self.gotu_decoder(
+            asv_embeddings, gotu_embeddings, asv_mask, gotu_mask, training=training
+        )
         gotu_pred = self.gotu_output(gotu_pred)
         gotu_pred = self._softmax(gotu_pred)
 
