@@ -39,7 +39,6 @@ def validate_metadata(table, metadata, missing_samples_flag):
         metadata = metadata.loc[table.ids()]
     return table.ids(), table, metadata
 
-
 def fit_asv_encoder_decorator(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -167,24 +166,13 @@ def fit_asv_encoder_decorator(func):
         )
         model.set_weights(model_saver.best_weights)
         model.save(model_save_path, save_format="keras")
-        # return func(model, *args, **kwargs)
-        # print("Msodel has been saved to", output_dir)
 
         return func(model, *args, **kwargs)
     return wrapper
 
-
 def fit_denoised_unifrac_regressor_decorator(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        import tensorflow_addons as tfa
-
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
-        from aam.callbacks import LAMBLRScheduler
-        from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
-        from aam.models.nucleotide_encoder_v3 import NucleotideEncoderV3
-        from aam.models.utils import cos_decay_with_warmup
-
         i_tree=  kwargs['i_tree']
         i_table = kwargs['i_table']
         m_metadata_file = kwargs['m_metadata_file']
@@ -892,10 +880,6 @@ def predict_sample_regressor_decorator(func):
         _mean_absolute_error(y_pred, y_true, os.path.join(output_dir, "mae.png"))
         return func(y_pred, y_true, **kwargs)
     return wrapper
-
-
-
-
 
 def fit_gotu_decorator(func):
     @functools.wraps(func)
