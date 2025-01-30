@@ -27,6 +27,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         self.attention._build_from_signature(input_shape, input_shape)
 
         if self.use_linear_bias:
+            print("Using linear bias")
             setattr(self.attention, "_softmax", LinearBiasSoftmax())
 
         if self.use_residual_connections:

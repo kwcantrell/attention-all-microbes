@@ -36,7 +36,9 @@ def batch_embeddings(asv_embeddings, batch_indicies, counts, asv_indices=None):
         asv_embeddings = tf.gather(asv_embeddings, asv_indices)
     batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
     max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-    batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
+    batch_embeddings = tf.scatter_nd(
+        batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+    )
     counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
     return batch_embeddings, counts
 
@@ -97,11 +99,14 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         self.sample_ids = None
         self.asv_ids = None
 
-        print("rarefy table...")
-        self.rarefied_table: Table = self.table.subsample(rarefy_depth)
-
         if self.tree_path is not None:
             self.tree = to_skbio_treenode(parse_newick(open(self.tree_path).read()))
+            self.postorder_pos = {
+                n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()
+            }
+
+        print("rarefy table...")
+        self.rarefied_table: Table = self.table.subsample(rarefy_depth)
 
         self.size = self.rarefied_table.shape[1]
         self.steps_per_epoch = self.size // self.batch_size
@@ -131,8 +136,8 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
             sorted_indices = np.argsort(sample_counts)
             sorted_descending = sorted_indices[::-1]
-            obs_indices.append(obs_idx[sorted_descending])
-            counts.append(sample_counts[sorted_descending])
+            obs_indices.append(obs_idx)  # [sorted_descending])
+            counts.append(sample_counts)  # [sorted_descending])
 
             cur_row_indx += 1
 
@@ -143,19 +148,23 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         # get list of unique observations in batch
         unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
+        if self.is_16S:
+            lookup = {
+                "a": 1,
+                "c": 2,
+                "g": 3,
+                "t": 4,
+            }
 
-        lookup = {
-            "a": 1,
-            "c": 2,
-            "g": 3,
-            "t": 4,
-        }
+            def map(asv):
+                asv = asv.lower()
+                return np.array([lookup[c] for c in asv], dtype=np.int32)[np.newaxis, :]
 
-        def map(asv):
-            asv = asv.lower()
-            return np.array([lookup[c] for c in asv], dtype=np.int32)[np.newaxis, :]
-
-        tokens = np.concatenate([map(asv) for asv in self.asv_ids[unique_obs]], axis=0)
+            tokens = np.concatenate(
+                [map(asv) for asv in self.asv_ids[unique_obs]], axis=0
+            )
+        else:
+            tokens = unique_obs
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
 
         if self.return_sample_ids:
@@ -168,7 +177,10 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
 
     def on_epoch_end(self):
-        if self.gen_new_tables and self.epochs_since_last_table > self.gen_new_table_frequency:
+        if (
+            self.gen_new_tables
+            and self.epochs_since_last_table > self.gen_new_table_frequency
+        ):
             print("resampling dataset...")
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
             self.epochs_since_last_table = 0
@@ -187,6 +199,16 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         self._rarefied_table = table
         print("removing empty sample/obs from table")
         self._rarefied_table.remove_empty()
+        if self.tree_path is not None:
+
+            def sort_obs(obs):
+                post_pos = [self.postorder_pos[ob] for ob in obs]
+                sorted_indices = np.argsort(post_pos)
+                return obs[sorted_indices]
+
+            self._rarefied_table = self._rarefied_table.sort(
+                sort_obs, axis="observation"
+            )
 
         self.sample_ids = self._rarefied_table.ids()
         self.asv_ids = self._rarefied_table.ids(axis="observation")
@@ -251,184 +273,6 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             metadata = (metadata - self.shift) / self.scale
         self._metadata = metadata.reindex(self.table.ids())
         print("done preprocessing metadata")
-
-    # def create_rarefied_table(self, table):
-    #     rarefied_table = table.subsample(self.rarefy_depth, seed=self.seed)
-    #     sample_mask = rarefied_table.pa(inplace=False).sum(axis="sample") <= self.max_token_per_sample
-    #     return rarefied_table, sample_mask
-
-    # def _table_data(self, table: Table) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    #     table = table.copy()
-    #     table = table.transpose()
-    #     shape = table.shape
-    #     coo = table.matrix_data.tocoo()
-    #     (data, (row, col)) = (coo.data, coo.coords)
-    #     return data, row, col, shape
-
-    # def _create_table_data(self, table: Table) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    #     obs_encodings = table.ids(axis="observation")
-    #     s_ids = table.ids(axis="sample")
-
-    #     table_counts, row, col, _ = self._table_data(table)
-
-    #     # only keep observations with count > 0
-    #     table_mask = table_counts > 0
-    #     table_counts = table_counts[table_mask]
-    #     row = row[table_mask]
-    #     col = col[table_mask]
-
-    #     return row, col, table_counts, obs_encodings, s_ids
-
-    # def __len__(self):
-    #     return self.steps_per_epoch
-
-    # def __getitem__(self, idx):
-    #     start = idx * self.batch_size
-    #     end = start + self.batch_size
-
-    #     samples = self.sample_indices[start:end]
-    #     (batch_counts, counts, tokens, indices, y_output, encoder_out, ob_ids, s_ids) = self._sample_data(samples)
-
-    #     lookup = {
-    #         "a": 1,
-    #         "c": 2,
-    #         "g": 3,
-    #         "t": 3,
-    #     }
-
-    #     def map(asv):
-    #         asv = asv.lower()
-    #         return [lookup[c] for c in asv]
-
-    #     tokens = [map(o) for o in tokens]
-    #     if counts is not None:
-    #         table_output = (
-    #             batch_counts.astype(np.int32),
-    #             tokens,
-    #             indices.astype(np.int32),
-    #             counts.astype(np.int32),
-    #         )
-
-    #     if self.return_sample_ids:
-    #         row, col, counts, obs_encodings, sample_ids = self.table_data
-    #         return (table_output, s_ids)
-
-    #     output = None
-    #     if y_output is not None:
-    #         output = y_output.astype(np.float32)
-
-    #     if encoder_out is not None:
-    #         if isinstance(encoder_out, tuple):
-    #             encoder_out = tuple([o.astype(t) for o, t in zip(encoder_out, self.encoder_dtype)])
-    #         else:
-    #             encoder_out = encoder_out.astype(self.encoder_dtype)
-
-    #         if output is not None:
-    #             output = (output, encoder_out)
-    #         else:
-    #             output = encoder_out
-
-    #     if output is not None:
-    #         return (table_output, output)
-    #     else:
-    #         return table_output
-
-    # def _sample_data(self, samples) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    #     row, col, counts, obs_encodings, sample_ids = self.table_data
-
-    #     if max(samples) >= len(sample_ids):
-    #         raise Exception(f"\tsample_indices exceed max {len(sample_ids)}. samples {samples}...")
-    #     s_ids = [self.rarefy_table.ids()[s] for s in samples]
-
-    #     samples = samples.reshape((-1, 1))
-    #     row = row.reshape((1, -1))
-    #     batch_mask = samples == row
-    #     batch_counts = np.sum(batch_mask.astype(np.int32), axis=-1)
-    #     batch_mask = np.logical_or.reduce(batch_mask, axis=0)
-
-    #     s_counts = counts[batch_mask]
-
-    #     s_obj_ids = col[batch_mask]
-    #     if self.is_16S:
-    #         unique_obj, obj_indices = np.unique(s_obj_ids, return_inverse=True)
-    #         s_tokens = obs_encodings[unique_obj]
-    #     else:
-    #         s_tokens = self.gotu_tokens(s_obj_ids)
-    #     s_max_token = np.max(batch_counts)
-
-    #     if s_max_token > self.max_token_per_sample:
-    #         print(f"\tskipping group due to exceeding token limit {s_max_token}...")
-    #         return None, None, None, None, None, None
-
-    #     y_output = self._y_output(self.y_data, s_ids)
-    #     encoder_output = self._encoder_output(self.encoder_target, s_ids, s_obj_ids)
-
-    #     return (
-    #         batch_counts,
-    #         s_counts.reshape((-1, 1)),
-    #         s_tokens,
-    #         obj_indices,
-    #         y_output,
-    #         encoder_output,
-    #         s_obj_ids,
-    #         s_ids,
-    #     )
-
-    # def _create_table(self):
-    #     self.rarefy_table, self.sample_mask = self.create_rarefied_table(self.preprocessed_table)
-
-    #     print(f"Postrarefaction Table shape: {self.rarefy_table.shape}")
-    #     self.sample_indices = np.arange(len(self.rarefy_table.ids()))
-
-    #     if not hasattr(self, "steps_per_epoch"):
-    #         self.size = len(self.sample_indices)
-    #         self.steps_per_epoch = self.size // self.batch_size
-
-    #     self.sample_indices = self.sample_indices[self.sample_mask]
-    #     self.sample_ids = self.rarefy_table.ids()[self.sample_mask]
-    #     fill_out = math.ceil(self.size / len(self.sample_indices))
-
-    #     if self.size != len(self.sample_indices):
-    #         self.sample_indices = np.repeat([self.sample_indices], repeats=fill_out + 1, axis=0).reshape((-1))
-
-    #     if self.shuffle:
-    #         np.random.shuffle(self.sample_indices)
-
-    #     self.table_data = self._create_table_data(self.rarefy_table)
-    #     self.y_data = self._create_y_data(self.rarefy_table)
-    #     self._create_encoder_target(self.rarefy_table)
-    #     self.epochs_since_last_table = 0
-
-    # def on_epoch_end(self):
-    #     print("creating table...")
-    #     print(f"Prerafaction Table shape: {self.preprocessed_table.shape}")
-
-    #     if self.epochs_since_last_table >= self.gen_new_table_frequency or not hasattr(self, "steps_per_epoch"):
-    #         self._create_table()
-
-    #     self.epochs_since_last_table += 1
-
-    # def _validate_dataframe(self, df: pd.DataFrame):
-    #     if isinstance(df, str):
-    #         if not os.path.exists(df):
-    #             raise TypeError(f"Invalid path: {df}")
-    #     elif not isinstance(df, pd.DataFrame):
-    #         raise TypeError("Excepted a file path or DataFrame")
-
-    # def _encoder_output(self, encoder_target, sample_ids, obs_ids):
-    #     return None
-
-    # def _y_output(self, y_data: Optional[pd.Series], sample_ids: Iterable[str]) -> np.ndarray:
-    #     if y_data is None:
-    #         return None
-
-    #     if not (y_data, pd.Series):
-    #         raise Exception(f"Invalid y_data object: {type(y_data)}")
-
-    #     if not self.is_categorical:
-    #         return y_data.loc[sample_ids].to_numpy().reshape(-1, 1)
-
-    #     return y_data.loc[sample_ids].to_numpy().reshape(-1, 1)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 import tensorflow as tf
 
 
-@tf.function(reduce_retracing=True)
 def _construct_bias(inputs):
     shape = tf.shape(inputs)
     query_len = shape[2]
@@ -111,7 +110,6 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
             # is effectively the same as removing these entirely.
             inputs += adder
         inputs += self.bias()
-        print("Using linear bias")
         return tf.keras.backend.softmax(inputs, axis=self.axis)
 
     def get_config(self):

@@ -142,7 +142,6 @@ def get_dataset(gen: MultiDepthGenerator):
             ),
         )
 
-    dataset = dataset.prefetch(10)
     return dataset
 
 

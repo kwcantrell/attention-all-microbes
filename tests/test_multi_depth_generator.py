@@ -20,59 +20,87 @@ def tokens_to_asv(tokens):
     return asv
 
 
+def batch_embeddings(asv_embeddings, batch_indicies, asv_indices, counts):
+    emb_dim = tf.shape(asv_embeddings)[-1]
+    if asv_indices is not None:
+        asv_embeddings = tf.gather(asv_embeddings, asv_indices)
+    batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+    max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+    batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
+    counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+    return batch_embeddings, counts
+
+
 def test_sample_info():
-    table_path = "agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom"
+    table_path = "/home/kalen/amplicon-gpt/tests/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom"
+    tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
     metadata_path = "agp-healthy.txt"
     batch_size = 8
     gd = MultiDepthGenerator(
         table=table_path,
+        tree_path=tree_path,
         metadata=metadata_path,
         metadata_column="host_age",
         scale="minmax",
         gen_new_tables=True,
         batch_size=batch_size,
         shuffle=False,
+        sample_depths=[1000, 5000],
     )
 
-    table = gd.rarefied_table.copy()
-    sample_ids = table.ids()
-    o_ids = table.ids(axis="observation")
+    tables = [g.rarefied_table for g in gd.generators]
 
-    def _extract_sample(s_id):
-        table_data = table.data(s_id, dense=True)
-        mask = table_data > 0
+    common_ids = set()
+    for table in tables:
+        common_ids.update(table.ids())
 
-        sample_ids, sample_counts = o_ids[mask], table_data[mask]
-        sorted_indices = np.argsort(sample_counts)
-        sorted_descending = sorted_indices[::-1]
-        return sample_ids[sorted_descending], sample_counts[sorted_descending]
+    assert common_ids == set(gd.common_ids)
 
-    for i in range(len(gd)):
-        print(f"testing batch {i}")
-        batch_ids = sample_ids[i * batch_size : (i + 1) * batch_size]
-        table_batch = [_extract_sample(s_id) for s_id in batch_ids]
+    inputs, outputs = gd[0]
 
-        (tokens, indices, asv_indices, counts), y = gd[i]
-        batch_tokens, batch_counts = batch_embeddings(tokens, asv_indices, indices, counts)
-        batch_gen = []
-        for sample, counts in zip(list(batch_tokens.numpy()), list(batch_counts.numpy())):
-            sample_asvs = []
-            sample_mask = counts.reshape((-1)) > 0
-            sample = sample[sample_mask]
+    # check unifrac is correct
+    batch_ids = gd.common_ids[: gd.batch_size]
+    distances = [gen._encoder_output(batch_ids) for gen in gd.generators]
+    distancecs = np.vstack(distances)
 
-            for asv_tokens in sample:
-                sample_asvs.append(tokens_to_asv(asv_tokens))
-            batch_gen.append((np.hstack(sample_asvs), counts[sample_mask]))
+    assert np.array_equal(distancecs, outputs[1])
 
-        for table_sample, gen_sample in zip(table_batch, batch_gen):
-            table_obs, table_counts = table_sample
-            gen_obs, gen_counts = gen_sample
+    gen_tokens, gen_counts = batch_embeddings(*inputs)
 
-            assert np.array_equal(table_counts.reshape((-1)), gen_counts.reshape((-1)))
-            assert np.array_equal(table_obs, gen_obs)
+    sample_asvs, sample_counts = [], []
+    for gen in gd.generators:
+        obs_ids = gen.rarefied_table.ids(axis="observation")
+        for s_id in batch_ids:
+            sample_data = gen.rarefied_table.data(s_id, dense=False).tocoo()
+            (obs_idx, _), counts = sample_data.coords, sample_data.data
 
+            sorted_indices = np.argsort(counts)
+            sorted_indices = sorted_indices[::-1]
 
-# def test_batch_reconstruction():
+            sample_asvs.append(obs_ids[obs_idx[sorted_indices]])
+            sample_counts.append(counts[sorted_indices, np.newaxis])
+
+    lookup = ["", "A", "C", "G", "T"]
+
+    def map(asv_tokens):
+        return "".join([lookup[t] for t in asv_tokens])
+
+    gen_asvs = np.apply_along_axis(map, -1, gen_tokens.numpy())
+
+    max_asv_count = np.max([len(sample_tokens) for sample_tokens in sample_asvs])
+
+    sample_asvs = [
+        np.expand_dims(np.pad(asvs, (0, max_asv_count - len(asvs)), constant_values=""), axis=0) for asvs in sample_asvs
+    ]
+    sample_asvs = np.vstack(sample_asvs)
+
+    sample_counts = [
+        np.expand_dims(np.pad(counts, ((0, max_asv_count - len(counts)), (0, 0))), axis=0) for counts in sample_counts
+    ]
+    sample_counts = np.vstack(sample_counts)
+
+    assert np.array_equal(sample_asvs, gen_asvs)
+    assert np.array_equal(sample_counts, gen_counts)
 
 
 if __name__ == "__main__":
