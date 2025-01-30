@@ -1,0 +1,1135 @@
+from __future__ import annotations
+
+import datetime
+import os
+from typing import Union
+
+import click
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from biom import load_table
+from bp import parse_newick, to_skbio_treenode
+from sklearn.model_selection import KFold, StratifiedKFold
+
+from aam.callbacks import (
+    ConfusionMatrx,
+    SaveModel,
+    _confusion_matrix,
+    _mean_absolute_error,
+)
+from aam.cv_utils import CVModel, EnsembleModel
+import functools
+
+
+def validate_metadata(table, metadata, missing_samples_flag):
+    # check for mismatch samples
+    ids = table.ids(axis="sample")
+    shared_ids = np.intersect1d(ids, metadata.index)
+    min_ids = min(len(shared_ids), len(ids), len(metadata.index))
+    max_ids = max(len(shared_ids), len(ids), len(metadata.index))
+    if len(shared_ids) == 0:
+        raise Exception("Table and Metadata have no matching sample ids")
+    if min_ids != max_ids and missing_samples_flag == "error":
+        raise Exception("Table and Metadata do not share all same sample ids.")
+    elif min_ids != max_ids and missing_samples_flag == "ignore":
+        print("Warning: Table and Metadata do not share all same sample ids.")
+        print("Table and metadata will be filtered")
+        table = table.filter(shared_ids, inplace=False)
+        metadata = metadata.loc[table.ids()]
+    return table.ids(), table, metadata
+
+
+def fit_asv_encoder_decorator(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        import tensorflow_addons as tfa
+
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+        from aam.callbacks import LAMBLRScheduler
+        from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
+        from aam.models.nucleotide_encoder_v3 import NucleotideEncoderV3
+        from aam.models.utils import cos_decay_with_warmup
+
+        i_tree=  kwargs['i_tree']
+        p_sequence_batch_size = kwargs['p_sequence_batch_size']
+        p_pairwise_batch_size = kwargs['p_pairwise_batch_size']
+        p_epochs = kwargs['p_epochs']
+        p_dropout = kwargs['p_dropout']
+        p_embedding_dim = kwargs['p_embedding_dim']
+        p_attention_heads = kwargs['p_attention_heads']
+        p_attention_layers = kwargs['p_attention_layers']
+        p_intermediate_size = kwargs['p_intermediate_size']
+        p_intermediate_activation = kwargs['p_intermediate_activation']
+        p_lr = kwargs['p_lr']
+        p_decay_steps = kwargs['p_decay_steps']
+        p_max_bp = kwargs['p_max_bp']
+        output_dir = kwargs['output_dir']
+        p_weight_decay = kwargs['p_weight_decay']
+        p_normalize_outputs = kwargs['p_normalize_outputs']
+        p_use_residual_connections = kwargs['p_use_residual_connections']
+        i_model = kwargs['i_model']
+        p_include_bert_loss = kwargs['p_include_bert_loss']
+        p_use_linear_bias = kwargs['p_use_linear_bias']
+
+        # launch datasets first so they can begin to preprocess
+        common_kwargs = {
+            "sequence_batch_size": p_sequence_batch_size,
+            "pairwise_batch_size": p_pairwise_batch_size,
+            "max_bp": p_max_bp,
+            "epochs": p_epochs,
+        }
+        train_gen = ASVGenerator(
+            tree=i_tree,
+            shuffle=True,
+            **common_kwargs,
+        )
+        train_dataset = get_dataset(train_gen)
+
+        val_gen = ASVGenerator(
+            tree=i_tree,
+            shuffle=False,
+            subsample=0.01,
+            **common_kwargs,
+        )
+        val_dataset = get_dataset(val_gen)
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        figure_path = os.path.join(output_dir, "figures")
+        if not os.path.exists(figure_path):
+            os.makedirs(figure_path)
+        if i_model is not None:
+            print("loading existing model...")
+            model = tf.keras.models.load_model(i_model, compile=False)
+        else:
+            model: tf.keras.Model = NucleotideEncoderV3(
+                embedding_dim=p_embedding_dim,
+                max_bp=p_max_bp,
+                dropout_rate=p_dropout,
+                intermediate_activation=p_intermediate_activation,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                normalize_outputs=p_normalize_outputs,
+                use_residual_connections=p_use_residual_connections,
+                use_linear_bias=p_use_linear_bias,
+            )
+
+        lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
+
+        optimizer = tfa.optimizers.LAMB(
+            learning_rate=p_lr,
+            weight_decay=p_weight_decay,
+            exclude_from_weight_decay=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+            ],
+            exclude_from_layer_adaptation=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+            ],
+        )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+
+        token_shape = tf.TensorShape([None, 150])
+        model.build(token_shape)
+        model.compile(
+            include_bert_loss=p_include_bert_loss,
+            optimizer=optimizer,
+            run_eagerly=False,
+        )
+        model.summary()
+
+        log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_dir = os.path.join(output_dir, log_dir)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        model_save_path = os.path.join(output_dir, "model.keras")
+        model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+        core_callbacks = [
+            # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+            model_saver,
+        ]
+
+        model.fit(
+            train_dataset,
+            validation_data=val_dataset,
+            callbacks=[*core_callbacks, lr_scheduler],
+            epochs=p_epochs,
+            steps_per_epoch=train_gen.steps_per_epoch,
+            validation_steps=val_gen.steps_per_epoch,
+        )
+        model.set_weights(model_saver.best_weights)
+        model.save(model_save_path, save_format="keras")
+        # return func(model, *args, **kwargs)
+        # print("Msodel has been saved to", output_dir)
+
+        return func(model, *args, **kwargs)
+    return wrapper
+
+
+def fit_denoised_unifrac_regressor_decorator(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        import tensorflow_addons as tfa
+
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+        from aam.callbacks import LAMBLRScheduler
+        from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
+        from aam.models.nucleotide_encoder_v3 import NucleotideEncoderV3
+        from aam.models.utils import cos_decay_with_warmup
+
+        i_tree=  kwargs['i_tree']
+        i_table = kwargs['i_table']
+        m_metadata_file = kwargs['m_metadata_file']
+        m_metadata_column = kwargs['m_metadata_column']
+        p_missing_samples = kwargs['p_missing_samples']
+        p_batch_size = kwargs['p_batch_size']
+        p_epochs = kwargs['p_epochs']
+        p_dropout = kwargs['p_dropout']
+        p_asv_dropout = kwargs['p_asv_dropout']
+        p_patience = kwargs['p_patience']
+        p_early_stop_warmup = kwargs['p_early_stop_warmup']
+        i_model = kwargs['i_model']
+        i_unifrac_model: Union[None, str] = kwargs['i_unifrac_model']
+        p_embedding_dim: int = kwargs['p_embedding_dim']
+        p_attention_heads: int = kwargs['p_attention_heads']
+        p_attention_layers: int = kwargs['p_attention_layers']
+        p_intermediate_size: int = kwargs['p_intermediate_size']
+        p_intermediate_activation: str = kwargs['p_intermediate_activation']
+        p_asv_limit: int = kwargs['p_asv_limit']
+        p_gen_new_table: bool = kwargs['p_gen_new_table']
+        p_lr: float = kwargs['p_lr']
+        p_warmup_steps: int = kwargs['p_warmup_steps']
+        p_decay_steps: int = kwargs['p_decay_steps']
+        p_max_bp: int = kwargs['p_max_bp']
+        output_dir: str = kwargs['output_dir']
+        p_add_token: bool = kwargs['p_add_token']
+        p_gotu = kwargs['p_gotu']
+        p_is_categorical: bool = kwargs['p_is_categorical']
+        p_rarefy_depth: int = kwargs['p_rarefy_depth']
+        p_weight_decay: float = kwargs['p_weight_decay']
+        p_accumulation_steps = kwargs['p_accumulation_steps']
+        p_unifrac_metric: str = kwargs['p_unifrac_metric']
+        p_loss_type: str = kwargs['p_loss_type']
+        p_normalize_outputs = kwargs['p_normalize_outputs']
+        p_use_residual_connections: bool = kwargs['p_use_residual_connections']
+        p_use_residual_pool: bool = kwargs['p_use_residual_pool']
+        p_train_nuc_encoder: bool = kwargs['p_train_nuc_encoder']
+        p_nuc_encoder: Union[None, tf.keras.Model] = kwargs['p_nuc_encoder']
+        p_use_linear_bias: bool = kwargs['p_use_linear_bias']
+
+        
+        import tensorflow_addons as tfa
+        from biom import load_table
+
+        from aam.callbacks import LAMBLRScheduler
+        from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
+        from aam.models.unifrac_denoising import UnifracDenoiser
+
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+        from aam.models.utils import cos_decay_with_warmup
+
+        # start pre processing dataset
+        table = load_table(i_table)
+        df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+        ids, table, df = validate_metadata(table, df, p_missing_samples)
+        indices = np.arange(len(ids), dtype=np.int32)
+
+        np.random.shuffle(indices)
+        train_size = int(len(ids) * 0.8)
+
+        train_indices = indices[:train_size]
+        train_ids = ids[train_indices]
+        train_table = table.filter(train_ids, inplace=False)
+
+        val_indices = indices[train_size:]
+        val_ids = ids[val_indices]
+        val_table = table.filter(val_ids, inplace=False)
+        common_kwargs = {
+            "metadata_column": m_metadata_column,
+            "max_token_per_sample": p_asv_limit,
+            "sample_depths": [1000, 5000],
+            "batch_size": p_batch_size,
+            "is_16S": True,
+            "is_categorical": p_is_categorical,
+            "max_bp": p_max_bp,
+            "tree_path": i_tree,
+            "metadata": df,
+            "unifrac_metric": p_unifrac_metric,
+        }
+        train_gen = MultiDepthGenerator(
+            table=train_table,
+            shuffle=True,
+            shift=0.0,
+            scale=1.0,
+            gen_new_tables=p_gen_new_table,
+            epochs=p_epochs,
+            **common_kwargs,
+        )
+        training_dataset = get_dataset(train_gen)
+
+        val_gen = MultiDepthGenerator(
+            table=val_table,
+            shuffle=False,
+            shift=0.0,
+            scale=1.0,
+            gen_new_tables=False,
+            epochs=1,
+            **common_kwargs,
+        )
+        val_dataset = get_dataset(val_gen)
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        figure_path = os.path.join(output_dir, "figures")
+        if not os.path.exists(figure_path):
+            os.makedirs(figure_path)
+
+        output_dim = p_embedding_dim
+        if p_unifrac_metric == "faith_pd":
+            output_dim = 1
+
+        model = None
+        if i_model is not None:
+            model = tf.keras.models.load_model(i_model, compile=False)
+
+        if p_nuc_encoder is not None:
+            asv_encoder = tf.keras.models.load_model(p_nuc_encoder, compile=False)
+            asv_encoder.trainable = p_train_nuc_encoder
+
+            model: tf.keras.Model = UnifracDenoiser(
+                output_dim,
+                p_asv_limit,
+                p_unifrac_metric,
+                dropout_rate=p_dropout,
+                embedding_dim=p_embedding_dim,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                intermediate_activation=p_intermediate_activation,
+                max_bp=p_max_bp,
+                is_16S=True,
+                add_token=p_add_token,
+                asv_dropout_rate=p_asv_dropout,
+                accumulation_steps=p_accumulation_steps,
+                pairwise_loss_type=p_loss_type,
+                normalize_outputs=p_normalize_outputs,
+                use_residual_connections=p_use_residual_connections,
+                use_residual_pool=p_use_residual_pool,
+                asv_encoder=asv_encoder,
+                use_linear_bias=p_use_linear_bias,
+            )
+
+        lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
+
+        optimizer = tfa.optimizers.LAMB(
+            learning_rate=p_lr,
+            weight_decay=p_weight_decay,
+            exclude_from_weight_decay=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                # "embeddings",
+            ],
+            exclude_from_layer_adaptation=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                # "embeddings",
+            ],
+        )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+        #
+
+        token_shape = tf.TensorShape([None, 150])
+        batch_indicies = tf.TensorShape([None, 2])
+        indicies_shape = tf.TensorShape([None])
+        count_shape = tf.TensorShape([None, 1])
+        model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+        model.summary()
+        model.compile(
+            optimizer=optimizer,
+            run_eagerly=False,
+        )
+        log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_dir = os.path.join(output_dir, log_dir)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        model_save_path = os.path.join(output_dir, "model.keras")
+        model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+        core_callbacks = [
+            # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+            # tf.keras.callbacks.EarlyStopping(
+            #     "val_encoder_loss",
+            #     patience=p_patience,
+            #     start_from_epoch=p_early_stop_warmup,
+            # ),
+            model_saver,
+            lr_scheduler,
+        ]
+        model.fit(
+            training_dataset,
+            validation_data=val_dataset,
+            callbacks=[*core_callbacks],
+            epochs=p_epochs,
+            steps_per_epoch=train_gen.steps_per_epoch,
+            validation_steps=val_gen.steps_per_epoch,
+        )
+        model.set_weights(model_saver.best_weights)
+        model.save(model_save_path, save_format="keras")
+        return func(model, *args, **kwargs)
+    return wrapper
+
+def fit_taxonomy_regressor_decorator(func):
+    @functools.wraps(func)
+    def wrapper(**kwargs):
+        i_table= kwargs['i_table']
+        i_taxonomy = kwargs['i_taxonomy']
+        i_tax_level = kwargs['i_tax_level']
+        m_metadata_file = kwargs['m_metadata_file']
+        m_metadata_column = kwargs['m_metadata_column']
+        p_missing_samples = kwargs['p_missing_samples']
+        p_batch_size = kwargs['p_batch_size']
+        p_epochs = kwargs['p_epochs']
+        p_dropout = kwargs['p_dropout']
+        p_asv_dropout = kwargs['p_asv_dropout']
+        p_patience = kwargs['p_patience']
+        p_early_stop_warmup = kwargs['p_early_stop_warmup']
+        i_model: Union[None, str] = kwargs['i_model']
+        p_embedding_dim: int = kwargs['p_embedding_dim']
+        p_attention_heads: int = kwargs['p_attention_heads']
+        p_attention_layers: int = kwargs['p_attention_layers']
+        p_intermediate_size: int = kwargs['p_intermediate_size']
+        p_intermediate_activation: str = kwargs['p_intermediate_activation']
+        p_asv_limit: int = kwargs['p_asv_limit']
+        p_gen_new_table: bool = kwargs['p_gen_new_table']
+        p_lr: float = kwargs['p_lr']
+        p_warmup_steps: int = kwargs['p_warmup_steps']
+        p_decay_steps: int = kwargs['p_decay_steps']
+        p_max_bp: int = kwargs['p_max_bp']
+        output_dir: str = kwargs['output_dir']
+        p_add_token: bool = kwargs['p_add_token']
+        p_gotu: bool = kwargs['p_gotu']
+        p_is_categorical: bool = kwargs['p_is_categorical']
+        p_rarefy_depth: int = kwargs['p_rarefy_depth']
+        p_weight_decay: float   = kwargs['p_weight_decay']
+        p_accumulation_steps = kwargs['p_accumulation_steps']
+
+        from biom import load_table
+
+        from aam.data_handlers import TaxonomyGenerator
+        from aam.models.unifrac_encoder import UnifracEncoder
+        from aam.models.utils import cos_decay_with_warmup
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        figure_path = os.path.join(output_dir, "figures")
+        if not os.path.exists(figure_path):
+            os.makedirs(figure_path)
+
+        table = load_table(i_table)
+        df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+        ids, table, df = validate_metadata(table, df, p_missing_samples)
+        indices = np.arange(len(ids), dtype=np.int32)
+
+        np.random.shuffle(indices)
+        train_size = int(len(ids) * 0.8)
+
+        train_indices = indices[:train_size]
+        train_ids = ids[train_indices]
+        train_table = table.filter(train_ids, inplace=False)
+
+        val_indices = indices[train_size:]
+        val_ids = ids[val_indices]
+        val_table = table.filter(val_ids, inplace=False)
+
+        common_kwargs = {
+            "metadata_column": m_metadata_column,
+            "max_token_per_sample": p_asv_limit,
+            "rarefy_depth": p_rarefy_depth,
+            "batch_size": p_batch_size,
+            "is_16S": True,
+            "is_categorical": p_is_categorical,
+            "max_bp": p_max_bp,
+            "epochs": p_epochs,
+            "taxonomy": i_taxonomy,
+            "tax_level": i_tax_level,
+            "metadata": df,
+        }
+        train_gen = TaxonomyGenerator(
+            table=train_table,
+            shuffle=True,
+            shift=0.0,
+            scale=1.0,
+            gen_new_tables=p_gen_new_table,
+            **common_kwargs,
+        )
+        train_data = train_gen.get_data()
+
+        val_gen = TaxonomyGenerator(
+            table=val_table,
+            shuffle=False,
+            shift=0.0,
+            scale=1.0,
+            gen_new_tables=False,
+            **common_kwargs,
+        )
+        val_data = val_gen.get_data()
+
+        log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_dir = os.path.join(output_dir, log_dir)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        model_save_path = os.path.join(output_dir, "model.keras")
+        model_saver = SaveModel(model_save_path, 1, monitor="val_encoder_loss")
+        core_callbacks = [
+            tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+            # tf.keras.callbacks.EarlyStopping(
+            #     "val_loss", patience=p_patience, start_from_epoch=p_early_stop_warmup
+            # ),
+            model_saver,
+        ]
+
+        if i_model is not None:
+            model: tf.keras.Model = tf.keras.models.load_model(i_model)
+        else:
+            model: tf.keras.Model = UnifracEncoder(
+                train_gen.num_tokens,
+                p_asv_limit,
+                "taxonomy",
+                dropout_rate=p_dropout,
+                embedding_dim=p_embedding_dim,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                intermediate_activation=p_intermediate_activation,
+                max_bp=p_max_bp,
+                is_16S=True,
+                add_token=p_add_token,
+                asv_dropout_rate=p_asv_dropout,
+                accumulation_steps=p_accumulation_steps,
+            )
+        optimizer = tf.keras.optimizers.AdamW(
+            cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+            weight_decay=p_weight_decay,
+        )
+        optimizer.exclude_from_weight_decay(
+            var_names=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                "embeddings",
+            ]
+        )
+        token_shape = tf.TensorShape([None, None, 150])
+        count_shape = tf.TensorShape([None, None, 1])
+        model.build([token_shape, count_shape])
+        model.compile(
+            optimizer=optimizer,
+            run_eagerly=False,
+        )
+        model.summary()
+        model.fit(
+            train_data["dataset"],
+            validation_data=val_data["dataset"],
+            callbacks=[*core_callbacks],
+            epochs=p_epochs,
+            steps_per_epoch=train_data["steps_pre_epoch"],
+            validation_steps=val_data["steps_pre_epoch"],
+        )
+        model.set_weights(model_saver.best_weights)
+        model.save(model_save_path, save_format="keras")
+        return func(model, **kwargs)
+    return wrapper
+
+def fit_sample_regressor_decorator(func):
+    @functools.wraps(func)
+    def wrapper(**kwargs):
+        i_table: str = kwargs['i_table']
+        i_base_model_path: str = kwargs['i_base_model_path']
+        p_no_freeze_base_weights: bool = kwargs['p_no_freeze_base_weights']
+        m_metadata_file: str = kwargs['m_metadata_file']
+        m_metadata_column: str = kwargs['m_metadata_column']
+        p_missing_samples: str = kwargs['p_missing_samples']
+        p_epochs: int = kwargs['p_epochs']
+        p_cv: int = kwargs['p_cv']
+        p_test_size: float = kwargs['p_test_size']
+        p_patience: int = kwargs['p_patience']
+        p_early_stop_warmup: int = kwargs['p_early_stop_warmup']
+        p_batch_size: int = kwargs['p_batch_size']
+        p_dropout: float = kwargs['p_dropout']
+        p_asv_dropout: float = kwargs['p_asv_dropout']
+        p_report_back: int = kwargs['p_report_back']
+        p_asv_limit: int = kwargs['p_asv_limit']
+        p_penalty: float = kwargs['p_penalty']
+        p_nuc_penalty: float = kwargs['p_nuc_penalty']
+        p_embedding_dim: int = kwargs['p_embedding_dim']
+        p_attention_heads: int = kwargs['p_attention_heads']
+        p_attention_layers: int = kwargs['p_attention_layers']
+        p_intermediate_size: int = kwargs['p_intermediate_size']
+        p_intermediate_activation: str = kwargs['p_intermediate_activation']
+        p_taxonomy: str = kwargs['p_taxonomy']
+        p_taxonomy_level: int = kwargs['p_taxonomy_level']
+        p_tree: str = kwargs['p_tree']
+        p_gen_new_table: bool = kwargs['p_gen_new_table']
+        p_lr: int = kwargs['p_lr']
+        p_warmup_steps: int = kwargs['p_warmup_steps']
+        p_decay_steps: int = kwargs['p_decay_steps']
+        p_max_bp: int = kwargs['p_max_bp']
+        output_dir: str = kwargs['output_dir']
+        p_output_dim: int = kwargs['p_output_dim']
+        p_add_token: bool = kwargs['p_add_token']
+        p_gotu: bool = kwargs['p_gotu']
+        p_is_categorical: bool = kwargs['p_is_categorical']
+        p_rarefy_depth: int = kwargs['p_rarefy_depth']
+        p_weight_decay: float = kwargs['p_weight_decay']
+        p_accumulation_steps: int = kwargs['p_accumulation_steps']
+        p_unifrac_metric: str = kwargs['p_unifrac_metric']
+        p_scale_loss: bool = kwargs['p_scale_loss']
+        p_train_nuc_encoder: bool = kwargs['p_train_nuc_encoder']
+        p_include_count_encoder: bool = kwargs['p_include_count_encoder']
+
+        from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
+        from aam.models.sequence_regressor import SequenceRegressor
+
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
+        # p_is_16S = False
+        is_16S = not p_gotu
+        # p_is_categorical = True
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        figure_path = os.path.join(output_dir, "figures")
+        if not os.path.exists(figure_path):
+            os.makedirs(figure_path)
+
+        model_path = os.path.join(output_dir, "cv-models")
+        if not os.path.exists(model_path):
+            os.makedirs(model_path)
+
+        table = load_table(i_table)
+        df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+        ids, table, df = validate_metadata(table, df, p_missing_samples)
+        num_ids = len(ids)
+
+        fold_indices = np.arange(num_ids)
+        np.random.shuffle(fold_indices)
+        if p_test_size > 0:
+            test_size = int(num_ids * p_test_size)
+            train_size = num_ids - test_size
+            test_indices = fold_indices[train_size:]
+            fold_indices = fold_indices[:train_size]
+
+        print(len(test_indices), len(fold_indices))
+
+        common_kwargs = {
+            "metadata_column": m_metadata_column,
+            "max_token_per_sample": p_asv_limit,
+            "rarefy_depth": p_rarefy_depth,
+            "batch_size": p_batch_size,
+            "is_16S": is_16S,
+            "is_categorical": p_is_categorical,
+        }
+
+        def unifrac_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
+            common_kwargs = {
+                "metadata_column": m_metadata_column,
+                "max_token_per_sample": p_asv_limit,
+                "sample_depths": [1000, 5000],
+                "batch_size": p_batch_size,
+                "is_16S": True,
+                "is_categorical": p_is_categorical,
+                "max_bp": p_max_bp,
+                "tree_path": p_tree,
+                "metadata": df,
+            }
+            return MultiDepthGenerator(
+                table=table,
+                shuffle=shuffle,
+                shift=shift,
+                scale=scale,
+                gen_new_tables=gen_new_tables,
+                epochs=epochs,
+                unifrac_metric=None,
+                **common_kwargs,
+            )
+        
+        base_model = p_unifrac_metric
+        generator = unifrac_gen
+        # else:
+        #     raise Exception("Only taxonomy or UniFrac is supported.")
+
+        if i_base_model_path is not None:
+            base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
+            base_model.trainable = False
+
+        def _get_fold(
+            indices,
+            shuffle,
+            shift=None,
+            scale=None,
+            epochs=1000,
+            gen_new_tables=False,
+        ):
+            fold_ids = ids[indices]
+            table_fold = table.filter(fold_ids, axis="sample", inplace=False)
+            df_fold = df.loc[fold_ids]
+
+            gen = generator(table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables)
+            dataset = get_dataset(gen)
+
+            data_obj = {
+                "shift": shift,
+                "scale": scale,
+                "dataset": dataset,
+                "generator": gen,
+                "num_tokens": None,
+                "steps_per_epoch": len(gen),
+            }
+            return data_obj
+
+        if not p_is_categorical:
+            print("non-stratified folds")
+            kfolds = KFold(p_cv)
+            splits = kfolds.split(fold_indices)
+        else:
+            print("stratified folds...")
+            kfolds = StratifiedKFold(p_cv)
+            train_ids = ids[fold_indices]
+            train_classes = df.loc[df.index.isin(train_ids), m_metadata_column].values
+            splits = kfolds.split(fold_indices, train_classes)
+
+        models = []
+        for i, (train_ind, val_ind) in enumerate(splits):
+            train_data = _get_fold(
+                train_ind,
+                shuffle=True,
+                shift=0.0,
+                scale=100.0,
+                gen_new_tables=p_gen_new_table,
+            )
+            val_data = _get_fold(
+                val_ind,
+                shuffle=False,
+                shift=train_data["shift"],
+                scale=train_data["scale"],
+                epochs=1,
+            )
+            with open(os.path.join(model_path, f"f{i}_val_ids.txt"), "w") as f:
+                for id in ids[val_ind]:
+                    f.write(id + "\n")
+            vocab_size = 6 if not p_is_categorical else 2000
+
+            if base_model == "combined":
+                base_output_dim = [p_embedding_dim, 1, train_data["num_tokens"]]
+            elif base_model == "unifrac":
+                base_output_dim = p_embedding_dim
+            elif base_model == "faith_pd":
+                base_output_dim = 1
+            else:
+                base_output_dim = train_data["num_tokens"]
+
+            model = SequenceRegressor(
+                token_limit=p_asv_limit,
+                base_output_dim=base_output_dim,
+                shift=train_data["shift"],
+                scale=train_data["scale"],
+                dropout_rate=p_dropout,
+                embedding_dim=p_embedding_dim,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                intermediate_activation=p_intermediate_activation,
+                base_model=base_model,
+                freeze_base=p_no_freeze_base_weights,
+                penalty=p_penalty,
+                nuc_penalty=p_nuc_penalty,
+                max_bp=p_max_bp,
+                is_16S=is_16S,
+                vocab_size=vocab_size,
+                out_dim=p_output_dim,
+                classifier=p_is_categorical,
+                add_token=p_add_token,
+                class_weights=None,  # train_data["class_weights"],
+                accumulation_steps=p_accumulation_steps,
+                scale_losses=p_scale_loss,
+                use_linear_bias=True,
+            )
+            # for x, y in train_data["dataset"].take(1):
+            #     model(x)
+            token_shape = tf.TensorShape([None, 150])
+            batch_indicies = tf.TensorShape([None, 2])
+            indicies_shape = tf.TensorShape([None])
+            count_shape = tf.TensorShape([None, 1])
+            model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+            model.summary()
+
+            fold_label = i + 1
+            if not p_is_categorical:
+                loss = tf.keras.losses.MeanSquaredError(reduction="none")
+                callbacks = [
+                    # MeanAbsoluteError(
+                    #     monitor="val_mae",
+                    #     dataset=val_data["dataset"],
+                    #     output_dir=os.path.join(
+                    #         figure_path, f"model_f{fold_label}-val.png"
+                    #     ),
+                    #     report_back=p_report_back,
+                    # )
+                ]
+            else:
+                loss = tf.keras.losses.CategoricalFocalCrossentropy(from_logits=False, reduction="none")
+                # loss = tf.keras.losses.CategoricalHinge(reduction="none")
+                callbacks = [
+                    ConfusionMatrx(
+                        monitor="val_target_loss",
+                        dataset=val_data["dataset"],
+                        output_dir=os.path.join(figure_path, f"model_f{fold_label}-val.png"),
+                        report_back=p_report_back,
+                    )
+                ]
+            model_cv = CVModel(
+                model,
+                train_data,
+                val_data,
+                output_dir,
+                fold_label,
+            )
+            metric = "mae" if not p_is_categorical else "target_loss"
+            model_cv.fit_fold(
+                loss,
+                p_epochs,
+                os.path.join(model_path, f"model_f{fold_label}.keras"),
+                metric=metric,
+                patience=p_patience,
+                early_stop_warmup=p_early_stop_warmup,
+                callbacks=[*callbacks],
+                lr=p_lr,
+                warmup_steps=p_warmup_steps,
+                decay_steps=p_decay_steps,
+                weight_decay=p_weight_decay,
+            )
+            models.append(model_cv)
+            print(f"Fold {i + 1} mae: {model_cv.metric_value}")
+
+        best_model_path = os.path.join(output_dir, "best-model.keras")
+        model_ensemble = EnsembleModel(models)
+        model_ensemble.save_best_model(best_model_path)
+        best_mae, ensemble_mae = model_ensemble.val_maes()
+        print(f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}")
+
+        test_data = _get_fold(
+            test_indices,
+            shuffle=False,
+            shift=train_data["shift"],
+            scale=train_data["scale"],
+            epochs=1,
+            num_tables=5,
+        )
+        best_mae, ensemble_mae = model_ensemble.plot_fn(_mean_absolute_error, test_data["dataset"], figure_path)
+        print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
+        return func(model_ensemble, **kwargs)
+    return wrapper
+
+def predict_sample_regressor_decorator(func):
+
+    @functools.wraps(func)
+    def wrapper(**kwargs):
+        i_table: str = kwargs['i_table']
+        i_model_path: str = kwargs['i_model_path']
+        m_metadata_file: str = kwargs['m_metadata_file']
+        m_metadata_column: str = kwargs['m_metadata_column']
+        p_missing_samples: str = kwargs['p_missing_samples']
+        p_asv_limit: int = kwargs['p_asv_limit']
+        p_batch_size: int = kwargs['p_batch_size']
+        p_mixed_precision: bool = kwargs['p_mixed_precision']
+        output_dir: str = kwargs['output_dir']
+        
+        from aam.transfer_data_utils import (
+        load_data,
+        shuffle,
+        validate_metadata,
+        )
+
+        if p_mixed_precision:
+            print("\nUsing mixed precision\n")
+            tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        table = load_table(i_table)
+        df = pd.read_csv(m_metadata_file, sep="\t", index_col=0)[[m_metadata_column]]
+        ids, table, df = validate_metadata(table, df, p_missing_samples)
+        table, df = shuffle(table, df)
+
+        data = load_data(
+            table,
+            False,
+            df,
+            m_metadata_column,
+            shuffle_samples=shuffle,
+            batch_size=p_batch_size,
+            max_token_per_sample=p_asv_limit,
+        )
+
+        model = tf.keras.models.load_model(i_model_path)
+
+        y_pred, y_true = model.predict(data["dataset"])
+        _mean_absolute_error(y_pred, y_true, os.path.join(output_dir, "mae.png"))
+        return func(y_pred, y_true, **kwargs)
+    return wrapper
+
+
+
+
+
+def fit_gotu_decorator(func):
+    @functools.wraps(func)
+    def wrapper(**kwargs):
+        i_asv_table: str = kwargs['i_asv_table']
+        i_gotu_table: str = kwargs['i_gotu_table']
+        i_base_model_path: str = kwargs['i_base_model_path']
+        p_no_freeze_base_weights: bool = kwargs['p_no_freeze_base_weights']
+        m_metadata_file: str = kwargs['m_metadata_file']
+        m_metadata_column: str = kwargs['m_metadata_column']
+        p_missing_samples: str = kwargs['p_missing_samples']
+        p_epochs: int = kwargs['p_epochs']
+        p_cv: int = kwargs['p_cv']
+        p_test_size: float = kwargs['p_test_size']
+        p_patience: int = kwargs['p_patience']
+        p_early_stop_warmup: int = kwargs['p_early_stop_warmup']
+        p_batch_size: int = kwargs['p_batch_size']
+        p_dropout: float = kwargs['p_dropout']
+        p_asv_dropout: float = kwargs['p_asv_dropout']
+        p_report_back: int = kwargs['p_report_back']
+        p_asv_limit: int = kwargs['p_asv_limit']
+        p_penalty: float = kwargs['p_penalty']
+        p_nuc_penalty: float = kwargs['p_nuc_penalty']
+        p_embedding_dim: int = kwargs['p_embedding_dim']
+        p_attention_heads: int = kwargs['p_attention_heads']
+        p_attention_layers: int = kwargs['p_attention_layers']
+        p_intermediate_size: int = kwargs['p_intermediate_size']
+        p_intermediate_activation: str = kwargs['p_intermediate_activation']
+        p_taxonomy: str = kwargs['p_taxonomy']
+        p_taxonomy_level: int = kwargs['p_taxonomy_level']
+        p_tree: str = kwargs['p_tree']
+        p_gen_new_table: bool = kwargs['p_gen_new_table']
+        p_lr: int = kwargs['p_lr']
+        p_warmup_steps: int = kwargs['p_warmup_steps']
+        p_decay_steps: int = kwargs['p_decay_steps']
+        p_max_bp: int = kwargs['p_max_bp']
+        output_dir: str = kwargs['output_dir']
+        p_output_dim: int = kwargs['p_output_dim']
+        p_add_token: bool = kwargs['p_add_token']
+        p_is_categorical: bool = kwargs['p_is_categorical']
+        p_gotu_rarefy_depth: int = kwargs['p_gotu_rarefy_depth']
+        p_asv_rarefy_depth: int = kwargs['p_asv_rarefy_depth']
+        p_weight_decay: float = kwargs['p_weight_decay']
+        p_accumulation_steps: int = kwargs['p_accumulation_steps']
+        p_unifrac_metric: str = kwargs['p_unifrac_metric']
+        p_scale_loss: bool = kwargs['p_scale_loss']
+        p_normalize_outputs: bool = kwargs['p_normalize_outputs']
+
+        from aam.data_handlers import GOTUGenerator
+        from aam.models.gotu_model import GOTUModel
+        from aam.models.unifrac_encoder import UnifracEncoder
+        from aam.models.utils import cos_decay_with_warmup
+
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        figure_path = os.path.join(output_dir, "figures")
+        if not os.path.exists(figure_path):
+            os.makedirs(figure_path)
+
+        asv_table = load_table(i_asv_table)
+        gotu_table = load_table(i_gotu_table)
+
+        df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+        asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
+        gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
+        num_ids = len(gotu_ids)
+        gotu_count = len(gotu_table.ids(axis="observation"))
+
+        common_kwargs = {
+            "metadata_column": m_metadata_column,
+            "max_token_per_sample": p_asv_limit,
+            "rarefy_depth": p_gotu_rarefy_depth,
+            "asv_rarefy_depth": p_asv_rarefy_depth,
+            "batch_size": p_batch_size,
+            "is_16S": False,
+            "is_categorical": p_is_categorical,
+            "max_bp": p_max_bp,
+            "epochs": p_epochs,
+            "tree_path": p_tree,
+            "metadata": df_all,
+        }
+
+        def train_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
+            return GOTUGenerator(
+                table=gotu_table,
+                asv_table=asv_table,
+                shuffle=shuffle,
+                shift=shift,
+                scale=scale,
+                gen_new_tables=gen_new_tables,
+                **common_kwargs,
+            )
+
+        def val_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
+            return GOTUGenerator(
+                table=gotu_table,
+                asv_table=asv_table,
+                shuffle=shuffle,
+                shift=shift,
+                scale=scale,
+                gen_new_tables=gen_new_tables,
+                **common_kwargs,
+            )
+
+        indices = np.arange(len(asv_ids), dtype=np.int32)
+
+        np.random.shuffle(indices)
+        train_size = int(len(asv_ids) * 0.8)
+
+        train_indices = indices[:train_size]
+        train_asv_ids = asv_ids[train_indices]
+        train_gotu_ids = gotu_ids[train_indices]
+        train_asv_table = asv_table.filter(train_asv_ids, inplace=False)
+        train_gotu_table = gotu_table.filter(train_gotu_ids, inplace=False)
+
+        val_asv_indices = indices[train_size:]
+        val_asv_ids = asv_ids[val_asv_indices]
+        val_asv_table = asv_table.filter(val_asv_ids, inplace=False)
+
+        val_gotu_indices = indices[train_size:]
+        val_gotu_ids = gotu_ids[val_gotu_indices]
+        val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
+
+        train_gen = train_generator(train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True)
+
+        val_gen = val_generator(val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False)
+
+        train_data = train_gen.get_data()
+        val_data = val_gen.get_data()
+        base_model = None
+        asv_tokens = [None, None, p_max_bp]
+        asv_counts = [None, None, 1]
+        gotu_tokens = [None, None, 1]
+        gotu_counts = [None, None, 1]
+        for (
+            asv_batch_counts,
+            asv_tokens,
+            asv_indices,
+            asv_counts,
+            gotu_batch_counts,
+            gotu_tokens,
+            gotu_counts,
+            asv_unifrac,
+        ) in train_data["dataset"].take(1):
+            asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
+            gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
+
+        if i_base_model_path is not None:
+            base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
+            base_model.accumulation_steps = p_accumulation_steps
+        else:
+            base_model = UnifracEncoder(
+                p_output_dim,
+                p_asv_limit,
+                "unifrac",
+                dropout_rate=p_dropout,
+                embedding_dim=p_embedding_dim,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                intermediate_activation=p_intermediate_activation,
+                normalize_outputs=p_normalize_outputs,
+                name="sequence_encoder",
+            )
+        batch_counts = tf.TensorShape([None])
+        token_shape = tf.TensorShape([None, 150])
+        indicies_shape = tf.TensorShape([None])
+        count_shape = tf.TensorShape([None, 1])
+
+        base_model.build([batch_counts, token_shape, indicies_shape, count_shape])
+        model = GOTUModel(
+            p_output_dim,
+            p_asv_limit,
+            dropout_rate=p_dropout,
+            embedding_dim=p_embedding_dim,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
+            asv_embedding_layer=base_model,
+            gotu_count=gotu_count,
+            max_gotu=p_asv_limit,
+            freeze_base_weights=p_no_freeze_base_weights,
+            name="gotu_model",
+        )
+
+        optimizer = tf.keras.optimizers.AdamW(
+            cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+            weight_decay=p_weight_decay,
+        )
+        optimizer.exclude_from_weight_decay(
+            var_names=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                "embeddings",
+            ]
+        )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+
+        model((asv_inputs, gotu_inputs))
+        # model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
+        model.compile(
+            optimizer=optimizer,
+            run_eagerly=False,
+        )
+        model.summary()
+
+        log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_dir = os.path.join(output_dir, log_dir)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        model_save_path = os.path.join(output_dir, "model.keras")
+        model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+        core_callbacks = [
+            tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+            # tf.keras.callbacks.EarlyStopping(
+            #     "val_encoder_loss",
+            #     patience=p_patience,
+            #     start_from_epoch=p_early_stop_warmup,
+            # ),
+            model_saver,
+        ]
+        model.fit(
+            train_data["dataset"],
+            validation_data=val_data["dataset"],
+            callbacks=[*core_callbacks],
+            epochs=p_epochs,
+            steps_per_epoch=train_data["steps_pre_epoch"],
+            validation_steps=val_data["steps_pre_epoch"],
+        )
+        model.set_weights(model_saver.best_weights)
+        model.save(model_save_path, save_format="keras")

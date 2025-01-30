@@ -99,7 +99,7 @@ def fit_asv_encoder(
 ):
     import tensorflow_addons as tfa
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    # tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
     from aam.models.nucleotide_encoder_v3 import NucleotideEncoderV3
