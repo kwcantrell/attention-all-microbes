@@ -356,12 +356,6 @@ def fit_denoised_unifrac_regressor_decorator(func):
         model_save_path = os.path.join(output_dir, "model.keras")
         model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
         core_callbacks = [
-            # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
-            # tf.keras.callbacks.EarlyStopping(
-            #     "val_encoder_loss",
-            #     patience=p_patience,
-            #     start_from_epoch=p_early_stop_warmup,
-            # ),
             model_saver,
             lr_scheduler,
         ]
@@ -483,9 +477,6 @@ def fit_taxonomy_regressor_decorator(func):
         model_saver = SaveModel(model_save_path, 1, monitor="val_encoder_loss")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(log_dir=log_dir),
-            # tf.keras.callbacks.EarlyStopping(
-            #     "val_loss", patience=p_patience, start_from_epoch=p_early_stop_warmup
-            # ),
             model_saver,
         ]
 
