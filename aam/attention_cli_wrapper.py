@@ -8,6 +8,14 @@ import click
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from attention_wrappers import (
+    fit_asv_encoder_decorator,
+    fit_denoised_unifrac_regressor_decorator,
+    fit_gotu_decorator,
+    fit_sample_regressor_decorator,
+    fit_taxonomy_regressor_decorator,
+    predict_sample_regressor_decorator,
+)
 from biom import load_table
 from bp import parse_newick, to_skbio_treenode
 from sklearn.model_selection import KFold, StratifiedKFold
@@ -20,15 +28,15 @@ from aam.callbacks import (
 )
 from aam.cv_utils import CVModel, EnsembleModel
 
-from attention_wrappers import fit_asv_encoder_decorator, fit_denoised_unifrac_regressor_decorator, fit_taxonomy_regressor_decorator
-from attention_wrappers import fit_sample_regressor_decorator, predict_sample_regressor_decorator, fit_gotu_decorator
 
 @click.group()
 class cli:
     pass
 
 
-TABLE_DESC = "Feature table containing all features that should be used for target prediction."
+TABLE_DESC = (
+    "Feature table containing all features that should be used for target prediction."
+)
 TEST_SIZE_DESC = "Fraction of input samples to exclude from training set and use for classifier testing."
 CV_DESC = "Number of k-fold cross-validations to perform."
 STRAT_DESC = "Evenly stratify training and test data among metadata categories. If True, all values in column must match at least two samples."
@@ -40,15 +48,21 @@ GLOBAL_CONFIGURATIONS = {}
 
 @cli.command()
 @click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-@click.option("--p-sequence-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int)
+@click.option(
+    "--p-sequence-batch-size", default=8, show_default=True, required=False, type=int
+)
+@click.option(
+    "--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int
+)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, type=int)
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=8, type=int)
 @click.option("--p-intermediate-size", default=512, type=int)
-@click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
 @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
@@ -63,7 +77,9 @@ GLOBAL_CONFIGURATIONS = {}
 def fit_asv_encoder(model, **kwargs):
     print("Model has been saved to", kwargs["output_dir"])
 
+
 ###-------------------------------------------------------------------------------------------------------------------------------###
+
 @cli.command()
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-tree", required=True, type=click.Path(exists=True))
@@ -97,7 +113,9 @@ def fit_asv_encoder(model, **kwargs):
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -121,8 +139,8 @@ def fit_asv_encoder(model, **kwargs):
 @click.option("--p-use-linear-bias", default=False, type=bool)
 @fit_denoised_unifrac_regressor_decorator
 def fit_denoised_unifrac_regressor(model, **kwargs):
-    
     print("Model has been saved to", kwargs["output_dir"])
+
 
 ###-------------------------------------------------------------------------------------------------------------------------------###
 
@@ -160,7 +178,9 @@ def fit_denoised_unifrac_regressor(model, **kwargs):
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -178,7 +198,9 @@ def fit_denoised_unifrac_regressor(model, **kwargs):
 def fit_taxonomy_regressor(**kwargs):
     print("Model has been saved to", kwargs["output_dir"])
 
+
 ###-------------------------------------------------------------------------------------------------------------------------------###
+
 
 @cli.command()
 @click.option(
@@ -187,7 +209,9 @@ def fit_taxonomy_regressor(**kwargs):
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -233,7 +257,9 @@ def fit_taxonomy_regressor(**kwargs):
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
@@ -257,6 +283,7 @@ def fit_taxonomy_regressor(**kwargs):
 @fit_sample_regressor_decorator
 def fit_sample_regressor(**kwargs):
     print("Model has been saved to", kwargs["output_dir"])
+
 
 ###-------------------------------------------------------------------------------------------------------------------------------###
 @cli.command()
@@ -287,13 +314,17 @@ def fit_sample_regressor(**kwargs):
 )
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-mixed-precision / --p-no-mixed-precision", default=True, required=False)
+@click.option(
+    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
+)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 @predict_sample_regressor_decorator
 def predict_sample_regressor(**kwargs):
     print("Predictions have been saved to", kwargs["output_dir"])
 
+
 ###-------------------------------------------------------------------------------------------------------------------------------###
+
 
 @cli.command()
 @click.option(
@@ -308,7 +339,9 @@ def predict_sample_regressor(**kwargs):
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -354,7 +387,9 @@ def predict_sample_regressor(**kwargs):
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=512, show_default=True, type=int)
-@click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
