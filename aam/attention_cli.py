@@ -26,7 +26,9 @@ class cli:
     pass
 
 
-TABLE_DESC = "Feature table containing all features that should be used for target prediction."
+TABLE_DESC = (
+    "Feature table containing all features that should be used for target prediction."
+)
 TEST_SIZE_DESC = "Fraction of input samples to exclude from training set and use for classifier testing."
 CV_DESC = "Number of k-fold cross-validations to perform."
 STRAT_DESC = "Evenly stratify training and test data among metadata categories. If True, all values in column must match at least two samples."
@@ -56,15 +58,21 @@ GLOBAL_CONFIGURATIONS = {}
 
 @cli.command()
 @click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-@click.option("--p-sequence-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int)
+@click.option(
+    "--p-sequence-batch-size", default=8, show_default=True, required=False, type=int
+)
+@click.option(
+    "--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int
+)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
 @click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, type=int)
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=8, type=int)
 @click.option("--p-intermediate-size", default=512, type=int)
-@click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
 @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
@@ -235,7 +243,9 @@ def fit_asv_encoder(
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -310,7 +320,9 @@ def fit_denoised_unifrac_regressor(
 
     # start pre processing dataset
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     indices = np.arange(len(ids), dtype=np.int32)
 
@@ -400,7 +412,9 @@ def fit_denoised_unifrac_regressor(
             use_linear_bias=p_use_linear_bias,
         )
 
-    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
+    lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    )
 
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
@@ -494,7 +508,9 @@ def fit_denoised_unifrac_regressor(
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=4, type=int)
 @click.option("--p-intermediate-size", default=1024, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
@@ -555,7 +571,9 @@ def fit_taxonomy_regressor(
         os.makedirs(figure_path)
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     indices = np.arange(len(ids), dtype=np.int32)
 
@@ -676,7 +694,9 @@ def fit_taxonomy_regressor(
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -722,7 +742,9 @@ def fit_taxonomy_regressor(
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=4, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
-@click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
@@ -808,7 +830,9 @@ def fit_sample_regressor(
         os.makedirs(model_path)
 
     table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
     ids, table, df = validate_metadata(table, df, p_missing_samples)
     num_ids = len(ids)
 
@@ -926,7 +950,9 @@ def fit_sample_regressor(
         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
         df_fold = df.loc[fold_ids]
 
-        gen = generator(table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables)
+        gen = generator(
+            table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables
+        )
         dataset = get_dataset(gen)
 
         data_obj = {
@@ -1029,13 +1055,17 @@ def fit_sample_regressor(
                 # )
             ]
         else:
-            loss = tf.keras.losses.CategoricalFocalCrossentropy(from_logits=False, reduction="none")
+            loss = tf.keras.losses.CategoricalFocalCrossentropy(
+                from_logits=False, reduction="none"
+            )
             # loss = tf.keras.losses.CategoricalHinge(reduction="none")
             callbacks = [
                 ConfusionMatrx(
                     monitor="val_target_loss",
                     dataset=val_data["dataset"],
-                    output_dir=os.path.join(figure_path, f"model_f{fold_label}-val.png"),
+                    output_dir=os.path.join(
+                        figure_path, f"model_f{fold_label}-val.png"
+                    ),
                     report_back=p_report_back,
                 )
             ]
@@ -1067,7 +1097,9 @@ def fit_sample_regressor(
     model_ensemble = EnsembleModel(models)
     model_ensemble.save_best_model(best_model_path)
     best_mae, ensemble_mae = model_ensemble.val_maes()
-    print(f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}")
+    print(
+        f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}"
+    )
 
     test_data = _get_fold(
         test_indices,
@@ -1077,7 +1109,9 @@ def fit_sample_regressor(
         epochs=1,
         num_tables=5,
     )
-    best_mae, ensemble_mae = model_ensemble.plot_fn(_mean_absolute_error, test_data["dataset"], figure_path)
+    best_mae, ensemble_mae = model_ensemble.plot_fn(
+        _mean_absolute_error, test_data["dataset"], figure_path
+    )
     print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
 
 
@@ -1109,7 +1143,9 @@ def fit_sample_regressor(
 )
 @click.option("--p-asv-limit", default=512, show_default=True, type=int)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-mixed-precision / --p-no-mixed-precision", default=True, required=False)
+@click.option(
+    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
+)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 def predict_sample_regressor(
     i_table: str,
@@ -1169,7 +1205,9 @@ def predict_sample_regressor(
     help=TABLE_DESC,
     type=click.Path(exists=True),
 )
-@click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -1215,7 +1253,9 @@ def predict_sample_regressor(
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
 @click.option("--p-intermediate-size", default=512, show_default=True, type=int)
-@click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
@@ -1280,7 +1320,7 @@ def fit_gotu(
     p_scale_loss: bool,
     p_normalize_outputs: bool,
 ):
-    from aam.data_handlers.gotu_generator import GOTUGenerator
+    from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
     from aam.models.gotu_model import GOTUModel
     from aam.models.unifrac_encoder import UnifracEncoder
     from aam.models.utils import cos_decay_with_warmup
@@ -1297,7 +1337,9 @@ def fit_gotu(
     asv_table = load_table(i_asv_table)
     gotu_table = load_table(i_gotu_table)
 
-    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
+    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
     asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
     gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
     num_ids = len(gotu_ids)
@@ -1317,7 +1359,9 @@ def fit_gotu(
         "metadata": df_all,
     }
 
-    def train_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
+    def train_generator(
+        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    ):
         return GOTUGenerator(
             table=gotu_table,
             asv_table=asv_table,
@@ -1328,7 +1372,9 @@ def fit_gotu(
             **common_kwargs,
         )
 
-    def val_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
+    def val_generator(
+        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    ):
         return GOTUGenerator(
             table=gotu_table,
             asv_table=asv_table,
@@ -1358,53 +1404,47 @@ def fit_gotu(
     val_gotu_ids = gotu_ids[val_gotu_indices]
     val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
 
-    train_gen = train_generator(train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True)
+    train_gen = train_generator(
+        train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True
+    )
 
-    val_gen = val_generator(val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False)
+    val_gen = val_generator(
+        val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False
+    )
 
-    train_data = train_gen.get_data()
-    val_data = val_gen.get_data()
+    train_data = get_dataset(train_gen)
+    val_data = get_dataset(val_gen)
     base_model = None
     asv_tokens = [None, None, p_max_bp]
     asv_counts = [None, None, 1]
     gotu_tokens = [None, None, 1]
     gotu_counts = [None, None, 1]
-    for (
-        asv_batch_counts,
-        asv_tokens,
-        asv_indices,
-        asv_counts,
-        gotu_batch_counts,
-        gotu_tokens,
-        gotu_counts,
-        asv_unifrac,
-    ) in train_data["dataset"].take(1):
-        asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
-        gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
+    # for (
+    #     asv_batch_counts,
+    #     asv_tokens,
+    #     asv_indices,
+    #     asv_counts,
+    #     gotu_batch_counts,
+    #     gotu_tokens,
+    #     gotu_counts,
+    #     asv_unifrac,
+    # ) in train_data["dataset"].take(1):
+    #     asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
+    #     gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
 
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
         base_model.accumulation_steps = p_accumulation_steps
     else:
-        base_model = UnifracEncoder(
-            p_output_dim,
-            p_asv_limit,
-            "unifrac",
-            dropout_rate=p_dropout,
-            embedding_dim=p_embedding_dim,
-            attention_heads=p_attention_heads,
-            attention_layers=p_attention_layers,
-            intermediate_size=p_intermediate_size,
-            intermediate_activation=p_intermediate_activation,
-            normalize_outputs=p_normalize_outputs,
-            name="sequence_encoder",
-        )
-    batch_counts = tf.TensorShape([None])
+        raise Exception("YOU HAVE FAILED, COME BACK WITH A BASEMODEL")
+
     token_shape = tf.TensorShape([None, 150])
+    batch_indices = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
+    gotu_tokens = tf.TensorShape([None])
+    gotu_counts = tf.TensorShape([None, 1])
 
-    base_model.build([batch_counts, token_shape, indicies_shape, count_shape])
     model = GOTUModel(
         p_output_dim,
         p_asv_limit,
@@ -1435,9 +1475,12 @@ def fit_gotu(
         ]
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-
-    model((asv_inputs, gotu_inputs))
-    # model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
+    model.build(
+        (
+            [token_shape, batch_indices, indicies_shape, count_shape],
+            [gotu_tokens, gotu_counts],
+        )
+    )
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
