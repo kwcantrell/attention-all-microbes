@@ -719,10 +719,10 @@ def fit_taxonomy_regressor(
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
-@click.option("--p-embedding-dim", default=256, show_default=True, type=int)
-@click.option("--p-attention-heads", default=8, show_default=True, type=int)
+@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
+@click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
-@click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
 @click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
@@ -738,7 +738,7 @@ def fit_taxonomy_regressor(
 @click.option("--p-gotu", default=False, required=False, type=bool)
 @click.option("--p-is-categorical", default=False, required=False, type=bool)
 @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
-@click.option("--p-weight-decay", default=1e-5, show_default=True, type=float)
+@click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
@@ -880,7 +880,7 @@ def fit_sample_regressor(
             scale=scale,
             gen_new_tables=gen_new_tables,
             epochs=epochs,
-            unifrac_metric="unifrac",
+            unifrac_metric=None,
             **common_kwargs,
         )
 
