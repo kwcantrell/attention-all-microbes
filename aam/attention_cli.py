@@ -677,6 +677,7 @@ def fit_taxonomy_regressor(
     type=click.Path(exists=True),
 )
 @click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
+@click.option("--i-model", default=None, required=False, type=click.Path(exists=True))
 @click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
@@ -718,10 +719,10 @@ def fit_taxonomy_regressor(
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
-@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
-@click.option("--p-attention-heads", default=4, show_default=True, type=int)
-@click.option("--p-attention-layers", default=4, show_default=True, type=int)
-@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
+@click.option("--p-embedding-dim", default=256, show_default=True, type=int)
+@click.option("--p-attention-heads", default=8, show_default=True, type=int)
+@click.option("--p-attention-layers", default=8, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
 @click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
@@ -746,6 +747,7 @@ def fit_taxonomy_regressor(
 def fit_sample_regressor(
     i_table: str,
     i_base_model_path: str,
+    i_model: str,
     p_no_freeze_base_weights: bool,
     m_metadata_file: str,
     m_metadata_column: str,
@@ -980,39 +982,42 @@ def fit_sample_regressor(
         else:
             base_output_dim = train_data["num_tokens"]
 
-        model = SequenceRegressor(
-            token_limit=p_asv_limit,
-            base_output_dim=base_output_dim,
-            shift=train_data["shift"],
-            scale=train_data["scale"],
-            dropout_rate=p_dropout,
-            embedding_dim=p_embedding_dim,
-            attention_heads=p_attention_heads,
-            attention_layers=p_attention_layers,
-            intermediate_size=p_intermediate_size,
-            intermediate_activation=p_intermediate_activation,
-            base_model=base_model,
-            freeze_base=p_no_freeze_base_weights,
-            penalty=p_penalty,
-            nuc_penalty=p_nuc_penalty,
-            max_bp=p_max_bp,
-            is_16S=is_16S,
-            vocab_size=vocab_size,
-            out_dim=p_output_dim,
-            classifier=p_is_categorical,
-            add_token=p_add_token,
-            class_weights=None,  # train_data["class_weights"],
-            accumulation_steps=p_accumulation_steps,
-            scale_losses=p_scale_loss,
-            use_linear_bias=True,
-        )
-        # for x, y in train_data["dataset"].take(1):
-        #     model(x)
-        token_shape = tf.TensorShape([None, 150])
-        batch_indicies = tf.TensorShape([None, 2])
-        indicies_shape = tf.TensorShape([None])
-        count_shape = tf.TensorShape([None, 1])
-        model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+        if i_model:
+            model = tf.keras.models.load_model(i_model, compile=False)
+        else:
+            model = SequenceRegressor(
+                token_limit=p_asv_limit,
+                base_output_dim=base_output_dim,
+                shift=train_data["shift"],
+                scale=train_data["scale"],
+                dropout_rate=p_dropout,
+                embedding_dim=p_embedding_dim,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                intermediate_activation=p_intermediate_activation,
+                base_model=base_model,
+                freeze_base=p_no_freeze_base_weights,
+                penalty=p_penalty,
+                nuc_penalty=p_nuc_penalty,
+                max_bp=p_max_bp,
+                is_16S=is_16S,
+                vocab_size=vocab_size,
+                out_dim=p_output_dim,
+                classifier=p_is_categorical,
+                add_token=p_add_token,
+                class_weights=None,  # train_data["class_weights"],
+                accumulation_steps=p_accumulation_steps,
+                scale_losses=p_scale_loss,
+                use_linear_bias=True,
+            )
+            # for x, y in train_data["dataset"].take(1):
+            #     model(x)
+            token_shape = tf.TensorShape([None, 150])
+            batch_indicies = tf.TensorShape([None, 2])
+            indicies_shape = tf.TensorShape([None])
+            count_shape = tf.TensorShape([None, 1])
+            model.build([token_shape, batch_indicies, indicies_shape, count_shape])
         model.summary()
 
         fold_label = i + 1

@@ -90,7 +90,7 @@ class CVModel:
         self.model.fit(
             self.train_data["dataset"],
             validation_data=self.val_data["dataset"],
-            callbacks=[*callbacks, *core_callbacks, lr_scheduler],
+            callbacks=[*callbacks, *core_callbacks, model_saver, lr_scheduler],
             epochs=epochs,
             steps_per_epoch=self.train_data["steps_per_epoch"],
             validation_steps=self.val_data["steps_per_epoch"],
