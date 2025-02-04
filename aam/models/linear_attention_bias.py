@@ -4,10 +4,11 @@ import tensorflow as tf
 def _construct_bias(inputs):
     shape = tf.shape(inputs)
     query_len = shape[2]
+    key_len = shape[3]
     num_heads = shape[1]
 
     bias = tf.repeat(
-        tf.expand_dims(tf.range(0, query_len, 1, dtype=tf.float32), axis=0),
+        tf.expand_dims(tf.range(0, key_len, 1, dtype=tf.float32), axis=0),
         repeats=query_len,
         axis=0,
     )
@@ -31,7 +32,13 @@ def _construct_bias(inputs):
     m = tf.expand_dims(m, axis=-1)
     m = tf.expand_dims(m, axis=-1)
     alibi = bias * m
-    return tf.cast(alibi + tf.transpose(alibi, perm=[0, 1, 3, 2]), dtype=tf.keras.mixed_precision.global_policy().compute_dtype)
+    alibi = tf.where(
+        key_len == query_len, alibi + tf.transpose(alibi, perm=[0, 1, 3, 2]), alibi
+    )
+    return tf.cast(
+        alibi,
+        dtype=tf.keras.mixed_precision.global_policy().compute_dtype,
+    )
 
 
 def _large_compatible_negative(tensor_type):
@@ -104,7 +111,9 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
             # Since mask is 1.0 for positions we want to keep and 0.0 for masked
             # positions, this operation will create a tensor which is 0.0 for
             # positions we want to attend and -1e.9 for masked positions.
-            adder = (1.0 - tf.cast(mask, inputs.dtype)) * (_large_compatible_negative(inputs.dtype))
+            adder = (1.0 - tf.cast(mask, inputs.dtype)) * (
+                _large_compatible_negative(inputs.dtype)
+            )
 
             # Since we are adding it to the raw scores before the softmax, this
             # is effectively the same as removing these entirely.
