@@ -39,11 +39,11 @@ class TransformerDecoder(tf.keras.layers.Layer):
         self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
-        self.hidden_dim = input_shape[-1]
+        asv_input_shape, gotu_input_shape = input_shape
+        self.hidden_dim = asv_input_shape[-1]
         """Implements build() for the layer."""
         self.encoder_layers = []
         self.decoder_layers = []
-        linear_bias_softmax = LinearBiasSoftmax()
 
         def get_transformer(i, name):
             transformer = tfm.nlp.layers.ReZeroTransformer(
@@ -55,8 +55,17 @@ class TransformerDecoder(tf.keras.layers.Layer):
                 share_rezero=True,
                 name=name,
             )
-            transformer.build(input_shape)
-            transformer._attention_layer._build_from_signature(input_shape, input_shape)
+            linear_bias_softmax = LinearBiasSoftmax()
+            if "encoder" in name:
+                transformer.build(gotu_input_shape)
+                transformer._attention_layer._build_from_signature(
+                    gotu_input_shape, gotu_input_shape
+                )
+            else:
+                transformer.build(asv_input_shape)
+                transformer._attention_layer._build_from_signature(
+                    asv_input_shape, gotu_input_shape
+                )
 
             if self.use_linear_bias:
                 setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
@@ -90,9 +99,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         base_config = super(TransformerDecoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    def call(
-        self, asv_inputs, gotu_inputs, asv_mask=None, gotu_mask=None, training=False
-    ):
+    def call(self, inputs, asv_mask=None, gotu_mask=None, training=False):
         """Return the output of the encoder.
 
         Args:
@@ -107,7 +114,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
           Output of encoder which is a `float32` or `float16` tensor with shape
             `(batch_size, input_length, hidden_size)`.
         """
-
+        asv_inputs, gotu_inputs = inputs
         encoder_inputs = gotu_inputs
         gotu_shape = tf.shape(encoder_inputs)
         batch_dim = gotu_shape[0]

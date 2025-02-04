@@ -73,7 +73,9 @@ class GOTUModel(tf.keras.Model):
         self.encoder_loss = PairwiseLoss(self.pairwise_loss_type, reduction="none")
         self.gotu_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
 
-        self.gotu_embedding_layer = tf.keras.layers.Embedding(self.gotu_count + 2, self.embedding_dim)
+        self.gotu_embedding_layer = tf.keras.layers.Embedding(
+            self.gotu_count + 2, self.embedding_dim
+        )
 
         self.gotu_decoder = TransformerDecoder(
             num_attention_heads=self.attention_heads,
@@ -169,7 +171,9 @@ class GOTUModel(tf.keras.Model):
         asv_inputs, asv_targets = asv_data
         gotu_inputs, gotu_targets = gotu_data
         gotu_tokens, gotu_batch_indices, gotu_indices, gotu_counts = gotu_inputs
-        gotu_batch_tokens, counts = self.batch_embeddings(gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indices)
+        gotu_batch_tokens, counts = self.batch_embeddings(
+            gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indices
+        )
 
         return (asv_inputs, (gotu_batch_tokens, counts)), (asv_targets, gotu_targets)
 
@@ -179,8 +183,12 @@ class GOTUModel(tf.keras.Model):
             embeddings = tf.gather(embeddings, indices)
         batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
         max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-        batch_embeddings = tf.scatter_nd(batch_indicies, embeddings, shape=[batch_shape, max_unique, emb_dim])
-        counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+        batch_embeddings = tf.scatter_nd(
+            batch_indicies, embeddings, shape=[batch_shape, max_unique, emb_dim]
+        )
+        counts = tf.scatter_nd(
+            batch_indicies, counts, shape=[batch_shape, max_unique, 1]
+        )
         batch_embeddings, counts = sort_using_counts(batch_embeddings, counts)
         return batch_embeddings, counts
 
@@ -188,7 +196,9 @@ class GOTUModel(tf.keras.Model):
         inputs, targets = self.extract_data(data)
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(targets, outputs)
+            loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(
+                targets, outputs
+            )
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -251,8 +261,7 @@ class GOTUModel(tf.keras.Model):
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         asv_inputs, gotu_inputs = inputs
-        gotu_tokens, gotu_counts = gotu_inputs
-        gotu_mask = tf.cast(gotu_counts > 0, dtype=self.compute_dtype)
+        (gotu_tokens, gotu_batch_indices, gotu_indicies, gotu_counts) = gotu_inputs
 
         asv_embeddings, asv_counts = self.asv_embedding_layer(
             asv_inputs,
@@ -261,7 +270,16 @@ class GOTUModel(tf.keras.Model):
         )
         asv_mask = tf.cast(asv_counts > 0, dtype=self.compute_dtype)
         gotu_embeddings = self.gotu_embedding_layer(gotu_tokens)
-        gotu_pred = self.gotu_decoder(asv_embeddings, gotu_embeddings, asv_mask, gotu_mask, training=training)
+        gotu_embeddings, gotu_counts = self.asv_embedding_layer.batch_embeddings(
+            gotu_embeddings, gotu_batch_indices, gotu_counts, gotu_indicies
+        )
+        gotu_embeddings, gotu_counts = sort_using_counts(gotu_embeddings, gotu_counts)
+        # tf.print("GOTU EMBEDDING SHAPE:\n", tf.shape(gotu_embeddings), gotu_counts)
+        
+        gotu_mask = tf.cast(gotu_counts > 0, dtype=self.compute_dtype)
+        gotu_pred = self.gotu_decoder(
+            (asv_embeddings, gotu_embeddings), asv_mask, gotu_mask, training=training
+        )
         gotu_pred = self.gotu_output(gotu_pred)
         gotu_pred = self._softmax(gotu_pred)
 
