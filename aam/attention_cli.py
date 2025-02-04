@@ -1461,18 +1461,14 @@ def fit_gotu(
     gotu_count_shape = tf.TensorShape([None, 1])
 
     model = GOTUModel(
-        p_output_dim,
-        p_asv_limit,
         dropout_rate=p_dropout,
         embedding_dim=p_embedding_dim,
         attention_heads=p_attention_heads,
         attention_layers=p_attention_layers,
         intermediate_size=p_intermediate_size,
         intermediate_activation=p_intermediate_activation,
-        asv_embedding_layer=base_model,
+        asv_encoder=base_model,
         gotu_count=gotu_count,
-        max_gotu=p_asv_limit,
-        freeze_base_weights=p_no_freeze_base_weights,
         name="gotu_model",
     )
 
@@ -1505,7 +1501,7 @@ def fit_gotu(
     model(x)
     model.compile(
         optimizer=optimizer,
-        run_eagerly=True,
+        run_eagerly=False,
     )
     model.summary()
 
@@ -1525,12 +1521,12 @@ def fit_gotu(
         model_saver,
     ]
     model.fit(
-        train_data["dataset"],
-        validation_data=val_data["dataset"],
+        train_data,
+        validation_data=val_data,
         callbacks=[*core_callbacks],
         epochs=p_epochs,
-        steps_per_epoch=train_data["steps_pre_epoch"],
-        validation_steps=val_data["steps_pre_epoch"],
+        steps_per_epoch=train_gen.steps_per_epoch,
+        validation_steps=val_gen.steps_per_epoch,
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")

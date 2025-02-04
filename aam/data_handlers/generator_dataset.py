@@ -160,7 +160,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
             tokens = np.concatenate([map(asv) for asv in self.asv_ids[unique_obs]], axis=0)
         else:
-            tokens = unique_obs
+            tokens = unique_obs + 3
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
 
         if self.return_sample_ids:

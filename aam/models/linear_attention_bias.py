@@ -7,13 +7,15 @@ def _construct_bias(inputs):
     key_len = shape[3]
     num_heads = shape[1]
 
+    largest_len = tf.where(query_len > key_len, query_len, key_len)
+
     bias = tf.repeat(
-        tf.expand_dims(tf.range(0, key_len, 1, dtype=tf.float32), axis=0),
-        repeats=query_len,
+        tf.expand_dims(tf.range(0, largest_len, 1, dtype=tf.float32), axis=0),
+        repeats=largest_len,
         axis=0,
     )
     bias_mask = tf.cast(
-        tf.expand_dims(tf.range(0, query_len, 1, dtype=tf.float32), axis=-1) >= bias,
+        tf.expand_dims(tf.range(0, largest_len, 1, dtype=tf.float32), axis=-1) >= bias,
         dtype=tf.float32,
     )
     bias = -1 * tf.sort(bias * bias_mask, direction="DESCENDING")
@@ -32,13 +34,13 @@ def _construct_bias(inputs):
     m = tf.expand_dims(m, axis=-1)
     m = tf.expand_dims(m, axis=-1)
     alibi = bias * m
-    alibi = tf.where(
-        key_len == query_len, alibi + tf.transpose(alibi, perm=[0, 1, 3, 2]), alibi
-    )
-    return tf.cast(
-        alibi,
+    alibi = tf.cast(
+        alibi + tf.transpose(alibi, perm=[0, 1, 3, 2]),
         dtype=tf.keras.mixed_precision.global_policy().compute_dtype,
     )
+    alibi = alibi[:, :, :query_len, :key_len]
+    tf.print("ALIBI: ", alibi)
+    return alibi
 
 
 def _large_compatible_negative(tensor_type):

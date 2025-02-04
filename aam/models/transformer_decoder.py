@@ -10,18 +10,16 @@ from aam.models.linear_attention_bias import LinearBiasSoftmax
 class TransformerDecoder(tf.keras.layers.Layer):
     def __init__(
         self,
-        num_layers=6,
-        num_attention_heads=8,
-        intermediate_size=2048,
+        num_layers=4,
+        num_attention_heads=4,
+        intermediate_size=512,
         activation="gelu",
         dropout_rate=0.0,
         attention_dropout_rate=0.0,
-        use_bias=False,
-        norm_first=True,
         norm_epsilon=1e-6,
         normalize_outputs=False,
-        use_residual_connections=False,
-        use_linear_bias=False,
+        use_residual_connections=True,
+        use_linear_bias=True,
         **kwargs,
     ):
         super(TransformerDecoder, self).__init__(**kwargs)
@@ -31,8 +29,6 @@ class TransformerDecoder(tf.keras.layers.Layer):
         self._activation = activation
         self._dropout_rate = dropout_rate
         self._attention_dropout_rate = attention_dropout_rate
-        self._use_bias = use_bias
-        self._norm_first = norm_first
         self._norm_epsilon = norm_epsilon
         self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
@@ -42,8 +38,8 @@ class TransformerDecoder(tf.keras.layers.Layer):
         asv_input_shape, gotu_input_shape = input_shape
         self.hidden_dim = asv_input_shape[-1]
         """Implements build() for the layer."""
-        self.encoder_layers = []
-        self.decoder_layers = []
+        self.causal_encoders = []
+        self.cross_attention_encoders = []
 
         def get_transformer(i, name):
             transformer = tfm.nlp.layers.ReZeroTransformer(
@@ -56,7 +52,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
                 name=name,
             )
             linear_bias_softmax = LinearBiasSoftmax()
-            if "encoder" in name:
+            if "causal_encoder" in name:
                 transformer.build(gotu_input_shape)
                 transformer._attention_layer._build_from_signature(
                     gotu_input_shape, gotu_input_shape
@@ -64,7 +60,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
             else:
                 transformer.build(asv_input_shape)
                 transformer._attention_layer._build_from_signature(
-                    asv_input_shape, gotu_input_shape
+                    gotu_input_shape, asv_input_shape
                 )
 
             if self.use_linear_bias:
@@ -72,9 +68,11 @@ class TransformerDecoder(tf.keras.layers.Layer):
             return transformer
 
         for i in range(self.num_layers):
-            self.encoder_layers.append(get_transformer(i, ("encoder_layer_%d" % i)))
+            self.causal_encoders.append(get_transformer(i, ("causal_encoder_%d" % i)))
 
-            self.decoder_layers.append(get_transformer(i, ("decoder_layer_%d" % i)))
+            self.cross_attention_encoders.append(
+                get_transformer(i, ("cross_attn_encoder_%d" % i))
+            )
         if self.normalize_outputs:
             self.output_normalization = tf.keras.layers.LayerNormalization(
                 epsilon=1e-6, dtype=tf.float32
@@ -89,8 +87,6 @@ class TransformerDecoder(tf.keras.layers.Layer):
             "activation": self._activation,
             "dropout_rate": self._dropout_rate,
             "attention_dropout_rate": self._attention_dropout_rate,
-            "use_bias": self._use_bias,
-            "norm_first": self._norm_first,
             "norm_epsilon": self._norm_epsilon,
             "normalize_outputs": self.normalize_outputs,
             "use_residual_connections": self.use_residual_connections,
@@ -103,7 +99,7 @@ class TransformerDecoder(tf.keras.layers.Layer):
         """Return the output of the encoder.
 
         Args:
-          encoder_inputs: A tensor with shape `(batch_size, input_length,
+          causal_inputs: A tensor with shape `(batch_size, input_length,
             hidden_size)`.
           asv_mask: A mask for the encoder self-attention layer with shape
             `(batch_size, asv_input_length, 1)`.
@@ -115,8 +111,8 @@ class TransformerDecoder(tf.keras.layers.Layer):
             `(batch_size, input_length, hidden_size)`.
         """
         asv_inputs, gotu_inputs = inputs
-        encoder_inputs = gotu_inputs
-        gotu_shape = tf.shape(encoder_inputs)
+        causal_inputs = gotu_inputs
+        gotu_shape = tf.shape(causal_inputs)
         batch_dim = gotu_shape[0]
         g_seq_len = gotu_shape[1]
         causal_mask = tf.linalg.band_part(
@@ -127,19 +123,20 @@ class TransformerDecoder(tf.keras.layers.Layer):
                 gotu_mask, gotu_mask, transpose_b=True
             )
         for layer_idx in range(self.num_layers):
-            encoder_inputs = self.encoder_layers[layer_idx](
-                [encoder_inputs, causal_mask], training=training
+            causal_inputs = self.causal_encoders[layer_idx](
+                [causal_inputs, causal_mask], training=training
             )
 
-        decoder_inputs = encoder_inputs
-        attention_mask = None
-        if asv_mask is not None and gotu_mask is not None:
-            attention_mask = tf.matmul(gotu_mask, asv_mask, transpose_b=True)
+        query_inputs = causal_inputs
+        key_inputs = asv_inputs
+        # attention_mask = None
+        # if asv_mask is not None and gotu_mask is not None:
+        attention_mask = tf.matmul(gotu_mask, asv_mask, transpose_b=True)
         for layer_idx in range(self.num_layers):
-            decoder_inputs = self.decoder_layers[layer_idx](
-                [decoder_inputs, asv_inputs, attention_mask], training=training
+            query_inputs = self.cross_attention_encoders[layer_idx](
+                [query_inputs, key_inputs, attention_mask], training=training
             )
-        output_tensor = decoder_inputs
+        output_tensor = query_inputs
 
         if self.normalize_outputs:
             print("Encoder normalizing outputs...")
