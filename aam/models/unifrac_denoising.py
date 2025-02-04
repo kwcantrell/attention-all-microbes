@@ -286,7 +286,7 @@ class UnifracDenoiser(tf.keras.Model):
         asv_embeddings, denoised_unifrac_embeddings = self.unifrac_denoiser(
             asv_embeddings, attention_mask=attention_mask, training=training
         )
-        return asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings
+        return asv_embeddings, counts, unifrac_embeddings, denoised_unifrac_embeddings
 
     def call(
         self,
@@ -313,7 +313,7 @@ class UnifracDenoiser(tf.keras.Model):
                 group_asv_embeddings, group_counts = self._group_embeddings(
                     asv_embeddings, (batch_indices, asv_indices, counts), i, samples_per_group
                 )
-                group_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
+                group_asv_embeddings, counts, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
                     group_asv_embeddings, group_counts, training
                 )
 
@@ -342,7 +342,7 @@ class UnifracDenoiser(tf.keras.Model):
         else:
             batch_asv_embeddings, counts = self.batch_embeddings(asv_embeddings, batch_indices, counts, asv_indices)
 
-            batch_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
+            batch_asv_embeddings, counts, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
                 batch_asv_embeddings, counts, training
             )
 

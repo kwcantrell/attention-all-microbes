@@ -92,14 +92,17 @@ class PairwiseLoss(tf.keras.losses.Loss):
         elif self.loss_type == "msle":
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
 
-        batch_dim = tf.shape(y_true)[0]
-        valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
-        valid_differences = differences[valid_pairs]
+        #batch_dim = tf.shape(y_true)[0]
+        #valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
+        #valid_differences = differences[valid_pairs]
+        mean_mask = tf.cast(differences < tf.reduce_mean(differences, axis=-1, keepdims=True), dtype=tf.float32)
+        loss = tf.math.reduce_max(differences * mean_mask, axis=-1)
+        
 
-        return valid_differences
+        return loss
 
 
-def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
+def triplet_loss(embeddings, groups=2, hard_margin=0.0, soft_margin=0.1):
     emb_shape = tf.shape(embeddings, out_type=tf.int32)
     batch_dim = emb_shape[0]
     group_size = batch_dim // tf.cast(groups, dtype=tf.int32)
@@ -113,15 +116,17 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
     distances = _pairwise_distances(embeddings)
 
     matching_pairs = tf.expand_dims(distances[matching_mask], axis=-1)
-    non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
-
+    non_matching_pairs =tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
     triplet_loss = (matching_pairs + soft_margin) - non_matching_pairs
-    valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
-    triplet_loss = triplet_loss * valid_mask
+    
+    # find smallest semi-hard triplet
+    easy_mask = tf.cast(triplet_loss < 0., dtype=tf.float32) * 1e7
+    triplet_loss = tf.math.reduce_min(triplet_loss + easy_mask, axis=-1, keepdims=True)
 
-    hard_mask = tf.cast(non_matching_pairs < matching_pairs + hard_margin, dtype=tf.float32)
-    semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + soft_margin, dtype=tf.float32) * (1 - hard_mask)
-    semi_hard_loss = triplet_loss[tf.cast(semi_hard_mask, tf.bool)]
+    hard_mask = tf.cast(triplet_loss < matching_pairs, dtype=tf.float32)
+    semi_hard_mask = tf.cast(triplet_loss < matching_pairs + soft_margin, dtype=tf.float32) * (1 - hard_mask)
+    triplet_mask = tf.cast((1-hard_mask) * semi_hard_mask, dtype=tf.bool)
 
-    loss = tf.reduce_mean(semi_hard_loss)
+    triplet_loss = triplet_loss[triplet_mask]
+    loss = tf.reduce_mean(triplet_loss)
     return tf.where(loss > 0, loss, 0.0)
