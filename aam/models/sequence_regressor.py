@@ -161,13 +161,12 @@ class SequenceRegressor(tf.keras.Model):
             use_linear_bias=self.use_linear_bias,
         )
 
-        if not self.use_linear_bias:
-            self._rezero = self.add_weight(
-                name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
-            )
-            self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-                self.token_limit, seq_axis=1, initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02)
-            )
+        self._rezero = self.add_weight(
+            name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+        )
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+            2048, seq_axis=1, dtype=tf.float32
+        )
 
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
@@ -334,9 +333,10 @@ class SequenceRegressor(tf.keras.Model):
         counts = tf.cast(counts, dtype=tf.float32)
         total_counts = tf.reduce_sum(counts, axis=1, keepdims=True)
         counts = counts / total_counts
+        counts = counts * tf.cast(self._rezero, dtype=tf.float32) * tf.cast(self.pos_emb(counts), dtype=tf.float32)
 
         # compute sample embeddings and target
-        asv_embeddings = tf.cast(asv_embeddings, dtype=tf.float32) + counts
+        asv_embeddings = tf.cast(asv_embeddings, dtype=tf.float32) +  counts
         asv_embeddings = self.encoder(tf.cast(asv_embeddings, dtype=self.compute_dtype), mask=mask, training=training)
         sample_embedding = self.attention_pooling(asv_embeddings, mask=mask, training=training)
         return self.sample_ff(sample_embedding), self.output_activation(self.target_ff(sample_embedding))
