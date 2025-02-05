@@ -53,7 +53,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 inner_dim=self._intermediate_size,
                 inner_activation=self._activation,
                 dropout_rate=self._dropout_rate,
-                attention_dropout_rate=self._dropout_rate,
+                attention_dropout_rate=0.0,  # self._dropout_rate,
                 share_rezero=True,
                 name=("layer_%d" % i),
             )
