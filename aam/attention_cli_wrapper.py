@@ -27,9 +27,6 @@ from aam.callbacks import (
     _mean_absolute_error,
 )
 from aam.cv_utils import CVModel, EnsembleModel
-
-from attention_wrappers import fit_asv_encoder_decorator, fit_denoised_unifrac_regressor_decorator, fit_taxonomy_regressor_decorator
-from attention_wrappers import fit_sample_regressor_decorator, predict_sample_regressor_decorator, fit_gotu_decorator
 import pytest
 from click.testing import CliRunner
 
