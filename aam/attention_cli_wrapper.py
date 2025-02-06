@@ -22,6 +22,8 @@ from aam.cv_utils import CVModel, EnsembleModel
 
 from attention_wrappers import fit_asv_encoder_decorator, fit_denoised_unifrac_regressor_decorator, fit_taxonomy_regressor_decorator
 from attention_wrappers import fit_sample_regressor_decorator, predict_sample_regressor_decorator, fit_gotu_decorator
+import pytest
+from click.testing import CliRunner
 
 @click.group()
 class cli:
@@ -62,6 +64,7 @@ GLOBAL_CONFIGURATIONS = {}
 @fit_asv_encoder_decorator
 def fit_asv_encoder(model, **kwargs):
     print("Model has been saved to", kwargs["output_dir"])
+
 
 ###-------------------------------------------------------------------------------------------------------------------------------###
 @cli.command()
@@ -120,7 +123,7 @@ def fit_asv_encoder(model, **kwargs):
 @click.option("--p-nuc-encoder", default=None)
 @click.option("--p-use-linear-bias", default=False, type=bool)
 @fit_denoised_unifrac_regressor_decorator
-def fit_denoised_unifrac_regressor(model, **kwargs):
+def fit_denoised_unifrac_regressor(**kwargs):
     
     print("Model has been saved to", kwargs["output_dir"])
 
@@ -374,10 +377,13 @@ def predict_sample_regressor(**kwargs):
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-scale-loss", default=False, type=bool)
 @click.option("--p-normalize-outputs", default=False, type=bool)
+
 @fit_gotu_decorator
 def fit_gotu(**kwargs):
+
     print("Model has been saved to", kwargs["output_dir"])
 
+###-------------------------------------------------------------------------------------------------------------------------------###
 
 def main():
     gpus = tf.config.list_physical_devices("GPU")

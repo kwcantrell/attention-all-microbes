@@ -50,6 +50,9 @@ def fit_asv_encoder_decorator(func):
         from aam.models.nucleotide_encoder_v3 import NucleotideEncoderV3
         from aam.models.utils import cos_decay_with_warmup
 
+        for k,v in kwargs.items():
+            print(f"{k}: {v}")
+
         i_tree=  kwargs['i_tree']
         p_sequence_batch_size = kwargs['p_sequence_batch_size']
         p_pairwise_batch_size = kwargs['p_pairwise_batch_size']
@@ -170,6 +173,8 @@ def fit_asv_encoder_decorator(func):
         return func(model, *args, **kwargs)
     return wrapper
 
+
+###----------------------------------------------------------------------------------------------------------------------------###
 def fit_denoised_unifrac_regressor_decorator(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -1108,3 +1113,5 @@ def fit_gotu_decorator(func):
         )
         model.set_weights(model_saver.best_weights)
         model.save(model_save_path, save_format="keras")
+        return func(model, **kwargs)
+    return wrapper
