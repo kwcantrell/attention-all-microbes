@@ -26,11 +26,13 @@
 #     pass
 
 
-# TABLE_DESC = "Feature table containing all features that should be used for target prediction."
-# TEST_SIZE_DESC = "Fraction of input samples to exclude from training set and use for classifier testing."
-# CV_DESC = "Number of k-fold cross-validations to perform."
-# STRAT_DESC = "Evenly stratify training and test data among metadata categories. If True, all values in column must match at least two samples."
-# MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fail if missing samples are detected. "ignore" will cause the feature table and metadata to be filtered, so that only samples found in both files are retained.'
+TABLE_DESC = (
+    "Feature table containing all features that should be used for target prediction."
+)
+TEST_SIZE_DESC = "Fraction of input samples to exclude from training set and use for classifier testing."
+CV_DESC = "Number of k-fold cross-validations to perform."
+STRAT_DESC = "Evenly stratify training and test data among metadata categories. If True, all values in column must match at least two samples."
+MISSING_SAMP_DESC = 'How to handle missing samples in metadata. "error" will fail if missing samples are detected. "ignore" will cause the feature table and metadata to be filtered, so that only samples found in both files are retained.'
 
 
 # def validate_metadata(table, metadata, missing_samples_flag):
@@ -54,50 +56,56 @@
 # GLOBAL_CONFIGURATIONS = {}
 
 
-# @cli.command()
-# @click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-# @click.option("--p-sequence-batch-size", default=8, show_default=True, required=False, type=int)
-# @click.option("--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int)
-# @click.option("--p-epochs", default=1000, show_default=True, type=int)
-# @click.option("--p-dropout", default=0.0, show_default=True, type=float)
-# @click.option("--p-embedding-dim", default=128, type=int)
-# @click.option("--p-attention-heads", default=4, type=int)
-# @click.option("--p-attention-layers", default=8, type=int)
-# @click.option("--p-intermediate-size", default=512, type=int)
-# @click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
-# @click.option("--p-lr", default=1e-4, show_default=True, type=float)
-# @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
-# @click.option("--p-max-bp", default=150, show_default=True, type=int)
-# @click.option("--output-dir", required=True)
-# @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
-# @click.option("--p-normalize-outputs", default=False, type=bool)
-# @click.option("--p-use-residual-connections", default=True, type=bool)
-# @click.option("--i-model", default=None, required=False, type=str)
-# @click.option("--p-include-bert-loss", default=True, required=False, type=bool)
-# @click.option("--p-use-linear-bias", default=False, type=bool)
-# def fit_asv_encoder(
-#     i_tree: str,
-#     p_sequence_batch_size: int,
-#     p_pairwise_batch_size: int,
-#     p_epochs: int,
-#     p_dropout: float,
-#     p_embedding_dim: int,
-#     p_attention_heads: int,
-#     p_attention_layers: int,
-#     p_intermediate_size: int,
-#     p_intermediate_activation: str,
-#     p_lr: float,
-#     p_decay_steps: int,
-#     p_max_bp: int,
-#     output_dir: str,
-#     p_weight_decay: float,
-#     p_normalize_outputs: bool,
-#     p_use_residual_connections: bool,
-#     i_model: str,
-#     p_include_bert_loss: bool,
-#     p_use_linear_bias: bool,
-# ):
-#     import tensorflow_addons as tfa
+@cli.command()
+@click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option(
+    "--p-sequence-batch-size", default=8, show_default=True, required=False, type=int
+)
+@click.option(
+    "--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int
+)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=128, type=int)
+@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-attention-layers", default=8, type=int)
+@click.option("--p-intermediate-size", default=512, type=int)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
+@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-normalize-outputs", default=False, type=bool)
+@click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-include-bert-loss", default=True, required=False, type=bool)
+@click.option("--p-use-linear-bias", default=False, type=bool)
+def fit_asv_encoder(
+    i_tree: str,
+    p_sequence_batch_size: int,
+    p_pairwise_batch_size: int,
+    p_epochs: int,
+    p_dropout: float,
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_lr: float,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_weight_decay: float,
+    p_normalize_outputs: bool,
+    p_use_residual_connections: bool,
+    i_model: str,
+    p_include_bert_loss: bool,
+    p_use_linear_bias: bool,
+):
+    import tensorflow_addons as tfa
 
 #     # tf.keras.mixed_precision.set_global_policy("mixed_float16")
 #     from aam.callbacks import LAMBLRScheduler
@@ -202,104 +210,106 @@
 #     model.save(model_save_path, save_format="keras")
 
 
-# @cli.command()
-# @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-# @click.option("--i-tree", required=True, type=click.Path(exists=True))
-# @click.option(
-#     "--m-metadata-file",
-#     required=True,
-#     help="Metadata description",
-#     type=click.Path(exists=True),
-# )
-# @click.option(
-#     "--m-metadata-column",
-#     required=True,
-#     type=str,
-#     help="Numeric metadata column to use as prediction target.",
-# )
-# @click.option(
-#     "--p-missing-samples",
-#     default="error",
-#     type=click.Choice(["error", "ignore"], case_sensitive=False),
-#     help=MISSING_SAMP_DESC,
-# )
-# @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-# @click.option("--p-epochs", default=1000, show_default=True, type=int)
-# @click.option("--p-dropout", default=0.0, show_default=True, type=float)
-# @click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
-# @click.option("--p-patience", default=10, show_default=True, type=int)
-# @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-# @click.option("--i-model", default=None, required=False, type=str)
-# @click.option("--i-unifrac-model", default=None, required=False, type=str)
-# @click.option("--p-embedding-dim", default=128, type=int)
-# @click.option("--p-attention-heads", default=4, type=int)
-# @click.option("--p-attention-layers", default=4, type=int)
-# @click.option("--p-intermediate-size", default=1024, type=int)
-# @click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
-# @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
-# @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
-# @click.option("--p-lr", default=1e-4, show_default=True, type=float)
-# @click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
-# @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
-# @click.option("--p-max-bp", default=150, show_default=True, type=int)
-# @click.option("--output-dir", required=True)
-# @click.option("--p-add-token", default=False, required=False, type=bool)
-# @click.option("--p-gotu", default=False, required=False, type=bool)
-# @click.option("--p-is-categorical", default=False, required=False, type=bool)
-# @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
-# @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
-# @click.option("--p-accumulation-steps", default=1, required=False, type=int)
-# @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
-# @click.option("--p-loss-type", default="mse", required=False, type=str)
-# @click.option("--p-normalize-outputs", default=True, type=bool)
-# @click.option("--p-use-residual-connections", default=True, type=bool)
-# @click.option("--p-use-residual-pool", default=None, type=bool)
-# @click.option("--p-train-nuc-encoder", default=True, type=bool)
-# @click.option("--p-nuc-encoder", default=None)
-# @click.option("--p-use-linear-bias", default=False, type=bool)
-# def fit_denoised_unifrac_regressor(
-#     i_table: str,
-#     i_tree: str,
-#     m_metadata_file: str,
-#     m_metadata_column: str,
-#     p_missing_samples: bool,
-#     p_batch_size: int,
-#     p_epochs: int,
-#     p_dropout: float,
-#     p_asv_dropout: float,
-#     p_patience: int,
-#     p_early_stop_warmup: int,
-#     i_model: Union[None, str],
-#     i_unifrac_model: Union[None, str],
-#     p_embedding_dim: int,
-#     p_attention_heads: int,
-#     p_attention_layers: int,
-#     p_intermediate_size: int,
-#     p_intermediate_activation: str,
-#     p_asv_limit: int,
-#     p_gen_new_table: bool,
-#     p_lr: float,
-#     p_warmup_steps: int,
-#     p_decay_steps: int,
-#     p_max_bp: int,
-#     output_dir: str,
-#     p_add_token: bool,
-#     p_gotu: bool,
-#     p_is_categorical: bool,
-#     p_rarefy_depth: int,
-#     p_weight_decay: float,
-#     p_accumulation_steps,
-#     p_unifrac_metric: str,
-#     p_loss_type: str,
-#     p_normalize_outputs,
-#     p_use_residual_connections: bool,
-#     p_use_residual_pool: bool,
-#     p_train_nuc_encoder: bool,
-#     p_nuc_encoder: Union[None, tf.keras.Model],
-#     p_use_linear_bias: bool,
-# ):
-#     import tensorflow_addons as tfa
-#     from biom import load_table
+@cli.command()
+@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option("--i-tree", required=True, type=click.Path(exists=True))
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-patience", default=10, show_default=True, type=int)
+@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--i-unifrac-model", default=None, required=False, type=str)
+@click.option("--p-embedding-dim", default=128, type=int)
+@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-attention-layers", default=4, type=int)
+@click.option("--p-intermediate-size", default=1024, type=int)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-add-token", default=False, required=False, type=bool)
+@click.option("--p-gotu", default=False, required=False, type=bool)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-accumulation-steps", default=1, required=False, type=int)
+@click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
+@click.option("--p-loss-type", default="mse", required=False, type=str)
+@click.option("--p-normalize-outputs", default=True, type=bool)
+@click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--p-use-residual-pool", default=None, type=bool)
+@click.option("--p-train-nuc-encoder", default=True, type=bool)
+@click.option("--p-nuc-encoder", default=None)
+@click.option("--p-use-linear-bias", default=False, type=bool)
+def fit_denoised_unifrac_regressor(
+    i_table: str,
+    i_tree: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: bool,
+    p_batch_size: int,
+    p_epochs: int,
+    p_dropout: float,
+    p_asv_dropout: float,
+    p_patience: int,
+    p_early_stop_warmup: int,
+    i_model: Union[None, str],
+    i_unifrac_model: Union[None, str],
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_asv_limit: int,
+    p_gen_new_table: bool,
+    p_lr: float,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_add_token: bool,
+    p_gotu: bool,
+    p_is_categorical: bool,
+    p_rarefy_depth: int,
+    p_weight_decay: float,
+    p_accumulation_steps,
+    p_unifrac_metric: str,
+    p_loss_type: str,
+    p_normalize_outputs,
+    p_use_residual_connections: bool,
+    p_use_residual_pool: bool,
+    p_train_nuc_encoder: bool,
+    p_nuc_encoder: Union[None, tf.keras.Model],
+    p_use_linear_bias: bool,
+):
+    import tensorflow_addons as tfa
+    from biom import load_table
 
 #     from aam.callbacks import LAMBLRScheduler
 #     from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
@@ -308,11 +318,13 @@
 #     tf.keras.mixed_precision.set_global_policy("mixed_float16")
 #     from aam.models.utils import cos_decay_with_warmup
 
-#     # start pre processing dataset
-#     table = load_table(i_table)
-#     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
-#     ids, table, df = validate_metadata(table, df, p_missing_samples)
-#     indices = np.arange(len(ids), dtype=np.int32)
+    # start pre processing dataset
+    table = load_table(i_table)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    indices = np.arange(len(ids), dtype=np.int32)
 
 #     np.random.shuffle(indices)
 #     train_size = int(len(ids) * 0.8)
@@ -400,7 +412,9 @@
 #             use_linear_bias=p_use_linear_bias,
 #         )
 
-#     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps))
+    lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    )
 
 #     optimizer = tfa.optimizers.LAMB(
 #         learning_rate=p_lr,
@@ -461,87 +475,89 @@
 #     model.save(model_save_path, save_format="keras")
 
 
-# @cli.command()
-# @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-# @click.option("--i-taxonomy", required=True, type=click.Path(exists=True))
-# @click.option("--i-tax-level", default=7, type=int)
-# @click.option(
-#     "--m-metadata-file",
-#     required=True,
-#     help="Metadata description",
-#     type=click.Path(exists=True),
-# )
-# @click.option(
-#     "--m-metadata-column",
-#     required=True,
-#     type=str,
-#     help="Numeric metadata column to use as prediction target.",
-# )
-# @click.option(
-#     "--p-missing-samples",
-#     default="error",
-#     type=click.Choice(["error", "ignore"], case_sensitive=False),
-#     help=MISSING_SAMP_DESC,
-# )
-# @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-# @click.option("--p-epochs", default=1000, show_default=True, type=int)
-# @click.option("--p-dropout", default=0.1, show_default=True, type=float)
-# @click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
-# @click.option("--p-patience", default=10, show_default=True, type=int)
-# @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-# @click.option("--i-model", default=None, required=False, type=str)
-# @click.option("--p-embedding-dim", default=128, type=int)
-# @click.option("--p-attention-heads", default=4, type=int)
-# @click.option("--p-attention-layers", default=4, type=int)
-# @click.option("--p-intermediate-size", default=1024, type=int)
-# @click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
-# @click.option("--p-asv-limit", default=512, show_default=True, type=int)
-# @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
-# @click.option("--p-lr", default=1e-4, show_default=True, type=float)
-# @click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
-# @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
-# @click.option("--p-max-bp", required=True, type=int)
-# @click.option("--output-dir", required=True)
-# @click.option("--p-add-token", default=False, required=False, type=bool)
-# @click.option("--p-gotu", default=False, required=False, type=bool)
-# @click.option("--p-is-categorical", default=False, required=False, type=bool)
-# @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
-# @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
-# @click.option("--p-accumulation-steps", default=1, required=False, type=int)
-# def fit_taxonomy_regressor(
-#     i_table: str,
-#     i_taxonomy: str,
-#     i_tax_level: int,
-#     m_metadata_file: str,
-#     m_metadata_column: str,
-#     p_missing_samples: bool,
-#     p_batch_size: int,
-#     p_epochs: int,
-#     p_dropout: float,
-#     p_asv_dropout: float,
-#     p_patience: int,
-#     p_early_stop_warmup: int,
-#     i_model: Union[None, str],
-#     p_embedding_dim: int,
-#     p_attention_heads: int,
-#     p_attention_layers: int,
-#     p_intermediate_size: int,
-#     p_intermediate_activation: str,
-#     p_asv_limit: int,
-#     p_gen_new_table: bool,
-#     p_lr: float,
-#     p_warmup_steps: int,
-#     p_decay_steps: int,
-#     p_max_bp: int,
-#     output_dir: str,
-#     p_add_token: bool,
-#     p_gotu: bool,
-#     p_is_categorical: bool,
-#     p_rarefy_depth: int,
-#     p_weight_decay: float,
-#     p_accumulation_steps,
-# ):
-#     from biom import load_table
+@cli.command()
+@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option("--i-taxonomy", required=True, type=click.Path(exists=True))
+@click.option("--i-tax-level", default=7, type=int)
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
+@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-patience", default=10, show_default=True, type=int)
+@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-embedding-dim", default=128, type=int)
+@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-attention-layers", default=4, type=int)
+@click.option("--p-intermediate-size", default=1024, type=int)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
+@click.option("--p-asv-limit", default=512, show_default=True, type=int)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-max-bp", required=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-add-token", default=False, required=False, type=bool)
+@click.option("--p-gotu", default=False, required=False, type=bool)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-accumulation-steps", default=1, required=False, type=int)
+def fit_taxonomy_regressor(
+    i_table: str,
+    i_taxonomy: str,
+    i_tax_level: int,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: bool,
+    p_batch_size: int,
+    p_epochs: int,
+    p_dropout: float,
+    p_asv_dropout: float,
+    p_patience: int,
+    p_early_stop_warmup: int,
+    i_model: Union[None, str],
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_asv_limit: int,
+    p_gen_new_table: bool,
+    p_lr: float,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_add_token: bool,
+    p_gotu: bool,
+    p_is_categorical: bool,
+    p_rarefy_depth: int,
+    p_weight_decay: float,
+    p_accumulation_steps,
+):
+    from biom import load_table
 
 #     from aam.data_handlers import TaxonomyGenerator
 #     from aam.models.unifrac_encoder import UnifracEncoder
@@ -554,10 +570,12 @@
 #     if not os.path.exists(figure_path):
 #         os.makedirs(figure_path)
 
-#     table = load_table(i_table)
-#     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
-#     ids, table, df = validate_metadata(table, df, p_missing_samples)
-#     indices = np.arange(len(ids), dtype=np.int32)
+    table = load_table(i_table)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    indices = np.arange(len(ids), dtype=np.int32)
 
 #     np.random.shuffle(indices)
 #     train_size = int(len(ids) * 0.8)
@@ -669,127 +687,133 @@
 #     model.save(model_save_path, save_format="keras")
 
 
-# @cli.command()
-# @click.option(
-#     "--i-table",
-#     required=True,
-#     help=TABLE_DESC,
-#     type=click.Path(exists=True),
-# )
-# @click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
-# @click.option(
-#     "--p-no-freeze-base-weights / --p-freeze-base-weights",
-#     default=False,
-#     required=False,
-# )
-# @click.option(
-#     "--m-metadata-file",
-#     required=True,
-#     help="Metadata description",
-#     type=click.Path(exists=True),
-# )
-# @click.option(
-#     "--m-metadata-column",
-#     required=True,
-#     type=str,
-#     help="Numeric metadata column to use as prediction target.",
-# )
-# @click.option(
-#     "--p-missing-samples",
-#     default="error",
-#     type=click.Choice(["error", "ignore"], case_sensitive=False),
-#     help=MISSING_SAMP_DESC,
-# )
-# @click.option("--p-epochs", default=1000, show_default=True, type=int)
-# @click.option("--p-cv", default=5, type=int, help=CV_DESC)
-# @click.option(
-#     "--p-test-size",
-#     default=0.2,
-#     show_default=True,
-#     type=click.FloatRange(0, 1),
-#     help=TEST_SIZE_DESC,
-# )
-# @click.option("--p-patience", default=10, show_default=True, type=int)
-# @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-# @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-# @click.option("--p-dropout", default=0.1, show_default=True, type=float)
-# @click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
-# @click.option("--p-report-back", default=5, show_default=True, type=int)
-# @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
-# @click.option("--p-penalty", default=1.0, show_default=True, type=float)
-# @click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
-# @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
-# @click.option("--p-attention-heads", default=4, show_default=True, type=int)
-# @click.option("--p-attention-layers", default=4, show_default=True, type=int)
-# @click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
-# @click.option("--p-intermediate-activation", default="relu", show_default=True, type=str)
-# @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
-# @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
-# @click.option("--p-tree", default=None, type=click.Path(exists=True))
-# @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
-# @click.option("--p-lr", default=1e-4, show_default=True, type=float)
-# @click.option("--p-warmup-steps", default=4000, show_default=True, type=int)
-# @click.option("--p-decay-steps", default=1000, show_default=True, type=int)
-# @click.option("--p-max-bp", default=150, show_default=True, type=int)
-# @click.option("--output-dir", required=True, type=click.Path(exists=False))
-# @click.option("--p-output-dim", default=1, required=False, type=int)
-# @click.option("--p-add-token", default=False, required=False, type=bool)
-# @click.option("--p-gotu", default=False, required=False, type=bool)
-# @click.option("--p-is-categorical", default=False, required=False, type=bool)
-# @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
-# @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
-# @click.option("--p-accumulation-steps", default=1, required=False, type=int)
-# @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
-# @click.option("--p-scale-loss", default=False, type=bool)
-# @click.option("--p-train-nuc-encoder", default=True, type=bool)
-# @click.option("--p-include-count-encoder", default=True, type=bool)
-# def fit_sample_regressor(
-#     i_table: str,
-#     i_base_model_path: str,
-#     p_no_freeze_base_weights: bool,
-#     m_metadata_file: str,
-#     m_metadata_column: str,
-#     p_missing_samples: str,
-#     p_epochs: int,
-#     p_cv: int,
-#     p_test_size: float,
-#     p_patience: int,
-#     p_early_stop_warmup: int,
-#     p_batch_size: int,
-#     p_dropout: float,
-#     p_asv_dropout: float,
-#     p_report_back: int,
-#     p_asv_limit: int,
-#     p_penalty: float,
-#     p_nuc_penalty: float,
-#     p_embedding_dim: int,
-#     p_attention_heads: int,
-#     p_attention_layers: int,
-#     p_intermediate_size: int,
-#     p_intermediate_activation: str,
-#     p_taxonomy: str,
-#     p_taxonomy_level: int,
-#     p_tree: str,
-#     p_gen_new_table: bool,
-#     p_lr: int,
-#     p_warmup_steps: int,
-#     p_decay_steps: int,
-#     p_max_bp: int,
-#     output_dir: str,
-#     p_output_dim: int,
-#     p_add_token: bool,
-#     p_gotu: bool,
-#     p_is_categorical: bool,
-#     p_rarefy_depth: int,
-#     p_weight_decay: float,
-#     p_accumulation_steps: int,
-#     p_unifrac_metric: str,
-#     p_scale_loss: bool,
-#     p_train_nuc_encoder: bool,
-#     p_include_count_encoder: bool,
-# ):
-#     from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
-#     from aam.models.sequence_regressor import SequenceRegressor
+@cli.command()
+@click.option(
+    "--i-table",
+    required=True,
+    help=TABLE_DESC,
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
+@click.option("--i-model", default=None, required=False, type=click.Path(exists=True))
+@click.option(
+    "--p-no-freeze-base-weights / --p-freeze-base-weights",
+    default=False,
+    required=False,
+)
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-cv", default=5, type=int, help=CV_DESC)
+@click.option(
+    "--p-test-size",
+    default=0.2,
+    show_default=True,
+    type=click.FloatRange(0, 1),
+    help=TEST_SIZE_DESC,
+)
+@click.option("--p-patience", default=10, show_default=True, type=int)
+@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
+@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-report-back", default=5, show_default=True, type=int)
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-penalty", default=1.0, show_default=True, type=float)
+@click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
+@click.option("--p-attention-heads", default=4, show_default=True, type=int)
+@click.option("--p-attention-layers", default=8, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
+@click.option(
+    "--p-intermediate-activation", default="relu", show_default=True, type=str
+)
+@click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
+@click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
+@click.option("--p-tree", default=None, type=click.Path(exists=True))
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=3e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=0, show_default=True, type=int)
+@click.option("--p-decay-steps", default=200000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True, type=click.Path(exists=False))
+@click.option("--p-output-dim", default=1, required=False, type=int)
+@click.option("--p-add-token", default=False, required=False, type=bool)
+@click.option("--p-gotu", default=False, required=False, type=bool)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
+@click.option("--p-accumulation-steps", default=1, required=False, type=int)
+@click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
+@click.option("--p-scale-loss", default=False, type=bool)
+@click.option("--p-train-nuc-encoder", default=True, type=bool)
+@click.option("--p-include-count-encoder", default=True, type=bool)
+def fit_sample_regressor(
+    i_table: str,
+    i_base_model_path: str,
+    i_model: str,
+    p_no_freeze_base_weights: bool,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: str,
+    p_epochs: int,
+    p_cv: int,
+    p_test_size: float,
+    p_patience: int,
+    p_early_stop_warmup: int,
+    p_batch_size: int,
+    p_dropout: float,
+    p_asv_dropout: float,
+    p_report_back: int,
+    p_asv_limit: int,
+    p_penalty: float,
+    p_nuc_penalty: float,
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_taxonomy: str,
+    p_taxonomy_level: int,
+    p_tree: str,
+    p_gen_new_table: bool,
+    p_lr: int,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_output_dim: int,
+    p_add_token: bool,
+    p_gotu: bool,
+    p_is_categorical: bool,
+    p_rarefy_depth: int,
+    p_weight_decay: float,
+    p_accumulation_steps: int,
+    p_unifrac_metric: str,
+    p_scale_loss: bool,
+    p_train_nuc_encoder: bool,
+    p_include_count_encoder: bool,
+):
+    from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
+    from aam.models.sequence_regressor import SequenceRegressor
 
 #     tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
@@ -807,10 +831,12 @@
 #     if not os.path.exists(model_path):
 #         os.makedirs(model_path)
 
-#     table = load_table(i_table)
-#     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
-#     ids, table, df = validate_metadata(table, df, p_missing_samples)
-#     num_ids = len(ids)
+    table = load_table(i_table)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    ids, table, df = validate_metadata(table, df, p_missing_samples)
+    num_ids = len(ids)
 
 #     fold_indices = np.arange(num_ids)
 #     np.random.shuffle(fold_indices)
@@ -926,8 +952,10 @@
 #         table_fold = table.filter(fold_ids, axis="sample", inplace=False)
 #         df_fold = df.loc[fold_ids]
 
-#         gen = generator(table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables)
-#         dataset = get_dataset(gen)
+        gen = generator(
+            table_fold, df_fold, shuffle, shift, scale, epochs, gen_new_tables
+        )
+        dataset = get_dataset(gen)
 
 #         data_obj = {
 #             "shift": shift,
@@ -980,153 +1008,166 @@
 #         else:
 #             base_output_dim = train_data["num_tokens"]
 
-#         model = SequenceRegressor(
-#             token_limit=p_asv_limit,
-#             base_output_dim=base_output_dim,
-#             shift=train_data["shift"],
-#             scale=train_data["scale"],
-#             dropout_rate=p_dropout,
-#             embedding_dim=p_embedding_dim,
-#             attention_heads=p_attention_heads,
-#             attention_layers=p_attention_layers,
-#             intermediate_size=p_intermediate_size,
-#             intermediate_activation=p_intermediate_activation,
-#             base_model=base_model,
-#             freeze_base=p_no_freeze_base_weights,
-#             penalty=p_penalty,
-#             nuc_penalty=p_nuc_penalty,
-#             max_bp=p_max_bp,
-#             is_16S=is_16S,
-#             vocab_size=vocab_size,
-#             out_dim=p_output_dim,
-#             classifier=p_is_categorical,
-#             add_token=p_add_token,
-#             class_weights=None,  # train_data["class_weights"],
-#             accumulation_steps=p_accumulation_steps,
-#             scale_losses=p_scale_loss,
-#             use_linear_bias=True,
-#         )
-#         # for x, y in train_data["dataset"].take(1):
-#         #     model(x)
-#         token_shape = tf.TensorShape([None, 150])
-#         batch_indicies = tf.TensorShape([None, 2])
-#         indicies_shape = tf.TensorShape([None])
-#         count_shape = tf.TensorShape([None, 1])
-#         model.build([token_shape, batch_indicies, indicies_shape, count_shape])
-#         model.summary()
+        if i_model:
+            model = tf.keras.models.load_model(i_model, compile=False)
+        else:
+            model = SequenceRegressor(
+                token_limit=p_asv_limit,
+                base_output_dim=base_output_dim,
+                shift=train_data["shift"],
+                scale=train_data["scale"],
+                dropout_rate=p_dropout,
+                embedding_dim=p_embedding_dim,
+                attention_heads=p_attention_heads,
+                attention_layers=p_attention_layers,
+                intermediate_size=p_intermediate_size,
+                intermediate_activation=p_intermediate_activation,
+                base_model=base_model,
+                freeze_base=p_no_freeze_base_weights,
+                penalty=p_penalty,
+                nuc_penalty=p_nuc_penalty,
+                max_bp=p_max_bp,
+                is_16S=is_16S,
+                vocab_size=vocab_size,
+                out_dim=p_output_dim,
+                classifier=p_is_categorical,
+                add_token=p_add_token,
+                class_weights=None,  # train_data["class_weights"],
+                accumulation_steps=p_accumulation_steps,
+                scale_losses=p_scale_loss,
+                use_linear_bias=True,
+            )
+            # for x, y in train_data["dataset"].take(1):
+            #     model(x)
+            token_shape = tf.TensorShape([None, 150])
+            batch_indicies = tf.TensorShape([None, 2])
+            indicies_shape = tf.TensorShape([None])
+            count_shape = tf.TensorShape([None, 1])
+            model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+        model.summary()
 
-#         fold_label = i + 1
-#         if not p_is_categorical:
-#             loss = tf.keras.losses.MeanSquaredError(reduction="none")
-#             callbacks = [
-#                 # MeanAbsoluteError(
-#                 #     monitor="val_mae",
-#                 #     dataset=val_data["dataset"],
-#                 #     output_dir=os.path.join(
-#                 #         figure_path, f"model_f{fold_label}-val.png"
-#                 #     ),
-#                 #     report_back=p_report_back,
-#                 # )
-#             ]
-#         else:
-#             loss = tf.keras.losses.CategoricalFocalCrossentropy(from_logits=False, reduction="none")
-#             # loss = tf.keras.losses.CategoricalHinge(reduction="none")
-#             callbacks = [
-#                 ConfusionMatrx(
-#                     monitor="val_target_loss",
-#                     dataset=val_data["dataset"],
-#                     output_dir=os.path.join(figure_path, f"model_f{fold_label}-val.png"),
-#                     report_back=p_report_back,
-#                 )
-#             ]
-#         model_cv = CVModel(
-#             model,
-#             train_data,
-#             val_data,
-#             output_dir,
-#             fold_label,
-#         )
-#         metric = "mae" if not p_is_categorical else "target_loss"
-#         model_cv.fit_fold(
-#             loss,
-#             p_epochs,
-#             os.path.join(model_path, f"model_f{fold_label}.keras"),
-#             metric=metric,
-#             patience=p_patience,
-#             early_stop_warmup=p_early_stop_warmup,
-#             callbacks=[*callbacks],
-#             lr=p_lr,
-#             warmup_steps=p_warmup_steps,
-#             decay_steps=p_decay_steps,
-#             weight_decay=p_weight_decay,
-#         )
-#         models.append(model_cv)
-#         print(f"Fold {i + 1} mae: {model_cv.metric_value}")
+        fold_label = i + 1
+        if not p_is_categorical:
+            loss = tf.keras.losses.MeanSquaredError(reduction="none")
+            callbacks = [
+                # MeanAbsoluteError(
+                #     monitor="val_mae",
+                #     dataset=val_data["dataset"],
+                #     output_dir=os.path.join(
+                #         figure_path, f"model_f{fold_label}-val.png"
+                #     ),
+                #     report_back=p_report_back,
+                # )
+            ]
+        else:
+            loss = tf.keras.losses.CategoricalFocalCrossentropy(
+                from_logits=False, reduction="none"
+            )
+            # loss = tf.keras.losses.CategoricalHinge(reduction="none")
+            callbacks = [
+                ConfusionMatrx(
+                    monitor="val_target_loss",
+                    dataset=val_data["dataset"],
+                    output_dir=os.path.join(
+                        figure_path, f"model_f{fold_label}-val.png"
+                    ),
+                    report_back=p_report_back,
+                )
+            ]
+        model_cv = CVModel(
+            model,
+            train_data,
+            val_data,
+            output_dir,
+            fold_label,
+        )
+        metric = "mae" if not p_is_categorical else "target_loss"
+        model_cv.fit_fold(
+            loss,
+            p_epochs,
+            os.path.join(model_path, f"model_f{fold_label}.keras"),
+            metric=metric,
+            patience=p_patience,
+            early_stop_warmup=p_early_stop_warmup,
+            callbacks=[*callbacks],
+            lr=p_lr,
+            warmup_steps=p_warmup_steps,
+            decay_steps=p_decay_steps,
+            weight_decay=p_weight_decay,
+        )
+        models.append(model_cv)
+        print(f"Fold {i + 1} mae: {model_cv.metric_value}")
 
-#     best_model_path = os.path.join(output_dir, "best-model.keras")
-#     model_ensemble = EnsembleModel(models)
-#     model_ensemble.save_best_model(best_model_path)
-#     best_mae, ensemble_mae = model_ensemble.val_maes()
-#     print(f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}")
+    best_model_path = os.path.join(output_dir, "best-model.keras")
+    model_ensemble = EnsembleModel(models)
+    model_ensemble.save_best_model(best_model_path)
+    best_mae, ensemble_mae = model_ensemble.val_maes()
+    print(
+        f"Best validation mae: {best_mae}", f"Ensemble validation mae: {ensemble_mae}"
+    )
 
-#     test_data = _get_fold(
-#         test_indices,
-#         shuffle=False,
-#         shift=train_data["shift"],
-#         scale=train_data["scale"],
-#         epochs=1,
-#         num_tables=5,
-#     )
-#     best_mae, ensemble_mae = model_ensemble.plot_fn(_mean_absolute_error, test_data["dataset"], figure_path)
-#     print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
+    test_data = _get_fold(
+        test_indices,
+        shuffle=False,
+        shift=train_data["shift"],
+        scale=train_data["scale"],
+        epochs=1,
+        num_tables=5,
+    )
+    best_mae, ensemble_mae = model_ensemble.plot_fn(
+        _mean_absolute_error, test_data["dataset"], figure_path
+    )
+    print(f"Best test mae: {best_mae}", f"Ensemble test mae: {ensemble_mae}")
 
 
-# @cli.command()
-# @click.option(
-#     "--i-table",
-#     required=True,
-#     help=TABLE_DESC,
-#     type=click.Path(exists=True),
-# )
-# @click.option("--i-model-path", required=True, type=click.Path(exists=True))
-# @click.option(
-#     "--m-metadata-file",
-#     required=True,
-#     help="Metadata description",
-#     type=click.Path(exists=True),
-# )
-# @click.option(
-#     "--m-metadata-column",
-#     required=True,
-#     type=str,
-#     help="Numeric metadata column to use as prediction target.",
-# )
-# @click.option(
-#     "--p-missing-samples",
-#     default="error",
-#     type=click.Choice(["error", "ignore"], case_sensitive=False),
-#     help=MISSING_SAMP_DESC,
-# )
-# @click.option("--p-asv-limit", default=512, show_default=True, type=int)
-# @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-# @click.option("--p-mixed-precision / --p-no-mixed-precision", default=True, required=False)
-# @click.option("--output-dir", required=True, type=click.Path(exists=False))
-# def predict_sample_regressor(
-#     i_table: str,
-#     i_model_path: str,
-#     m_metadata_file: str,
-#     m_metadata_column: str,
-#     p_missing_samples: str,
-#     p_asv_limit: int,
-#     p_batch_size: int,
-#     p_mixed_precision: bool,
-#     output_dir: str,
-# ):
-#     from aam.transfer_data_utils import (
-#         load_data,
-#         shuffle,
-#         validate_metadata,
-#     )
+@cli.command()
+@click.option(
+    "--i-table",
+    required=True,
+    help=TABLE_DESC,
+    type=click.Path(exists=True),
+)
+@click.option("--i-model-path", required=True, type=click.Path(exists=True))
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-asv-limit", default=512, show_default=True, type=int)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option(
+    "--p-mixed-precision / --p-no-mixed-precision", default=True, required=False
+)
+@click.option("--output-dir", required=True, type=click.Path(exists=False))
+def predict_sample_regressor(
+    i_table: str,
+    i_model_path: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: str,
+    p_asv_limit: int,
+    p_batch_size: int,
+    p_mixed_precision: bool,
+    output_dir: str,
+):
+    from aam.transfer_data_utils import (
+        load_data,
+        shuffle,
+        validate_metadata,
+    )
 
 #     if p_mixed_precision:
 #         print("\nUsing mixed precision\n")
@@ -1156,134 +1197,138 @@
 #     _mean_absolute_error(y_pred, y_true, os.path.join(output_dir, "mae.png"))
 
 
-# @cli.command()
-# @click.option(
-#     "--i-asv-table",
-#     required=True,
-#     help=TABLE_DESC,
-#     type=click.Path(exists=True),
-# )
-# @click.option(
-#     "--i-gotu-table",
-#     required=True,
-#     help=TABLE_DESC,
-#     type=click.Path(exists=True),
-# )
-# @click.option("--i-base-model-path", default=None, required=False, type=click.Path(exists=True))
-# @click.option(
-#     "--p-no-freeze-base-weights / --p-freeze-base-weights",
-#     default=False,
-#     required=False,
-# )
-# @click.option(
-#     "--m-metadata-file",
-#     required=True,
-#     help="Metadata description",
-#     type=click.Path(exists=True),
-# )
-# @click.option(
-#     "--m-metadata-column",
-#     required=True,
-#     type=str,
-#     help="Numeric metadata column to use as prediction target.",
-# )
-# @click.option(
-#     "--p-missing-samples",
-#     default="error",
-#     type=click.Choice(["error", "ignore"], case_sensitive=False),
-#     help=MISSING_SAMP_DESC,
-# )
-# @click.option("--p-epochs", default=1000, show_default=True, type=int)
-# @click.option("--p-cv", default=5, type=int, help=CV_DESC)
-# @click.option(
-#     "--p-test-size",
-#     default=0.2,
-#     show_default=True,
-#     type=click.FloatRange(0, 1),
-#     help=TEST_SIZE_DESC,
-# )
-# @click.option("--p-patience", default=10, show_default=True, type=int)
-# @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-# @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-# @click.option("--p-dropout", default=0.1, show_default=True, type=float)
-# @click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
-# @click.option("--p-report-back", default=5, show_default=True, type=int)
-# @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
-# @click.option("--p-penalty", default=1.0, show_default=True, type=float)
-# @click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
-# @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
-# @click.option("--p-attention-heads", default=4, show_default=True, type=int)
-# @click.option("--p-attention-layers", default=8, show_default=True, type=int)
-# @click.option("--p-intermediate-size", default=512, show_default=True, type=int)
-# @click.option("--p-intermediate-activation", default="gelu", show_default=True, type=str)
-# @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
-# @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
-# @click.option("--p-tree", default=None, type=click.Path(exists=True))
-# @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
-# @click.option("--p-lr", default=3e-4, show_default=True, type=float)
-# @click.option("--p-warmup-steps", default=0, show_default=True, type=int)
-# @click.option("--p-decay-steps", default=1000000, show_default=True, type=int)
-# @click.option("--p-max-bp", default=150, show_default=True, type=int)
-# @click.option("--output-dir", required=True, type=click.Path(exists=False))
-# @click.option("--p-output-dim", default=128, required=False, type=int)
-# @click.option("--p-add-token", default=False, required=False, type=bool)
-# @click.option("--p-is-categorical", default=False, required=False, type=bool)
-# @click.option("--p-gotu-rarefy-depth", default=100000, required=False, type=int)
-# @click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
-# @click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
-# @click.option("--p-accumulation-steps", default=1, required=False, type=int)
-# @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
-# @click.option("--p-scale-loss", default=False, type=bool)
-# @click.option("--p-normalize-outputs", default=False, type=bool)
-# def fit_gotu(
-#     i_asv_table: str,
-#     i_gotu_table: str,
-#     i_base_model_path: str,
-#     p_no_freeze_base_weights: bool,
-#     m_metadata_file: str,
-#     m_metadata_column: str,
-#     p_missing_samples: str,
-#     p_epochs: int,
-#     p_cv: int,
-#     p_test_size: float,
-#     p_patience: int,
-#     p_early_stop_warmup: int,
-#     p_batch_size: int,
-#     p_dropout: float,
-#     p_asv_dropout: float,
-#     p_report_back: int,
-#     p_asv_limit: int,
-#     p_penalty: float,
-#     p_nuc_penalty: float,
-#     p_embedding_dim: int,
-#     p_attention_heads: int,
-#     p_attention_layers: int,
-#     p_intermediate_size: int,
-#     p_intermediate_activation: str,
-#     p_taxonomy: str,
-#     p_taxonomy_level: int,
-#     p_tree: str,
-#     p_gen_new_table: bool,
-#     p_lr: int,
-#     p_warmup_steps: int,
-#     p_decay_steps: int,
-#     p_max_bp: int,
-#     output_dir: str,
-#     p_output_dim: int,
-#     p_add_token: bool,
-#     p_is_categorical: bool,
-#     p_gotu_rarefy_depth: int,
-#     p_asv_rarefy_depth: int,
-#     p_weight_decay: float,
-#     p_accumulation_steps: int,
-#     p_unifrac_metric: str,
-#     p_scale_loss: bool,
-#     p_normalize_outputs: bool,
-# ):
-#     from aam.data_handlers.gotu_generator import GOTUGenerator
-#     from aam.models.gotu_model import GOTUModel
-#     from aam.models.unifrac_encoder import UnifracEncoder
-#     from aam.models.utils import cos_decay_with_warmup
+@cli.command()
+@click.option(
+    "--i-asv-table",
+    required=True,
+    help=TABLE_DESC,
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--i-gotu-table",
+    required=True,
+    help=TABLE_DESC,
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
+)
+@click.option(
+    "--p-no-freeze-base-weights / --p-freeze-base-weights",
+    default=False,
+    required=False,
+)
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-cv", default=5, type=int, help=CV_DESC)
+@click.option(
+    "--p-test-size",
+    default=0.2,
+    show_default=True,
+    type=click.FloatRange(0, 1),
+    help=TEST_SIZE_DESC,
+)
+@click.option("--p-patience", default=10, show_default=True, type=int)
+@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
+@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-report-back", default=5, show_default=True, type=int)
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-penalty", default=1.0, show_default=True, type=float)
+@click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
+@click.option("--p-attention-heads", default=4, show_default=True, type=int)
+@click.option("--p-attention-layers", default=8, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
+@click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
+@click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
+@click.option("--p-tree", default=None, type=click.Path(exists=True))
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=3e-4, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=0, show_default=True, type=int)
+@click.option("--p-decay-steps", default=1000000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True, type=click.Path(exists=False))
+@click.option("--p-output-dim", default=128, required=False, type=int)
+@click.option("--p-add-token", default=False, required=False, type=bool)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-gotu-rarefy-depth", default=100000, required=False, type=int)
+@click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
+@click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
+@click.option("--p-accumulation-steps", default=1, required=False, type=int)
+@click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
+@click.option("--p-scale-loss", default=False, type=bool)
+@click.option("--p-normalize-outputs", default=False, type=bool)
+def fit_gotu(
+    i_asv_table: str,
+    i_gotu_table: str,
+    i_base_model_path: str,
+    p_no_freeze_base_weights: bool,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: str,
+    p_epochs: int,
+    p_cv: int,
+    p_test_size: float,
+    p_patience: int,
+    p_early_stop_warmup: int,
+    p_batch_size: int,
+    p_dropout: float,
+    p_asv_dropout: float,
+    p_report_back: int,
+    p_asv_limit: int,
+    p_penalty: float,
+    p_nuc_penalty: float,
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_taxonomy: str,
+    p_taxonomy_level: int,
+    p_tree: str,
+    p_gen_new_table: bool,
+    p_lr: int,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_output_dim: int,
+    p_add_token: bool,
+    p_is_categorical: bool,
+    p_gotu_rarefy_depth: int,
+    p_asv_rarefy_depth: int,
+    p_weight_decay: float,
+    p_accumulation_steps: int,
+    p_unifrac_metric: str,
+    p_scale_loss: bool,
+    p_normalize_outputs: bool,
+):
+    from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
+    from aam.models.gotu_model import GOTUModel
+    from aam.models.unifrac_encoder import UnifracEncoder
+    from aam.models.utils import cos_decay_with_warmup
 
 #     tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
@@ -1297,11 +1342,13 @@
 #     asv_table = load_table(i_asv_table)
 #     gotu_table = load_table(i_gotu_table)
 
-#     df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[[m_metadata_column]]
-#     asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
-#     gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
-#     num_ids = len(gotu_ids)
-#     gotu_count = len(gotu_table.ids(axis="observation"))
+    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
+    gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
+    num_ids = len(gotu_ids)
+    gotu_count = len(gotu_table.ids(axis="observation"))
 
 #     common_kwargs = {
 #         "metadata_column": m_metadata_column,
@@ -1317,27 +1364,31 @@
 #         "metadata": df_all,
 #     }
 
-#     def train_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
-#         return GOTUGenerator(
-#             table=gotu_table,
-#             asv_table=asv_table,
-#             shuffle=shuffle,
-#             shift=shift,
-#             scale=scale,
-#             gen_new_tables=gen_new_tables,
-#             **common_kwargs,
-#         )
+    def train_generator(
+        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    ):
+        return GOTUGenerator(
+            gotu_table=gotu_table,
+            asv_table=asv_table,
+            shuffle=shuffle,
+            shift=shift,
+            scale=scale,
+            gen_new_tables=gen_new_tables,
+            **common_kwargs,
+        )
 
-#     def val_generator(asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables):
-#         return GOTUGenerator(
-#             table=gotu_table,
-#             asv_table=asv_table,
-#             shuffle=shuffle,
-#             shift=shift,
-#             scale=scale,
-#             gen_new_tables=gen_new_tables,
-#             **common_kwargs,
-#         )
+    def val_generator(
+        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    ):
+        return GOTUGenerator(
+            gotu_table=gotu_table,
+            asv_table=asv_table,
+            shuffle=shuffle,
+            shift=shift,
+            scale=scale,
+            gen_new_tables=gen_new_tables,
+            **common_kwargs,
+        )
 
 #     indices = np.arange(len(asv_ids), dtype=np.int32)
 
@@ -1358,91 +1409,105 @@
 #     val_gotu_ids = gotu_ids[val_gotu_indices]
 #     val_gotu_table = gotu_table.filter(val_gotu_ids, inplace=False)
 
-#     train_gen = train_generator(train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True)
+    train_gen = train_generator(
+        train_asv_table, train_gotu_table, df_all, True, 0, 1, p_epochs, True
+    )
 
-#     val_gen = val_generator(val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False)
+    val_gen = val_generator(
+        val_asv_table, val_gotu_table, df_all, False, 0, 1, p_epochs, False
+    )
 
-#     train_data = train_gen.get_data()
-#     val_data = val_gen.get_data()
-#     base_model = None
-#     asv_tokens = [None, None, p_max_bp]
-#     asv_counts = [None, None, 1]
-#     gotu_tokens = [None, None, 1]
-#     gotu_counts = [None, None, 1]
-#     for (
-#         asv_batch_counts,
-#         asv_tokens,
-#         asv_indices,
-#         asv_counts,
-#         gotu_batch_counts,
-#         gotu_tokens,
-#         gotu_counts,
-#         asv_unifrac,
-#     ) in train_data["dataset"].take(1):
-#         asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
-#         gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
+    train_data = get_dataset(train_gen)
+    val_data = get_dataset(val_gen)
+    base_model = None
+    asv_tokens = [None, None, p_max_bp]
+    asv_counts = [None, None, 1]
+    gotu_tokens = [None, None, 1]
+    gotu_counts = [None, None, 1]
+    # for (
+    #     asv_batch_counts,
+    #     asv_tokens,
+    #     asv_indices,
+    #     asv_counts,
+    #     gotu_batch_counts,
+    #     gotu_tokens,
+    #     gotu_counts,
+    #     asv_unifrac,
+    # ) in train_data["dataset"].take(1):
+    #     asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
+    #     gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
 
-#     if i_base_model_path is not None:
-#         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
-#         base_model.accumulation_steps = p_accumulation_steps
-#     else:
-#         base_model = UnifracEncoder(
-#             p_output_dim,
-#             p_asv_limit,
-#             "unifrac",
-#             dropout_rate=p_dropout,
-#             embedding_dim=p_embedding_dim,
-#             attention_heads=p_attention_heads,
-#             attention_layers=p_attention_layers,
-#             intermediate_size=p_intermediate_size,
-#             intermediate_activation=p_intermediate_activation,
-#             normalize_outputs=p_normalize_outputs,
-#             name="sequence_encoder",
-#         )
-#     batch_counts = tf.TensorShape([None])
-#     token_shape = tf.TensorShape([None, 150])
-#     indicies_shape = tf.TensorShape([None])
-#     count_shape = tf.TensorShape([None, 1])
+    if i_base_model_path is not None:
+        base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
+        base_model.accumulation_steps = p_accumulation_steps
+    else:
+        raise Exception("YOU HAVE FAILED, COME BACK WITH A BASEMODEL")
 
-#     base_model.build([batch_counts, token_shape, indicies_shape, count_shape])
-#     model = GOTUModel(
-#         p_output_dim,
-#         p_asv_limit,
-#         dropout_rate=p_dropout,
-#         embedding_dim=p_embedding_dim,
-#         attention_heads=p_attention_heads,
-#         attention_layers=p_attention_layers,
-#         intermediate_size=p_intermediate_size,
-#         intermediate_activation=p_intermediate_activation,
-#         asv_embedding_layer=base_model,
-#         gotu_count=gotu_count,
-#         max_gotu=p_asv_limit,
-#         freeze_base_weights=p_no_freeze_base_weights,
-#         name="gotu_model",
-#     )
+    asv_token_shape = tf.TensorShape([None, 150])
+    asv_batch_indices = tf.TensorShape([None, 2])
+    asv_indicies_shape = tf.TensorShape(
+        [
+            None,
+        ]
+    )
+    asv_count_shape = tf.TensorShape([None, 1])
+    gotu_token_shape = tf.TensorShape([None, 1])
+    gotu_batch_indices = tf.TensorShape([None, 2])
+    gotu_indicies_shape = tf.TensorShape(
+        [
+            None,
+        ]
+    )
+    gotu_count_shape = tf.TensorShape([None, 1])
 
-#     optimizer = tf.keras.optimizers.AdamW(
-#         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
-#         weight_decay=p_weight_decay,
-#     )
-#     optimizer.exclude_from_weight_decay(
-#         var_names=[
-#             "bias",
-#             "rezero_alpha",
-#             "layer_norm",
-#             "LayerNorm",
-#             "embeddings",
-#         ]
-#     )
-#     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    model = GOTUModel(
+        p_output_dim,
+        p_asv_limit,
+        dropout_rate=p_dropout,
+        embedding_dim=p_embedding_dim,
+        attention_heads=p_attention_heads,
+        attention_layers=p_attention_layers,
+        intermediate_size=p_intermediate_size,
+        intermediate_activation=p_intermediate_activation,
+        asv_embedding_layer=base_model,
+        gotu_count=gotu_count,
+        max_gotu=p_asv_limit,
+        freeze_base_weights=p_no_freeze_base_weights,
+        name="gotu_model",
+    )
 
-#     model((asv_inputs, gotu_inputs))
-#     # model.build([(asv_tokens, asv_counts), (gotu_tokens, gotu_counts)])
-#     model.compile(
-#         optimizer=optimizer,
-#         run_eagerly=False,
-#     )
-#     model.summary()
+    optimizer = tf.keras.optimizers.AdamW(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+        weight_decay=p_weight_decay,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
+    )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    # model.build(
+    #     (
+    #         [asv_token_shape, asv_batch_indices, asv_indicies_shape, asv_count_shape],
+    #         [
+    #             gotu_token_shape,
+    #             gotu_batch_indices,
+    #             gotu_indicies_shape,
+    #             gotu_count_shape,
+    #         ],
+    #     )
+    # )
+    x, y = train_gen[0]
+    model(x)
+    model.compile(
+        optimizer=optimizer,
+        run_eagerly=True,
+    )
+    model.summary()
 
 #     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 #     log_dir = os.path.join(output_dir, log_dir)

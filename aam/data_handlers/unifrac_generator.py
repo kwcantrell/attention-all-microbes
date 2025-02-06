@@ -66,9 +66,9 @@ if __name__ == "__main__":
     import numpy as np
 
     ug = UniFracGenerator(
-        table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
-        tree_path="/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk",
-        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-healthy.txt",
+        table="/home/jokirkland/data/aam/sanity/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
+        tree_path="/home/jokirkland/data/aam/sanity/agp-aligned.nwk",
+        metadata="/home/jokirkland/data/aam/sanity/agp-healthy.txt",
         metadata_column="host_age",
         shift=0.0,
         scale=100.0,

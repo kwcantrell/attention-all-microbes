@@ -295,6 +295,8 @@ class UnifracDenoiser(tf.keras.Model):
         samples_per_group: int = None,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        training = training and self.trainable
+
         tokens, batch_indices, asv_indices, counts = inputs
 
         tokens, batch_indices, asv_indices, counts = inputs

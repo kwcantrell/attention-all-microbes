@@ -36,9 +36,7 @@ def batch_embeddings(asv_embeddings, batch_indicies, counts, asv_indices=None):
         asv_embeddings = tf.gather(asv_embeddings, asv_indices)
     batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
     max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-    batch_embeddings = tf.scatter_nd(
-        batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
-    )
+    batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
     counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
     return batch_embeddings, counts
 
@@ -101,9 +99,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         if self.tree_path is not None:
             self.tree = to_skbio_treenode(parse_newick(open(self.tree_path).read()))
-            self.postorder_pos = {
-                n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()
-            }
+            self.postorder_pos = {n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()}
 
         print("rarefy table...")
         self.rarefied_table: Table = self.table.subsample(rarefy_depth)
@@ -131,14 +127,16 @@ class GeneratorDataset(tf.keras.utils.Sequence):
             sample_data = self.rarefied_table.data(s_id, dense=False).tocoo()
             (obs_idx, _), sample_counts = sample_data.coords, sample_data.data
 
+            # remove zeros
+            non_zero_mask = sample_counts > 0.0
+            obs_idx = obs_idx[non_zero_mask]
+            sample_counts = sample_counts[non_zero_mask]
+
             num_unique_asvs.append(len(obs_idx))
             sparse_indices.append([[cur_row_indx, i] for i in range(len(obs_idx))])
 
-            sorted_indices = np.argsort(sample_counts)
-            sorted_descending = sorted_indices[::-1]
-            obs_indices.append(obs_idx)  # [sorted_descending])
-            counts.append(sample_counts)  # [sorted_descending])
-
+            obs_indices.append(obs_idx)
+            counts.append(sample_counts)
             cur_row_indx += 1
 
         num_unique_asvs = np.array(num_unique_asvs, dtype=np.int32)
@@ -160,9 +158,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
                 asv = asv.lower()
                 return np.array([lookup[c] for c in asv], dtype=np.int32)[np.newaxis, :]
 
-            tokens = np.concatenate(
-                [map(asv) for asv in self.asv_ids[unique_obs]], axis=0
-            )
+            tokens = np.concatenate([map(asv) for asv in self.asv_ids[unique_obs]], axis=0)
         else:
             tokens = unique_obs
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
@@ -177,10 +173,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
 
     def on_epoch_end(self):
-        if (
-            self.gen_new_tables
-            and self.epochs_since_last_table > self.gen_new_table_frequency
-        ):
+        if self.gen_new_tables and self.epochs_since_last_table > self.gen_new_table_frequency:
             print("resampling dataset...")
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
             self.epochs_since_last_table = 0
@@ -206,9 +199,7 @@ class GeneratorDataset(tf.keras.utils.Sequence):
                 sorted_indices = np.argsort(post_pos)
                 return obs[sorted_indices]
 
-            self._rarefied_table = self._rarefied_table.sort(
-                sort_obs, axis="observation"
-            )
+            self._rarefied_table = self._rarefied_table.sort(sort_obs, axis="observation")
 
         self.sample_ids = self._rarefied_table.ids()
         self.asv_ids = self._rarefied_table.ids(axis="observation")

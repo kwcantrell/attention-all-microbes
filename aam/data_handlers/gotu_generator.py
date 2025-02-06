@@ -74,60 +74,60 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         return self._batch_data(batch_sample_ids)
 
     def _batch_data(self, batch_sample_ids):
-        def _get_data(gen):
-            tokens, sparse_indices, counts = [], [], []
-            y_true, encoder_output = [], []
-            (
-                (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts),
-                (gen_y_true, gen_encoder_output),
-            ) = gen._batch_data(batch_sample_ids)
-            gen_tokens = gen_tokens[gen_obs_indices]
-            tokens.append(gen_tokens)
+        # def _get_data(gen):
+        #     tokens, sparse_indices, counts = [], [], []
+        #     y_true, encoder_output = [], []
+        #     (
+        #         (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts),
+        #         (gen_y_true, gen_encoder_output),
+        #     ) = gen._batch_data(batch_sample_ids)
+        #     gen_tokens = gen_tokens[gen_obs_indices]
+        #     tokens.append(gen_tokens)
 
-            sparse_indices.append(gen_sparse_indices)
+        #     sparse_indices.append(gen_sparse_indices)
 
-            counts.append(gen_counts)
+        #     counts.append(gen_counts)
 
-            y_true.append(gen_y_true)
-            encoder_output.append(gen_encoder_output)
+        #     y_true.append(gen_y_true)
+        #     encoder_output.append(gen_encoder_output)
 
-            tokens = np.concatenate(tokens, axis=0)
-            sparse_indices = np.concatenate(sparse_indices, axis=0)
-            counts = np.concatenate(counts, axis=0)
-            y_true = np.concatenate(y_true, axis=0)
-            encoder_output = np.concatenate(encoder_output, axis=0)
+        #     tokens = np.concatenate(tokens, axis=0)
+        #     sparse_indices = np.concatenate(sparse_indices, axis=0)
+        #     counts = np.concatenate(counts, axis=0)
+        #     y_true = np.concatenate(y_true, axis=0)
+        #     encoder_output = np.concatenate(encoder_output, axis=0)
 
-            unique_tokens, obs_indices = np.unique(tokens, axis=0, return_inverse=True)
-            return (
-                encoder_output,
-                unique_tokens,
-                sparse_indices,
-                obs_indices,
-                counts,
-                y_true,
-            )
+        #     unique_tokens, obs_indices = np.unique(tokens, axis=0, return_inverse=True)
+        #     return (
+        #         encoder_output,
+        #         unique_tokens,
+        #         sparse_indices,
+        #         obs_indices,
+        #         counts,
+        #         y_true,
+        #     )
 
-        encoder_output, unique_tokens, sparse_indices, obs_indices, counts, y_true = (
-            _get_data(self.asv_generator)
-        )
         (
-            gotu_encoder_output,
-            gotu_unique_tokens,
-            gotu_sparse_indices,
-            gotu_obs_indices,
-            gotu_counts,
-            gotu_y_true,
-        ) = _get_data(self.gotu_generator)
-        return (
-            (unique_tokens, sparse_indices, obs_indices, counts),
-            (
-                y_true,
-                encoder_output,
-            ),
+            (asv_unique_tokens, asv_sparse_indices, asv_obs_indices, asv_counts),
+            (asv_y_true, asv_encoder_output),
+        ) = self.asv_generator._batch_data(batch_sample_ids)
+        (
             (gotu_unique_tokens, gotu_sparse_indices, gotu_obs_indices, gotu_counts),
+            (gotu_y_true, gotu_encoder_output),
+        ) = self.gotu_generator._batch_data(batch_sample_ids)
+        return (
             (
-                gotu_y_true,
-                gotu_encoder_output,
+                (asv_unique_tokens, asv_sparse_indices, asv_obs_indices, asv_counts),
+                (
+                    gotu_unique_tokens,
+                    gotu_sparse_indices,
+                    gotu_obs_indices,
+                    gotu_counts,
+                ),
+            ),
+            (
+                (asv_y_true, asv_encoder_output),
+                (gotu_y_true, gotu_encoder_output),
             ),
         )
 
@@ -139,18 +139,16 @@ def get_dataset(gen: GOTUGenerator):
 
     if not gen.return_sample_ids:
         y_type = tf.TensorSpec(
-            shape=[gen.batch_size * len(gen.generators), gen.batch_size],
+            shape=[gen.batch_size, gen.batch_size],
             dtype=tf.float32,
         )
     else:
-        y_type = tf.TensorSpec(
-            shape=(gen.batch_size * len(gen.generators)), dtype=tf.string
-        )
+        y_type = tf.TensorSpec(shape=(gen.batch_size), dtype=tf.string)
 
-    if gen.unifrac_metric:
-        dataset = tf.data.Dataset.from_generator(
-            enqueuer.get,
-            output_signature=(
+    dataset = tf.data.Dataset.from_generator(
+        enqueuer.get,
+        output_signature=(
+            (
                 (
                     tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
@@ -158,29 +156,30 @@ def get_dataset(gen: GOTUGenerator):
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
                 (
+                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+                ),
+            ),
+            (
+                (
                     tf.TensorSpec(
-                        shape=[gen.batch_size * len(gen.generators), 1],
+                        shape=[gen.batch_size, 1],
+                        dtype=tf.float32,
+                    ),
+                    y_type,
+                ),
+                (
+                    tf.TensorSpec(
+                        shape=[gen.batch_size, 1],
                         dtype=tf.float32,
                     ),
                     y_type,
                 ),
             ),
-        )
-    else:
-        dataset = tf.data.Dataset.from_generator(
-            enqueuer.get,
-            output_signature=(
-                (
-                    tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-                ),
-                tf.TensorSpec(
-                    shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32
-                ),
-            ),
-        )
+        ),
+    )
 
     return dataset
 
@@ -199,4 +198,7 @@ if __name__ == "__main__":
         asv_rarefy_depth=1000,
         gotu_rarefy_depth=100000,
     )
+    dataset = get_dataset(gotu_gen)
     print(gotu_gen[0])
+
+    gotu_gen.stop()

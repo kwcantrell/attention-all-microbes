@@ -29,13 +29,16 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
             table = load_table(table)
         self.unifrac_metric = unifrac_metric
         kwargs["tree_path"] = tree_path
-        if unifrac_metric is not None:
-            kwargs["unifrac_metric"] = unifrac_metric
+        self.unifrac_metric = unifrac_metric
+        if self.unifrac_metric is not None:
+            print("Using UniFrac generator")
+            kwargs["unifrac_metric"] = self.unifrac_metric
             self.generators = [
                 UniFracGenerator(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
                 for depth in sample_depths
             ]
         else:
+            print("Not using UniFrac generator")
             self.generators = [
                 GeneratorDataset(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
                 for depth in sample_depths
@@ -77,8 +80,8 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         tokens, sparse_indices, counts = [], [], []
         y_true, encoder_output = [], []
         for gen_i, generator in enumerate(self.generators):
-            (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts), (gen_y_true, gen_encoder_output) = (
-                generator._batch_data(batch_sample_ids)
+            (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts), gen_y_outputs = generator._batch_data(
+                batch_sample_ids
             )
             gen_tokens = gen_tokens[gen_obs_indices]
             tokens.append(gen_tokens)
@@ -88,18 +91,22 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
             counts.append(gen_counts)
 
-            y_true.append(gen_y_true)
-            encoder_output.append(gen_encoder_output)
+            if self.unifrac_metric is not None:
+                gen_y_true, gen_encoder_output = gen_y_outputs
+                y_true.append(gen_y_true)
+                encoder_output.append(gen_encoder_output)
+            else:
+                y_true.append(gen_y_outputs)
 
         tokens = np.concatenate(tokens, axis=0)
         sparse_indices = np.concatenate(sparse_indices, axis=0)
         counts = np.concatenate(counts, axis=0)
         y_true = np.concatenate(y_true, axis=0)
-        encoder_output = np.concatenate(encoder_output, axis=0)
 
         unique_tokens, obs_indices = np.unique(tokens, axis=0, return_inverse=True)
 
         if self.unifrac_metric:
+            encoder_output = np.concatenate(encoder_output, axis=0)
             return (unique_tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
         else:
             return (unique_tokens, sparse_indices, obs_indices, counts), y_true
@@ -115,7 +122,7 @@ def get_dataset(gen: MultiDepthGenerator):
     else:
         y_type = tf.TensorSpec(shape=(gen.batch_size * len(gen.generators)), dtype=tf.string)
 
-    if gen.unifrac_metric:
+    if gen.unifrac_metric is not None:
         dataset = tf.data.Dataset.from_generator(
             enqueuer.get,
             output_signature=(
