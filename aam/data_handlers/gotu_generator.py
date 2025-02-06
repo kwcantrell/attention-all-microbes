@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Iterable, Union, List
+import json
+from typing import Iterable, List, Union
 
 import numpy as np
 import tensorflow as tf
@@ -9,6 +10,12 @@ from bp import parse_newick
 from skbio import DistanceMatrix
 
 from aam.data_handlers.unifrac_generator import UniFracGenerator
+
+
+def load_json(fp: str) -> dict:
+    with open(fp) as f:
+        output = json.load(f)
+    return output
 
 
 class GOTUGenerator(tf.keras.utils.Sequence):
@@ -24,6 +31,7 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         epochs=1000,
         asv_rarefy_depth=1000,
         gotu_rarefy_depth=100000,
+        gotu_tree_index=None,
         **kwargs,
     ):
         kwargs["tree_path"] = tree_path
@@ -41,6 +49,7 @@ class GOTUGenerator(tf.keras.utils.Sequence):
             self.generators[1].sample_ids,
             assume_unique=True,
         )
+        self.gotu_tree_index = load_json(gotu_tree_index)
         self.size = len(self.common_ids)
         self.sample_indices = np.arange(self.size)
 
@@ -74,39 +83,6 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         return self._batch_data(batch_sample_ids)
 
     def _batch_data(self, batch_sample_ids):
-        # def _get_data(gen):
-        #     tokens, sparse_indices, counts = [], [], []
-        #     y_true, encoder_output = [], []
-        #     (
-        #         (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts),
-        #         (gen_y_true, gen_encoder_output),
-        #     ) = gen._batch_data(batch_sample_ids)
-        #     gen_tokens = gen_tokens[gen_obs_indices]
-        #     tokens.append(gen_tokens)
-
-        #     sparse_indices.append(gen_sparse_indices)
-
-        #     counts.append(gen_counts)
-
-        #     y_true.append(gen_y_true)
-        #     encoder_output.append(gen_encoder_output)
-
-        #     tokens = np.concatenate(tokens, axis=0)
-        #     sparse_indices = np.concatenate(sparse_indices, axis=0)
-        #     counts = np.concatenate(counts, axis=0)
-        #     y_true = np.concatenate(y_true, axis=0)
-        #     encoder_output = np.concatenate(encoder_output, axis=0)
-
-        #     unique_tokens, obs_indices = np.unique(tokens, axis=0, return_inverse=True)
-        #     return (
-        #         encoder_output,
-        #         unique_tokens,
-        #         sparse_indices,
-        #         obs_indices,
-        #         counts,
-        #         y_true,
-        #     )
-
         (
             (asv_unique_tokens, asv_sparse_indices, asv_obs_indices, asv_counts),
             (asv_y_true, asv_encoder_output),
@@ -115,6 +91,13 @@ class GOTUGenerator(tf.keras.utils.Sequence):
             (gotu_unique_tokens, gotu_sparse_indices, gotu_obs_indices, gotu_counts),
             (gotu_y_true, gotu_encoder_output),
         ) = self.gotu_generator._batch_data(batch_sample_ids)
+
+        gotu_ids = self.gotu_generator._rarefied_table.ids(axis="observation")
+        gotu_node_ids = [gotu_ids[i] for i in gotu_unique_tokens]
+        gotu_unique_tokens = (
+            np.array([self.gotu_tree_index[id] for id in gotu_node_ids], dtype=np.int32)
+            + 3
+        )
         return (
             (
                 (asv_unique_tokens, asv_sparse_indices, asv_obs_indices, asv_counts),
@@ -134,7 +117,7 @@ class GOTUGenerator(tf.keras.utils.Sequence):
 
 def get_dataset(gen: GOTUGenerator):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
-    enqueuer.start(workers=2, max_queue_size=2 * gen.steps_per_epoch)
+    enqueuer.start(workers=1, max_queue_size=2 * gen.steps_per_epoch)
     gen.stop = enqueuer.stop
 
     if not gen.return_sample_ids:

@@ -46,7 +46,7 @@ class GOTUModel(tf.keras.Model):
         self.gotu_loss = tf.keras.losses.SparseCategoricalCrossentropy(reduction="none")
 
         self.gotu_embedding_layer = tf.keras.layers.Embedding(
-            self.gotu_count + 3, self.embedding_dim
+            self.gotu_count, self.embedding_dim
         )
 
         self.gotu_decoder = TransformerDecoder(
@@ -59,7 +59,7 @@ class GOTUModel(tf.keras.Model):
             use_linear_bias=True,
         )
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
-        self.gotu_output = tf.keras.layers.Dense(self.gotu_count + 3)
+        self.gotu_output = tf.keras.layers.Dense(self.gotu_count)
 
     def get_config(self):
         config = super(GOTUModel, self).get_config()
@@ -95,8 +95,11 @@ class GOTUModel(tf.keras.Model):
         )
         gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
         gotu_tokens = tf.pad(
-            gotu_tokens, paddings=[[0, 0], [0, 1], [0, 0]], constant_values=2
+            gotu_tokens, paddings=[[0, 0], [0, 1], [0, 0]], constant_values=0
         )
+        gotu_pad_mask = tf.cast(gotu_tokens == 0, dtype=tf.int32) * 2
+        gotu_tokens = gotu_tokens + gotu_pad_mask
+
         gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
         gotu_loss = self.gotu_loss(gotu_tokens, outputs)
 
@@ -177,18 +180,23 @@ class GOTUModel(tf.keras.Model):
             training=False,
         )
         asv_mask = tf.cast(asv_counts > 0, dtype=self.compute_dtype)
-        gotu_embeddings = self.gotu_embedding_layer(gotu_tokens)
-        gotu_embeddings, gotu_counts = self.asv_encoder.batch_embeddings(
-            gotu_embeddings, gotu_batch_indices, gotu_counts, gotu_indicies
+
+        gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
+        gotu_tokens, gotu_counts = self.asv_encoder.batch_embeddings(
+            gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
         )
-        gotu_embeddings, gotu_counts = sort_using_counts(gotu_embeddings, gotu_counts)
-        gotu_embeddings = tf.pad(
-            gotu_embeddings, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
+        gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
+        gotu_tokens = tf.pad(
+            gotu_tokens, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
         )
         gotu_counts = tf.pad(
             gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
         )
-        # tf.print("GOTU EMBEDDING SHAPE:\n", tf.shape(gotu_embeddings), gotu_counts)
+
+        gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
+        gotu_pad_mask = tf.cast(gotu_tokens == 0, dtype=tf.int32) * 2
+        gotu_tokens = gotu_tokens + gotu_pad_mask
+        gotu_embeddings = self.gotu_embedding_layer(gotu_tokens)
 
         gotu_mask = tf.cast(gotu_counts > 0, dtype=self.compute_dtype)
         gotu_pred = self.gotu_decoder(

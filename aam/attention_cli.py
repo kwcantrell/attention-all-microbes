@@ -1214,6 +1214,11 @@ def predict_sample_regressor(
     "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
 )
 @click.option(
+    "--i-gotu-tree-index",
+    required=True,
+    type=click.Path(exists=True),
+)
+@click.option(
     "--p-no-freeze-base-weights / --p-freeze-base-weights",
     default=False,
     required=False,
@@ -1284,6 +1289,7 @@ def fit_gotu(
     i_asv_table: str,
     i_gotu_table: str,
     i_base_model_path: str,
+    i_gotu_tree_index: str,
     p_no_freeze_base_weights: bool,
     m_metadata_file: str,
     m_metadata_column: str,
@@ -1348,7 +1354,6 @@ def fit_gotu(
     asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
     gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
     num_ids = len(gotu_ids)
-    gotu_count = len(gotu_table.ids(axis="observation"))
 
     common_kwargs = {
         "metadata_column": m_metadata_column,
@@ -1362,6 +1367,7 @@ def fit_gotu(
         "epochs": p_epochs,
         "tree_path": p_tree,
         "metadata": df_all,
+        "gotu_tree_index": i_gotu_tree_index,
     }
 
     def train_generator(
@@ -1455,6 +1461,7 @@ def fit_gotu(
     gotu_batch_indices = tf.TensorShape([None, 2])
     gotu_indicies_shape = tf.TensorShape([None])
     gotu_count_shape = tf.TensorShape([None, 1])
+    gotu_count = len(train_gen.gotu_tree_index) + 3
 
     model = GOTUModel(
         dropout_rate=p_dropout,
