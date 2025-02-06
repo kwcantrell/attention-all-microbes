@@ -156,7 +156,7 @@ def get_dataset(gen: GOTUGenerator):
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
                 (
-                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+                    tf.TensorSpec(shape=[None], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
                     tf.TensorSpec(shape=[None], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),

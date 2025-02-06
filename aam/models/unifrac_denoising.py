@@ -139,8 +139,12 @@ class UnifracDenoiser(tf.keras.Model):
         batch_dim = shape[0]
         group_dim = shape[-1]
         groups = batch_dim // group_dim
-        unifrac_distances = tf.reshape(unifrac_distances, shape=[groups, group_dim, group_dim])
-        unifrac_embeddings = tf.reshape(unifrac_embeddings, shape=[groups, group_dim, self.embedding_dim])
+        unifrac_distances = tf.reshape(
+            unifrac_distances, shape=[groups, group_dim, group_dim]
+        )
+        unifrac_embeddings = tf.reshape(
+            unifrac_embeddings, shape=[groups, group_dim, self.embedding_dim]
+        )
 
         def _unifrac_loss(inputs):
             uni_dist, uni_emb = inputs
@@ -179,7 +183,9 @@ class UnifracDenoiser(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        unifrac_embeddings, denoise_unifrac_embeddings = self.call(inputs, training=False)
+        unifrac_embeddings, denoise_unifrac_embeddings = self.call(
+            inputs, training=False
+        )
 
         return unifrac_embeddings, y
 
@@ -201,7 +207,9 @@ class UnifracDenoiser(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, unifrac_loss, denoise_loss = self._compute_loss(encoder_target, outputs)
+            loss, unifrac_loss, denoise_loss = self._compute_loss(
+                encoder_target, outputs
+            )
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -243,14 +251,20 @@ class UnifracDenoiser(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def batch_embeddings(self, asv_embeddings, batch_indicies, counts, asv_indices=None):
+    def batch_embeddings(
+        self, asv_embeddings, batch_indicies, counts, asv_indices=None
+    ):
         emb_dim = tf.shape(asv_embeddings)[-1]
         if asv_indices is not None:
             asv_embeddings = tf.gather(asv_embeddings, asv_indices)
         batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
         max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-        batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
-        counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+        batch_embeddings = tf.scatter_nd(
+            batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+        )
+        counts = tf.scatter_nd(
+            batch_indicies, counts, shape=[batch_shape, max_unique, 1]
+        )
         return batch_embeddings, counts
 
     def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
@@ -259,11 +273,25 @@ class UnifracDenoiser(tf.keras.Model):
         batch_indices = tf.cast(batch_indices, dtype=tf.int32)
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
         group_rows = tf.expand_dims(
-            tf.range(group * samples_per_group, group * samples_per_group + samples_per_group, 1, dtype=tf.int32), axis=0
+            tf.range(
+                group * samples_per_group,
+                group * samples_per_group + samples_per_group,
+                1,
+                dtype=tf.int32,
+            ),
+            axis=0,
         )
-        row_mask = tf.math.reduce_any(batch_indices[:, :1] == group_rows, axis=-1, keepdims=True)
+        row_mask = tf.math.reduce_any(
+            batch_indices[:, :1] == group_rows, axis=-1, keepdims=True
+        )
         group_shift = (
-            tf.pad(tf.cast(row_mask, dtype=tf.int32), paddings=[[0, 0], [0, 1]], constant_values=0) * group * samples_per_group
+            tf.pad(
+                tf.cast(row_mask, dtype=tf.int32),
+                paddings=[[0, 0], [0, 1]],
+                constant_values=0,
+            )
+            * group
+            * samples_per_group
         )
         group_mask = tf.squeeze(row_mask, axis=-1)
 
@@ -300,7 +328,9 @@ class UnifracDenoiser(tf.keras.Model):
         tokens, batch_indices, asv_indices, counts = inputs
 
         tokens, batch_indices, asv_indices, counts = inputs
-        asv_embeddings = tf.cast(self.asv_encoder(tokens, training=False), dtype=self.compute_dtype)
+        asv_embeddings = tf.cast(
+            self.asv_encoder(tokens, training=False), dtype=self.compute_dtype
+        )
         asv_embeddings = self.asv_input_ff(asv_embeddings)
 
         batch_indices = tf.cast(batch_indices, dtype=tf.int32)
@@ -311,15 +341,24 @@ class UnifracDenoiser(tf.keras.Model):
 
             def run_group(i):
                 group_asv_embeddings, group_counts = self._group_embeddings(
-                    asv_embeddings, (batch_indices, asv_indices, counts), i, samples_per_group
+                    asv_embeddings,
+                    (batch_indices, asv_indices, counts),
+                    i,
+                    samples_per_group,
                 )
-                group_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
+                (
+                    group_asv_embeddings,
+                    unifrac_embeddings,
+                    denoised_unifrac_embeddings,
+                ) = self._create_unifrac_embeddings(
                     group_asv_embeddings, group_counts, training
                 )
 
                 group_seq = tf.shape(group_asv_embeddings)[1]
                 return (
-                    tf.pad(group_asv_embeddings, [[0, 0], [0, max_seq - group_seq], [0, 0]]),
+                    tf.pad(
+                        group_asv_embeddings, [[0, 0], [0, max_seq - group_seq], [0, 0]]
+                    ),
                     unifrac_embeddings,
                     denoised_unifrac_embeddings,
                 )
@@ -328,22 +367,34 @@ class UnifracDenoiser(tf.keras.Model):
                 run_group,
                 tf.range(2),
                 fn_output_signature=(
-                    tf.TensorSpec(shape=[None, None, self.embedding_dim], dtype=self.compute_dtype),
+                    tf.TensorSpec(
+                        shape=[None, None, self.embedding_dim], dtype=self.compute_dtype
+                    ),
                     tf.TensorSpec(shape=[None, self.embedding_dim], dtype=tf.float32),
                     tf.TensorSpec(shape=[None, self.embedding_dim], dtype=tf.float32),
                 ),
             )
-            batch_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = tf.nest.flatten(outputs)
+            batch_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = (
+                tf.nest.flatten(outputs)
+            )
 
             batch_shape = tf.reduce_max(batch_indices[:, 0]) + 1
-            batch_asv_embeddings = tf.reshape(denoised_unifrac_embeddings, shape=(batch_shape, -1, self.embedding_dim))
-            denoised_unifrac_embeddings = tf.reshape(denoised_unifrac_embeddings, shape=(batch_shape, self.embedding_dim))
-            unifrac_embeddings = tf.reshape(unifrac_embeddings, shape=(batch_shape, self.embedding_dim))
+            batch_asv_embeddings = tf.reshape(
+                denoised_unifrac_embeddings, shape=(batch_shape, -1, self.embedding_dim)
+            )
+            denoised_unifrac_embeddings = tf.reshape(
+                denoised_unifrac_embeddings, shape=(batch_shape, self.embedding_dim)
+            )
+            unifrac_embeddings = tf.reshape(
+                unifrac_embeddings, shape=(batch_shape, self.embedding_dim)
+            )
         else:
-            batch_asv_embeddings, counts = self.batch_embeddings(asv_embeddings, batch_indices, counts, asv_indices)
+            batch_asv_embeddings, counts = self.batch_embeddings(
+                asv_embeddings, batch_indices, counts, asv_indices
+            )
 
-            batch_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = self._create_unifrac_embeddings(
-                batch_asv_embeddings, counts, training
+            batch_asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings = (
+                self._create_unifrac_embeddings(batch_asv_embeddings, counts, training)
             )
 
         print("UniFracDenoiser exit...", self.trainable)

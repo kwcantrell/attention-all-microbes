@@ -43,7 +43,7 @@ class GOTUModel(tf.keras.Model):
         self.gotu_tracker = tf.keras.metrics.Mean()
 
         self.encoder_loss = PairwiseLoss(self.pairwise_loss_type, reduction="none")
-        self.gotu_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
+        self.gotu_loss = tf.keras.losses.SparseCategoricalCrossentropy(reduction="none")
 
         self.gotu_embedding_layer = tf.keras.layers.Embedding(
             self.gotu_count + 3, self.embedding_dim
@@ -84,47 +84,26 @@ class GOTUModel(tf.keras.Model):
         model = cls(asv_encoder=asv_encoder, **config)
         return model
 
-    def _compute_loss(self, asv_inputs, gotu_inputs, asv_unifrac_dist, outputs):
-        # asv_batch_counts, asv_tokens, asv_indicies, _ = asv_inputs
-        # gotu_batch_counts, gotu_tokens, gotu_counts = gotu_inputs
-        # gotu_pred, unifrac_pred = outputs
-        # nuc_loss = self.asv_encoder.losses
+    def _compute_loss(self, data, outputs):
+        inputs, targets = data
+        asv_inputs, gotu_inputs = inputs
+        asv_targets, gotu_targets = targets
+        (gotu_tokens, gotu_batch_indices, gotu_indicies, gotu_counts) = gotu_inputs
+        gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
+        gotu_tokens, gotu_counts = self.asv_encoder.batch_embeddings(
+            gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
+        )
+        gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
+        gotu_tokens = tf.pad(
+            gotu_tokens, paddings=[[0, 0], [0, 1], [0, 0]], constant_values=2
+        )
+        gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
+        gotu_loss = self.gotu_loss(gotu_tokens, outputs)
 
-        # # compute unifrac loss
-        # unifrac_loss = self.asv_encoder._compute_unifrac_loss(
-        #     asv_unifrac_dist, unifrac_pred
-        # )
-
-        # # compute decoder loss
-        # gotu_tokens = to_batch(gotu_tokens, gotu_batch_counts)
-        # gotu_counts = to_batch(gotu_counts, gotu_batch_counts)
-        # gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
-        # gotu_tokens = tf.pad(
-        #     gotu_tokens,
-        #     [[0, 0], [0, 1], [0, 0]],
-        #     constant_values=2,
-        # )
-
-        # gotu_mask = tf.reshape(gotu_tokens > 1, shape=[-1])
-        # gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
-        # gotu_tokens = tf.one_hot(gotu_tokens, tf.shape(gotu_pred)[-1])
-        # gotu_tokens = tf.reshape(gotu_tokens, shape=[-1, tf.shape(gotu_pred)[-1]])[
-        #     gotu_mask
-        # ]
-        # gotu_pred = tf.reshape(gotu_pred, shape=[-1, tf.shape(gotu_pred)[-1]])[
-        #     gotu_mask
-        # ]
-        # gotu_loss = self.gotu_loss(gotu_tokens, gotu_pred)
-        # gotu_loss = tf.reduce_mean(gotu_loss)
-
-        # loss = gotu_loss
-        # if not self.freeze_base_weights:
-        #     loss += unifrac_loss + nuc_loss
-        loss = 0
-        gotu_loss = 0
+        loss = gotu_loss
         nuc_loss = 0
         unifrac_loss = 0
-        return loss, gotu_loss, nuc_loss, unifrac_loss
+        return loss, gotu_loss
 
     def batch_embeddings(self, embeddings, batch_indicies, counts, indices=None):
         emb_dim = tf.shape(embeddings)[-1]
@@ -145,9 +124,7 @@ class GOTUModel(tf.keras.Model):
         inputs, targets = data
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(
-                targets, outputs
-            )
+            loss, gotu_loss = self._compute_loss(data, outputs)
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -162,21 +139,12 @@ class GOTUModel(tf.keras.Model):
             "gotu_loss": self.gotu_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
-        if not self.freeze_base_weights:
-            self.encoder_tracker.update_state(encoder_loss)
-            self.nuc_tracker.update_state(nuc_loss)
-            metrics.update(
-                {
-                    "encoder_loss": self.encoder_tracker.result(),
-                    "nuc_loss": self.nuc_tracker.result(),
-                }
-            )
         return metrics
 
     def test_step(self, data):
         inputs, targets = data
         outputs = self(inputs, training=False)
-        loss, gotu_loss, nuc_loss, encoder_loss = self._compute_loss(targets, outputs)
+        loss, gotu_loss = self._compute_loss(data, outputs)
 
         self.loss_tracker.update_state(loss)
         self.gotu_tracker.update_state(gotu_loss)
@@ -185,15 +153,7 @@ class GOTUModel(tf.keras.Model):
             "gotu_loss": self.gotu_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
-        if not self.freeze_base_weights:
-            self.encoder_tracker.update_state(encoder_loss)
-            self.nuc_tracker.update_state(nuc_loss)
-            metrics.update(
-                {
-                    "encoder_loss": self.encoder_tracker.result(),
-                    "nuc_loss": self.nuc_tracker.result(),
-                }
-            )
+
         return metrics
 
     def predict_step(self, data):
@@ -222,8 +182,12 @@ class GOTUModel(tf.keras.Model):
             gotu_embeddings, gotu_batch_indices, gotu_counts, gotu_indicies
         )
         gotu_embeddings, gotu_counts = sort_using_counts(gotu_embeddings, gotu_counts)
-        gotu_embeddings = tf.pad(gotu_embeddings, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1)
-        gotu_counts = tf.pad(gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1)
+        gotu_embeddings = tf.pad(
+            gotu_embeddings, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
+        )
+        gotu_counts = tf.pad(
+            gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
+        )
         # tf.print("GOTU EMBEDDING SHAPE:\n", tf.shape(gotu_embeddings), gotu_counts)
 
         gotu_mask = tf.cast(gotu_counts > 0, dtype=self.compute_dtype)

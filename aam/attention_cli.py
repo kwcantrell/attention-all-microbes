@@ -1451,13 +1451,9 @@ def fit_gotu(
         ]
     )
     asv_count_shape = tf.TensorShape([None, 1])
-    gotu_token_shape = tf.TensorShape([None, 1])
+    gotu_token_shape = tf.TensorShape([None])
     gotu_batch_indices = tf.TensorShape([None, 2])
-    gotu_indicies_shape = tf.TensorShape(
-        [
-            None,
-        ]
-    )
+    gotu_indicies_shape = tf.TensorShape([None])
     gotu_count_shape = tf.TensorShape([None, 1])
 
     model = GOTUModel(

@@ -39,7 +39,6 @@ def _construct_bias(inputs):
         dtype=tf.keras.mixed_precision.global_policy().compute_dtype,
     )
     alibi = alibi[:, :, :query_len, :key_len]
-    tf.print("ALIBI: ", alibi)
     return alibi
 
 
@@ -102,11 +101,9 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.axis = axis
 
-    def build(self, input_shape):
-        shape = [s if s is not None else 1 for s in input_shape]
-        t = tf.ones(shape)
-        bias = _construct_bias(t)
-        self.bias = lambda: bias
+    def construct_bias(self, inputs):
+        t = tf.ones_like(inputs)
+        return _construct_bias(t)
 
     def call(self, inputs, mask=None):
         if mask is not None:
@@ -120,7 +117,7 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
             # Since we are adding it to the raw scores before the softmax, this
             # is effectively the same as removing these entirely.
             inputs += adder
-        inputs += self.bias()
+        inputs += self.construct_bias(inputs)
         return tf.keras.backend.softmax(inputs, axis=self.axis)
 
     def get_config(self):
