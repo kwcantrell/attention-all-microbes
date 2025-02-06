@@ -7,7 +7,14 @@ from aam.models.linear_attention_bias import LinearBiasSoftmax
 
 @tf.keras.saving.register_keras_serializable(package="MultiHeadAttentionPooling")
 class MultiHeadAttentionPooling(tf.keras.layers.Layer):
-    def __init__(self, normalize_output, num_heads=4, use_residual_connections=True, use_linear_bias=False, **kwargs):
+    def __init__(
+        self,
+        normalize_output,
+        num_heads=4,
+        use_residual_connections=True,
+        use_linear_bias=False,
+        **kwargs,
+    ):
         super(MultiHeadAttentionPooling, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.normalize_output = normalize_output
@@ -32,7 +39,10 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
 
         if self.use_residual_connections:
             self._rezero = self.add_weight(
-                name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+                name="rezero_alpha",
+                initializer=tf.keras.initializers.Zeros(),
+                trainable=True,
+                dtype=tf.float32,
             )
 
     def call(self, inputs, mask=None, training=False):
@@ -51,7 +61,9 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         if mask is not None:
             attention_mask = tf.cast(attention_mask, dtype=self.compute_dtype)
             attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
-        attention_output = self.attention(inputs, inputs, attention_mask=attention_mask, training=False)
+        attention_output = self.attention(
+            inputs, inputs, attention_mask=attention_mask, training=False
+        )
 
         if self.use_residual_connections:
             print("Pooler residual connection...")
