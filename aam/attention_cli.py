@@ -1219,11 +1219,6 @@ def predict_sample_regressor(
     type=click.Path(exists=True),
 )
 @click.option(
-    "--p-no-freeze-base-weights / --p-freeze-base-weights",
-    default=False,
-    required=False,
-)
-@click.option(
     "--m-metadata-file",
     required=True,
     help="Metadata description",
@@ -1242,23 +1237,9 @@ def predict_sample_regressor(
     help=MISSING_SAMP_DESC,
 )
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-cv", default=5, type=int, help=CV_DESC)
-@click.option(
-    "--p-test-size",
-    default=0.2,
-    show_default=True,
-    type=click.FloatRange(0, 1),
-    help=TEST_SIZE_DESC,
-)
-@click.option("--p-patience", default=10, show_default=True, type=int)
-@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
-@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-batch-size", default=32, show_default=True, required=False, type=int)
 @click.option("--p-dropout", default=0.1, show_default=True, type=float)
-@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-report-back", default=5, show_default=True, type=int)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
-@click.option("--p-penalty", default=1.0, show_default=True, type=float)
-@click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-embedding-dim", default=128, show_default=True, type=int)
 @click.option("--p-attention-heads", default=4, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
@@ -1266,70 +1247,46 @@ def predict_sample_regressor(
 @click.option(
     "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
-@click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
-@click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
 @click.option("--p-tree", default=None, type=click.Path(exists=True))
-@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=3e-4, show_default=True, type=float)
 @click.option("--p-warmup-steps", default=0, show_default=True, type=int)
 @click.option("--p-decay-steps", default=1000000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
-@click.option("--p-output-dim", default=128, required=False, type=int)
-@click.option("--p-add-token", default=False, required=False, type=bool)
 @click.option("--p-is-categorical", default=False, required=False, type=bool)
 @click.option("--p-gotu-rarefy-depth", default=100000, required=False, type=int)
 @click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
-@click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
-@click.option("--p-scale-loss", default=False, type=bool)
 @click.option("--p-normalize-outputs", default=False, type=bool)
 def fit_gotu(
     i_asv_table: str,
     i_gotu_table: str,
     i_base_model_path: str,
     i_gotu_tree_index: str,
-    p_no_freeze_base_weights: bool,
     m_metadata_file: str,
     m_metadata_column: str,
     p_missing_samples: str,
     p_epochs: int,
-    p_cv: int,
-    p_test_size: float,
-    p_patience: int,
-    p_early_stop_warmup: int,
     p_batch_size: int,
     p_dropout: float,
-    p_asv_dropout: float,
-    p_report_back: int,
     p_asv_limit: int,
-    p_penalty: float,
-    p_nuc_penalty: float,
     p_embedding_dim: int,
     p_attention_heads: int,
     p_attention_layers: int,
     p_intermediate_size: int,
     p_intermediate_activation: str,
-    p_taxonomy: str,
-    p_taxonomy_level: int,
     p_tree: str,
-    p_gen_new_table: bool,
     p_lr: int,
     p_warmup_steps: int,
     p_decay_steps: int,
     p_max_bp: int,
     output_dir: str,
-    p_output_dim: int,
-    p_add_token: bool,
     p_is_categorical: bool,
     p_gotu_rarefy_depth: int,
     p_asv_rarefy_depth: int,
     p_weight_decay: float,
     p_accumulation_steps: int,
-    p_unifrac_metric: str,
-    p_scale_loss: bool,
-    p_normalize_outputs: bool,
 ):
     from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
     from aam.models.gotu_model import GOTUModel
@@ -1426,22 +1383,6 @@ def fit_gotu(
     train_data = get_dataset(train_gen)
     val_data = get_dataset(val_gen)
     base_model = None
-    asv_tokens = [None, None, p_max_bp]
-    asv_counts = [None, None, 1]
-    gotu_tokens = [None, None, 1]
-    gotu_counts = [None, None, 1]
-    # for (
-    #     asv_batch_counts,
-    #     asv_tokens,
-    #     asv_indices,
-    #     asv_counts,
-    #     gotu_batch_counts,
-    #     gotu_tokens,
-    #     gotu_counts,
-    #     asv_unifrac,
-    # ) in train_data["dataset"].take(1):
-    #     asv_inputs = (asv_batch_counts, asv_tokens, asv_indices, asv_counts)
-    #     gotu_inputs = (gotu_batch_counts, gotu_tokens, gotu_counts)
 
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
@@ -1449,18 +1390,6 @@ def fit_gotu(
     else:
         raise Exception("YOU HAVE FAILED, COME BACK WITH A BASEMODEL")
 
-    asv_token_shape = tf.TensorShape([None, 150])
-    asv_batch_indices = tf.TensorShape([None, 2])
-    asv_indicies_shape = tf.TensorShape(
-        [
-            None,
-        ]
-    )
-    asv_count_shape = tf.TensorShape([None, 1])
-    gotu_token_shape = tf.TensorShape([None])
-    gotu_batch_indices = tf.TensorShape([None, 2])
-    gotu_indicies_shape = tf.TensorShape([None])
-    gotu_count_shape = tf.TensorShape([None, 1])
     gotu_count = len(train_gen.gotu_tree_index) + 3
 
     model = GOTUModel(
@@ -1489,17 +1418,6 @@ def fit_gotu(
         ]
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-    # model.build(
-    #     (
-    #         [asv_token_shape, asv_batch_indices, asv_indicies_shape, asv_count_shape],
-    #         [
-    #             gotu_token_shape,
-    #             gotu_batch_indices,
-    #             gotu_indicies_shape,
-    #             gotu_count_shape,
-    #         ],
-    #     )
-    # )
     x, y = train_gen[0]
     model(x)
     model.compile(
@@ -1516,11 +1434,6 @@ def fit_gotu(
     model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
     core_callbacks = [
         tf.keras.callbacks.TensorBoard(log_dir=log_dir),
-        # tf.keras.callbacks.EarlyStopping(
-        #     "val_encoder_loss",
-        #     patience=p_patience,
-        #     start_from_epoch=p_early_stop_warmup,
-        # ),
         model_saver,
     ]
     model.fit(
