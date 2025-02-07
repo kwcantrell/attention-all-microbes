@@ -1258,7 +1258,6 @@ def predict_sample_regressor(
 @click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
-@click.option("--p-normalize-outputs", default=False, type=bool)
 def fit_gotu(
     i_asv_table: str,
     i_gotu_table: str,
@@ -1399,7 +1398,7 @@ def fit_gotu(
         attention_layers=p_attention_layers,
         intermediate_size=p_intermediate_size,
         intermediate_activation=p_intermediate_activation,
-        asv_encoder=base_model,
+        base_model=base_model,
         gotu_count=gotu_count,
         name="gotu_model",
     )

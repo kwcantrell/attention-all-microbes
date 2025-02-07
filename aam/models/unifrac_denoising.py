@@ -316,6 +316,24 @@ class UnifracDenoiser(tf.keras.Model):
         )
         return asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings
 
+    def extract_asv_embeddings(
+        self, asv_inputs, batch_embeddings=False, sort_counts=False
+    ):
+        tokens, batch_indices, asv_indices, counts = asv_inputs
+        asv_embeddings = tf.cast(
+            self.asv_encoder(tokens, training=False), dtype=self.compute_dtype
+        )
+        asv_embeddings = self.asv_input_ff(asv_embeddings)
+        if not batch_embeddings:
+            return asv_embeddings
+        asv_embeddings, counts = self.batch_embeddings(
+            asv_embeddings, batch_indices, counts, asv_indices
+        )
+        if not sort_counts:
+            return asv_embeddings, counts
+        asv_embeddings, counts = sort_using_counts(asv_embeddings, counts)
+        return asv_embeddings, counts
+
     def call(
         self,
         inputs,
@@ -326,13 +344,7 @@ class UnifracDenoiser(tf.keras.Model):
         training = training and self.trainable
 
         tokens, batch_indices, asv_indices, counts = inputs
-
-        tokens, batch_indices, asv_indices, counts = inputs
-        asv_embeddings = tf.cast(
-            self.asv_encoder(tokens, training=False), dtype=self.compute_dtype
-        )
-        asv_embeddings = self.asv_input_ff(asv_embeddings)
-
+        asv_embeddings = self.extract_asv_embeddings(inputs)
         batch_indices = tf.cast(batch_indices, dtype=tf.int32)
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
