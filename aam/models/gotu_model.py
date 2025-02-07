@@ -82,6 +82,26 @@ class GOTUModel(tf.keras.Model):
         asv_encoder_config = config.pop("base_model")
         base_model = UnifracEncoder.from_config(asv_encoder_config)
         model = cls(base_model=base_model, **config)
+        token_shape = tf.TensorShape([None, 150])
+        batch_indices = tf.TensorShape([None, 2])
+        indices_shape = tf.TensorShape([None])
+        count_shape = tf.TensorShape([None, 1])
+        gotu_token_shape = tf.TensorShape([None])
+        gotu_batch_indices = tf.TensorShape([None, 2])
+        gotu_indices_shape = tf.TensorShape([None])
+        gotu_count_shape = tf.TensorShape([None, 1])
+
+        model.build(
+            (
+                [token_shape, batch_indices, indices_shape, count_shape],
+                [
+                    gotu_token_shape,
+                    gotu_batch_indices,
+                    gotu_indices_shape,
+                    gotu_count_shape,
+                ],
+            )
+        )
         return model
 
     def _compute_loss(self, data, outputs):
