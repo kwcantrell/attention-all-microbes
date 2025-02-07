@@ -1214,6 +1214,9 @@ def predict_sample_regressor(
     "--i-base-model-path", default=None, required=False, type=click.Path(exists=True)
 )
 @click.option(
+    "--i-gotu-model-path", default=None, required=False, type=click.Path(exists=True)
+)
+@click.option(
     "--i-gotu-tree-index",
     required=True,
     type=click.Path(exists=True),
@@ -1240,10 +1243,10 @@ def predict_sample_regressor(
 @click.option("--p-batch-size", default=32, show_default=True, required=False, type=int)
 @click.option("--p-dropout", default=0.1, show_default=True, type=float)
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
-@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
-@click.option("--p-attention-heads", default=4, show_default=True, type=int)
+@click.option("--p-embedding-dim", default=256, show_default=True, type=int)
+@click.option("--p-attention-heads", default=8, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
-@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
 @click.option(
     "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
@@ -1262,6 +1265,7 @@ def fit_gotu(
     i_asv_table: str,
     i_gotu_table: str,
     i_base_model_path: str,
+    i_gotu_model_path: str,
     i_gotu_tree_index: str,
     m_metadata_file: str,
     m_metadata_column: str,
@@ -1309,7 +1313,6 @@ def fit_gotu(
     ]
     asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
     gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
-    num_ids = len(gotu_ids)
 
     common_kwargs = {
         "metadata_column": m_metadata_column,
@@ -1382,26 +1385,27 @@ def fit_gotu(
     train_data = get_dataset(train_gen)
     val_data = get_dataset(val_gen)
     base_model = None
+    if i_gotu_model_path is not None:
+        model = tf.keras.models.load_model(i_gotu_model_path, compile=False)
 
-    if i_base_model_path is not None:
-        base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
-        base_model.accumulation_steps = p_accumulation_steps
     else:
-        raise Exception("YOU HAVE FAILED, COME BACK WITH A BASEMODEL")
-
-    gotu_count = len(train_gen.gotu_tree_index) + 3
-
-    model = GOTUModel(
-        dropout_rate=p_dropout,
-        embedding_dim=p_embedding_dim,
-        attention_heads=p_attention_heads,
-        attention_layers=p_attention_layers,
-        intermediate_size=p_intermediate_size,
-        intermediate_activation=p_intermediate_activation,
-        base_model=base_model,
-        gotu_count=gotu_count,
-        name="gotu_model",
-    )
+        if i_base_model_path is not None:
+            base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
+            base_model.accumulation_steps = p_accumulation_steps
+        else:
+            raise Exception("YOU HAVE FAILED, COME BACK WITH A BASEMODEL")
+        gotu_count = len(train_gen.gotu_tree_index) + 3
+        model = GOTUModel(
+            dropout_rate=p_dropout,
+            embedding_dim=p_embedding_dim,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+            intermediate_activation=p_intermediate_activation,
+            base_model=base_model,
+            gotu_count=gotu_count,
+            name="gotu_model",
+        )
 
     optimizer = tf.keras.optimizers.AdamW(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
@@ -1453,6 +1457,136 @@ def main():
         tf.config.experimental.set_memory_growth(gpus[0], True)
 
     cli()
+
+
+@cli.command()
+@click.option(
+    "--i-asv-table",
+    required=True,
+    help=TABLE_DESC,
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--i-gotu-table",
+    required=True,
+    help=TABLE_DESC,
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--i-gotu-model-path", default=None, required=False, type=click.Path(exists=True)
+)
+@click.option(
+    "--i-gotu-tree-index",
+    required=True,
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option(
+    "--p-missing-samples",
+    default="error",
+    type=click.Choice(["error", "ignore"], case_sensitive=False),
+    help=MISSING_SAMP_DESC,
+)
+@click.option("--p-batch-size", default=32, show_default=True, required=False, type=int)
+@click.option("--output-dir", required=True, type=click.Path(exists=False))
+@click.option("--p-tree", default=None, type=click.Path(exists=True))
+@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
+@click.option("--p-gotu-rarefy-depth", default=100000, required=False, type=int)
+@click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
+@click.option("--p-gotu-token-limit", default=10000, show_default=True, type=int)
+@click.option("--p-is-categorical", default=False, required=False, type=bool)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-accumulation-steps", default=1, required=False, type=int)
+def gotu_infer(
+    i_asv_table: str,
+    i_gotu_table: str,
+    i_gotu_model_path: str,
+    i_gotu_tree_index: str,
+    p_tree: str,
+    p_batch_size: int,
+    output_dir: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_missing_samples: str,
+    p_asv_limit: int,
+    p_asv_rarefy_depth: int,
+    p_gotu_rarefy_depth: int,
+    p_gotu_token_limit: int,
+    p_max_bp: int,
+    p_is_categorical: bool,
+    p_epochs: int,
+    p_accumulation_steps: int,
+):
+    from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
+
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    asv_table = load_table(i_asv_table)
+    gotu_table = load_table(i_gotu_table)
+    df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
+    gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
+
+    common_kwargs = {
+        "metadata_column": m_metadata_column,
+        "max_token_per_sample": p_asv_limit,
+        "rarefy_depth": p_gotu_rarefy_depth,
+        "asv_rarefy_depth": p_asv_rarefy_depth,
+        "batch_size": p_batch_size,
+        "is_16S": False,
+        "is_categorical": p_is_categorical,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+        "tree_path": p_tree,
+        "metadata": df_all,
+        "gotu_tree_index": i_gotu_tree_index,
+    }
+
+    def data_generator(
+        asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+    ):
+        return GOTUGenerator(
+            gotu_table=gotu_table,
+            asv_table=asv_table,
+            shuffle=shuffle,
+            shift=shift,
+            scale=scale,
+            gen_new_tables=gen_new_tables,
+            **common_kwargs,
+        )
+
+    data_gen = data_generator(asv_table, gotu_table, df_all, True, 0, 1, p_epochs, True)
+    data = get_dataset(data_gen)
+    gotu_count = len(data_gen.gotu_tree_index) + 3
+
+    gotu_model = None
+    if i_gotu_model_path is not None:
+        gotu_model = tf.keras.models.load_model(i_gotu_model_path, compile=False)
+        gotu_model.accumulation_steps = p_accumulation_steps
+    else:
+        raise Exception("YOU HAVE FAILED, COME BACK WITH A TRAINED MODEL")
+
+    gotu_model.compile(
+        run_eagerly=False,
+    )
+    gotu_model.summary()
+    x, y = data_gen[0]
+    print(gotu_model(x))
 
 
 if __name__ == "__main__":
