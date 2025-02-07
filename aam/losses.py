@@ -80,9 +80,10 @@ def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
 
 
 class PairwiseLoss(tf.keras.losses.Loss):
-    def __init__(self, loss_type="mse", reduction="none", **kwargs):
+    def __init__(self, loss_type="mse", use_mean_pairs=True, reduction="none", **kwargs):
         super().__init__(reduction=reduction, **kwargs)
         self.loss_type = loss_type
+        self.use_mean_pairs = use_mean_pairs
 
     def call(self, y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred, squared=False)
@@ -92,11 +93,14 @@ class PairwiseLoss(tf.keras.losses.Loss):
         elif self.loss_type == "msle":
             differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
 
-        batch_dim = tf.shape(y_true)[0]
-        valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
-        valid_differences = differences[valid_pairs]
-
-        return valid_differences
+        if not self.use_mean_pairs:
+            batch_dim = tf.shape(y_true)[0]
+            valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
+            loss = differences[valid_pairs]
+        else:
+            mean_mask = tf.cast(differences < tf.reduce_mean(differences, axis=-1, keepdims=True), dtype=tf.float32)
+            loss = tf.math.reduce_max(differences * mean_mask, axis=-1)
+        return loss
 
 
 def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
