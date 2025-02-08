@@ -13,6 +13,7 @@ def save_json(output_dict: dict, output_dir: str):
 def create_tree_dict(nwk_tree_fp: str) -> dict:
     bp_tree = to_skbio_treenode(parse_newick(open(nwk_tree_fp).read()))
     name_to_rank = {}
+    rank_to_name = {}
     i = 0
     for node in bp_tree.postorder():
         if (
@@ -22,15 +23,18 @@ def create_tree_dict(nwk_tree_fp: str) -> dict:
             and "G" in node.name[0]
         ):
             name_to_rank[node.name] = i
+            rank_to_name[i] = node.name
             i += 1
 
-    return name_to_rank
+    return name_to_rank, rank_to_name
 
 
 if __name__ == "__main__":
     print("Starting traversal....")
-    name2rank = create_tree_dict(
+    name2rank, rank2name = create_tree_dict(
         "/home/jokirkland/data/trees/2022.10.phylogeny.asv.nwk"
     )
     save_json(name2rank, "/home/jokirkland/data/trees/gotu_node_dict.json")
+    save_json(rank2name, "/home/jokirkland/data/trees/gotu_rank_dict.json")
+
     print("dict saved...")
