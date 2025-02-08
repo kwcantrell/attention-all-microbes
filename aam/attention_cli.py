@@ -1606,25 +1606,45 @@ def gotu_infer(
         run_eagerly=False,
     )
     gotu_model.summary()
-    x, y = data_gen[0]
-    (
-        asv_tokens,
-        asv_batch_indices,
-        asv_indicies,
-        asv_counts,
-        gotu_tokens,
-        gotu_batch_indices,
-        gotu_indicies,
-        gotu_counts,
-    ) = x
-    gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
-    gotu_tokens, gotu_counts = gotu_model.base_model.batch_embeddings(
-        gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
-    )
-    gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
-    gotu_valid_tokens = tf.squeeze(gotu_counts, axis=-1)
-    print(gotu_valid_tokens)
-    print(gotu_model(x))
+    batch_size = data_gen.batch_size
+    gotu_tokens = tf.ones(shape=(batch_size, 1), dtype=tf.int32)
+    gotu_counts = tf.ones(shape=(batch_size, 1, 1), dtype=tf.int32)
+
+    for x, y in data.take(1):
+        (
+            asv_tokens,
+            asv_batch_indices,
+            asv_indicies,
+            asv_counts,
+            true_gotu_tokens,
+            true_gotu_batch_indices,
+            true_gotu_indices,
+            true_gotu_counts,
+        ) = x
+        asv_embeddings, asv_counts = gotu_model.base_model.extract_asv_embeddings(
+            (asv_tokens, asv_batch_indices, asv_indicies, asv_counts),
+            batch_embeddings=True,
+            sort_counts=True,
+        )
+        asv_mask = tf.cast(asv_counts > 0, dtype=gotu_model.compute_dtype)
+        gotu_embeddings = gotu_model.extract_gotu_embeddings(
+            gotu_tokens, gotu_counts, asv_embeddings, asv_mask
+        )
+        print(tf.shape(gotu_embeddings))
+        print(tf.math.argmax(tf.nn.softmax(gotu_embeddings, axis=-1), axis=-1))
+
+        true_gotu_tokens = tf.expand_dims(true_gotu_tokens, axis=-1)
+        true_gotu_tokens, true_gotu_counts = gotu_model.batch_embeddings(
+            true_gotu_tokens,
+            true_gotu_batch_indices,
+            true_gotu_counts,
+            true_gotu_indices,
+        )
+        true_gotu_tokens, true_gotu_counts = sort_using_counts(
+            true_gotu_tokens, true_gotu_counts
+        )
+
+        print(true_gotu_tokens[:, :1, :])
 
 
 if __name__ == "__main__":
