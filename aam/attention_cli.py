@@ -739,12 +739,12 @@ def fit_taxonomy_regressor(
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-penalty", default=1.0, show_default=True, type=float)
 @click.option("--p-nuc-penalty", default=1.0, show_default=True, type=float)
-@click.option("--p-embedding-dim", default=128, show_default=True, type=int)
-@click.option("--p-attention-heads", default=4, show_default=True, type=int)
+@click.option("--p-embedding-dim", default=256, show_default=True, type=int)
+@click.option("--p-attention-heads", default=8, show_default=True, type=int)
 @click.option("--p-attention-layers", default=8, show_default=True, type=int)
-@click.option("--p-intermediate-size", default=512, show_default=True, type=int)
+@click.option("--p-intermediate-size", default=1024, show_default=True, type=int)
 @click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
 @click.option("--p-taxonomy", default=None, type=click.Path(exists=True))
 @click.option("--p-taxonomy-level", default=7, show_default=True, type=int)
@@ -876,7 +876,7 @@ def fit_sample_regressor(
         common_kwargs = {
             "metadata_column": m_metadata_column,
             "max_token_per_sample": p_asv_limit,
-            "sample_depths": [1000, 5000],
+            "sample_depths": [10000, 10000],
             "batch_size": p_batch_size,
             "is_16S": True,
             "is_categorical": p_is_categorical,

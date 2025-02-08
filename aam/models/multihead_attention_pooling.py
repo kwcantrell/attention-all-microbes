@@ -29,7 +29,7 @@ class MultiHeadAttentionPooling(tf.keras.layers.Layer):
         self.attention = tf.keras.layers.MultiHeadAttention(
             self.num_heads,
             key_dim=key_dim,
-            dropout=0.1,
+            dropout=0.0,
         )
         self.attention._build_from_signature(input_shape, input_shape)
 

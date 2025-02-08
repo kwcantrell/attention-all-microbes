@@ -42,7 +42,10 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.hidden_dim = input_shape[-1]
         if self.use_residual_connections:
             self._rezero = self.add_weight(
-                name="rezero_alpha", initializer=tf.keras.initializers.Zeros(), trainable=True, dtype=tf.float32
+                name="rezero_alpha",
+                initializer=tf.keras.initializers.Zeros(),
+                trainable=True,
+                dtype=tf.float32,
             )
         linear_bias_softmax = LinearBiasSoftmax()
         print("Using linear bias")
@@ -53,7 +56,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 inner_dim=self._intermediate_size,
                 inner_activation=self._activation,
                 dropout_rate=self._dropout_rate,
-                attention_dropout_rate=self._dropout_rate,
+                attention_dropout_rate=0.0,
                 share_rezero=True,
                 name=("layer_%d" % i),
             )
@@ -68,7 +71,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
         for i in range(self.num_layers):
             self.encoder_layers.append(get_transformer(i))
         if self.normalize_outputs:
-            self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
+            self.output_normalization = tf.keras.layers.LayerNormalization(
+                epsilon=1e-6, dtype=tf.float32
+            )
         super(TransformerEncoder, self).build(input_shape)
 
     def get_config(self):
@@ -109,7 +114,10 @@ class TransformerEncoder(tf.keras.layers.Layer):
         output_tensor = inputs
         for layer_idx in range(self.num_layers):
             output_tensor = tf.cast(
-                self.encoder_layers[layer_idx]([output_tensor, attention_mask], training=training), dtype=self.compute_dtype
+                self.encoder_layers[layer_idx](
+                    [output_tensor, attention_mask], training=training
+                ),
+                dtype=self.compute_dtype,
             )
 
         if self.use_residual_connections:
