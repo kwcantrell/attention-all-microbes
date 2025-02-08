@@ -1421,8 +1421,28 @@ def fit_gotu(
         ]
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-    x, y = train_gen[0]
-    model(x)
+
+    token_shape = tf.TensorShape([None, 150])
+    batch_indices = tf.TensorShape([None, 2])
+    indices_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+
+    gotu_token_shape = tf.TensorShape([None])
+    gotu_batch_indices = tf.TensorShape([None, 2])
+    gotu_indices_shape = tf.TensorShape([None])
+    gotu_count_shape = tf.TensorShape([None, 1])
+    model.build(
+        [
+            token_shape,
+            batch_indices,
+            indices_shape,
+            count_shape,
+            gotu_token_shape,
+            gotu_batch_indices,
+            gotu_indices_shape,
+            gotu_count_shape,
+        ],
+    )
     model.compile(
         optimizer=optimizer,
         run_eagerly=False,
@@ -1530,6 +1550,7 @@ def gotu_infer(
     p_accumulation_steps: int,
 ):
     from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
+    from aam.models.utils import sort_using_counts
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     if not os.path.exists(output_dir):
@@ -1586,6 +1607,23 @@ def gotu_infer(
     )
     gotu_model.summary()
     x, y = data_gen[0]
+    (
+        asv_tokens,
+        asv_batch_indices,
+        asv_indicies,
+        asv_counts,
+        gotu_tokens,
+        gotu_batch_indices,
+        gotu_indicies,
+        gotu_counts,
+    ) = x
+    gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
+    gotu_tokens, gotu_counts = gotu_model.base_model.batch_embeddings(
+        gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
+    )
+    gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
+    gotu_valid_tokens = tf.squeeze(gotu_counts, axis=-1)
+    print(gotu_valid_tokens)
     print(gotu_model(x))
 
 
