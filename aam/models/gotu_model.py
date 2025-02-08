@@ -225,9 +225,24 @@ class GOTUModel(tf.keras.Model):
             gotu_counts,
         )
 
+    def extract_gotu_embeddings(
+        self, gotu_tokens, gotu_counts, asv_embeddings, asv_mask, training=False
+    ):
+        gotu_pad_mask = tf.cast(gotu_tokens == 0, dtype=tf.int32) * 2
+        gotu_tokens = gotu_tokens + gotu_pad_mask
+        gotu_embeddings = self.gotu_embedding_layer(gotu_tokens)
+
+        gotu_mask = tf.cast(gotu_counts > 0, dtype=self.compute_dtype)
+        gotu_pred = self.gotu_decoder(
+            (asv_embeddings, gotu_embeddings), asv_mask, gotu_mask, training=training
+        )
+        gotu_pred = self.gotu_output(gotu_pred)
+        return gotu_pred
+
     def call(
         self,
         inputs,
+        add_start_token=True,
         training: bool = False,
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         (
@@ -252,23 +267,17 @@ class GOTUModel(tf.keras.Model):
             gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
         )
         gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
-        gotu_tokens = tf.pad(
-            gotu_tokens, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
-        )
-        gotu_counts = tf.pad(
-            gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
-        )
-
+        if add_start_token:
+            gotu_tokens = tf.pad(
+                gotu_tokens, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
+            )
+            gotu_counts = tf.pad(
+                gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
+            )
         gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
-        gotu_pad_mask = tf.cast(gotu_tokens == 0, dtype=tf.int32) * 2
-        gotu_tokens = gotu_tokens + gotu_pad_mask
-        gotu_embeddings = self.gotu_embedding_layer(gotu_tokens)
-
-        gotu_mask = tf.cast(gotu_counts > 0, dtype=self.compute_dtype)
-        gotu_pred = self.gotu_decoder(
-            (asv_embeddings, gotu_embeddings), asv_mask, gotu_mask, training=training
+        gotu_pred = self.extract_gotu_embeddings(
+            gotu_tokens, gotu_counts, asv_embeddings, asv_mask, training
         )
-        gotu_pred = self.gotu_output(gotu_pred)
         gotu_pred = self._softmax(gotu_pred)
 
         return gotu_pred
