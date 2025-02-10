@@ -1291,6 +1291,9 @@ def fit_gotu(
     p_weight_decay: float,
     p_accumulation_steps: int,
 ):
+    import tensorflow_addons as tfa
+
+    from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
     from aam.models.gotu_model import GOTUModel
     from aam.models.unifrac_encoder import UnifracEncoder
@@ -1407,21 +1410,40 @@ def fit_gotu(
             name="gotu_model",
         )
 
-    optimizer = tf.keras.optimizers.AdamW(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    # optimizer = tf.keras.optimizers.AdamW(
+    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    #     weight_decay=p_weight_decay,
+    # )
+    # optimizer.exclude_from_weight_decay(
+    #     var_names=[
+    #         "bias",
+    #         "rezero_alpha",
+    #         "layer_norm",
+    #         "LayerNorm",
+    #         "embeddings",
+    #     ]
+    # )
+    # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+
+    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
+
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
         weight_decay=p_weight_decay,
-    )
-    optimizer.exclude_from_weight_decay(
-        var_names=[
+        exclude_from_weight_decay=[
             "bias",
             "rezero_alpha",
             "layer_norm",
             "LayerNorm",
-            "embeddings",
-        ]
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+        ],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-
     token_shape = tf.TensorShape([None, 150])
     batch_indices = tf.TensorShape([None, 2])
     indices_shape = tf.TensorShape([None])
@@ -1627,12 +1649,6 @@ def gotu_infer(
             sort_counts=True,
         )
         asv_mask = tf.cast(asv_counts > 0, dtype=gotu_model.compute_dtype)
-        gotu_embeddings = gotu_model.extract_gotu_embeddings(
-            gotu_tokens, gotu_counts, asv_embeddings, asv_mask
-        )
-        print(tf.shape(gotu_embeddings))
-        print(tf.math.argmax(tf.nn.softmax(gotu_embeddings, axis=-1), axis=-1))
-
         true_gotu_tokens = tf.expand_dims(true_gotu_tokens, axis=-1)
         true_gotu_tokens, true_gotu_counts = gotu_model.batch_embeddings(
             true_gotu_tokens,
@@ -1643,8 +1659,70 @@ def gotu_infer(
         true_gotu_tokens, true_gotu_counts = sort_using_counts(
             true_gotu_tokens, true_gotu_counts
         )
+        true_gotu_tokens = tf.squeeze(true_gotu_tokens, axis=-1)
 
-        print(true_gotu_tokens[:, :1, :])
+        predicted_token = gotu_model(x)
+
+        # for _ in range(10):
+        #     gotu_embeddings = gotu_model.extract_gotu_embeddings(
+        #         gotu_tokens, gotu_counts, asv_embeddings, asv_mask
+        #     )
+        #     predicted_token = tf.math.argmax(
+        #         tf.nn.softmax(gotu_embeddings, axis=-1), axis=-1
+        #     )[:, -1:]
+        #     predicted_token = tf.cast(predicted_token, dtype=tf.int32)
+        #     gotu_tokens = tf.concat([gotu_tokens, predicted_token], axis=-1)
+        #     gotu_counts = tf.pad(
+        #         gotu_counts, paddings=[[0, 0], [0, 1], [0, 0]], constant_values=1
+        #     )
+
+        # print(gotu_tokens)
+        # print(gotu_counts)
+
+        print(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist())
+        print(true_gotu_tokens[0].numpy().tolist())
+        print(
+            "Intersection",
+            set(
+                tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()
+            ).intersection(true_gotu_tokens[0].numpy().tolist()),
+        )
+
+        print(
+            "Union",
+            set(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()).union(
+                true_gotu_tokens[0].numpy().tolist()
+            ),
+        )
+        print(
+            "Intersection Size",
+            len(
+                set(
+                    tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()
+                ).intersection(true_gotu_tokens[0].numpy().tolist())
+            ),
+        )
+        print(
+            "Union Size",
+            len(
+                set(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()).union(
+                    true_gotu_tokens[0].numpy().tolist()
+                )
+            ),
+        )
+        print(
+            "Union Size",
+            len(
+                set(
+                    tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()
+                ).intersection(true_gotu_tokens[0].numpy().tolist())
+            )
+            / len(
+                set(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()).union(
+                    true_gotu_tokens[0].numpy().tolist()
+                )
+            ),
+        )
 
 
 if __name__ == "__main__":
