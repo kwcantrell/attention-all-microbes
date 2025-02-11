@@ -1045,58 +1045,60 @@ def fit_sample_regressor(
             count_shape = tf.TensorShape([None, 1])
             model.build([token_shape, batch_indicies, indicies_shape, count_shape])
         model.summary()
-
-        fold_label = i + 1
-        if not p_is_categorical:
-            loss = tf.keras.losses.MeanSquaredError(reduction="none")
-            callbacks = [
-                # MeanAbsoluteError(
-                #     monitor="val_mae",
-                #     dataset=val_data["dataset"],
-                #     output_dir=os.path.join(
-                #         figure_path, f"model_f{fold_label}-val.png"
-                #     ),
-                #     report_back=p_report_back,
-                # )
-            ]
-        else:
-            loss = tf.keras.losses.CategoricalFocalCrossentropy(
-                from_logits=False, reduction="none"
-            )
-            # loss = tf.keras.losses.CategoricalHinge(reduction="none")
-            callbacks = [
-                ConfusionMatrx(
-                    monitor="val_target_loss",
-                    dataset=val_data["dataset"],
-                    output_dir=os.path.join(
-                        figure_path, f"model_f{fold_label}-val.png"
-                    ),
-                    report_back=p_report_back,
-                )
-            ]
-        model_cv = CVModel(
-            model,
-            train_data,
-            val_data,
-            output_dir,
-            fold_label,
-        )
-        metric = "mae" if not p_is_categorical else "target_loss"
-        model_cv.fit_fold(
-            loss,
-            p_epochs,
-            os.path.join(model_path, f"model_f{fold_label}.keras"),
-            metric=metric,
-            patience=p_patience,
-            early_stop_warmup=p_early_stop_warmup,
-            callbacks=[*callbacks],
-            lr=p_lr,
-            warmup_steps=p_warmup_steps,
-            decay_steps=p_decay_steps,
-            weight_decay=p_weight_decay,
-        )
-        models.append(model_cv)
-        print(f"Fold {i + 1} mae: {model_cv.metric_value}")
+        x, y = train_data["dataset"].take(1)
+        model(x)
+        break
+        # fold_label = i + 1
+        # if not p_is_categorical:
+        #     loss = tf.keras.losses.MeanSquaredError(reduction="none")
+        #     callbacks = [
+        #         # MeanAbsoluteError(
+        #         #     monitor="val_mae",
+        #         #     dataset=val_data["dataset"],
+        #         #     output_dir=os.path.join(
+        #         #         figure_path, f"model_f{fold_label}-val.png"
+        #         #     ),
+        #         #     report_back=p_report_back,
+        #         # )
+        #     ]
+        # else:
+        #     loss = tf.keras.losses.CategoricalFocalCrossentropy(
+        #         from_logits=False, reduction="none"
+        #     )
+        #     # loss = tf.keras.losses.CategoricalHinge(reduction="none")
+        #     callbacks = [
+        #         ConfusionMatrx(
+        #             monitor="val_target_loss",
+        #             dataset=val_data["dataset"],
+        #             output_dir=os.path.join(
+        #                 figure_path, f"model_f{fold_label}-val.png"
+        #             ),
+        #             report_back=p_report_back,
+        #         )
+        #     ]
+        # model_cv = CVModel(
+        #     model,
+        #     train_data,
+        #     val_data,
+        #     output_dir,
+        #     fold_label,
+        # )
+        # metric = "mae" if not p_is_categorical else "target_loss"
+        # model_cv.fit_fold(
+        #     loss,
+        #     p_epochs,
+        #     os.path.join(model_path, f"model_f{fold_label}.keras"),
+        #     metric=metric,
+        #     patience=p_patience,
+        #     early_stop_warmup=p_early_stop_warmup,
+        #     callbacks=[*callbacks],
+        #     lr=p_lr,
+        #     warmup_steps=p_warmup_steps,
+        #     decay_steps=p_decay_steps,
+        #     weight_decay=p_weight_decay,
+        # )
+        # models.append(model_cv)
+        # print(f"Fold {i + 1} mae: {model_cv.metric_value}")
 
     best_model_path = os.path.join(output_dir, "best-model.keras")
     model_ensemble = EnsembleModel(models)

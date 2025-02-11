@@ -5,7 +5,9 @@ from typing import Union
 import tensorflow as tf
 
 
-def _pairwise_distances(x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False) -> tf.Tensor:
+def _pairwise_distances(
+    x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False
+) -> tf.Tensor:
     """Constructs a distance matrix between embedding tensors x and y.
 
     Args:
@@ -48,7 +50,9 @@ def global_embedding_l2_regulization(sample_embeddings):
     return tf.reduce_mean(tf.square(1 - norm))
 
 
-def _pairwise_cosine_distance(x: tf.Tensor, y: Union[tf.Tensor, None] = None) -> tf.Tensor:
+def _pairwise_cosine_distance(
+    x: tf.Tensor, y: Union[tf.Tensor, None] = None
+) -> tf.Tensor:
     """Computes the cosine distance between embedding tensors x and y.
 
     Args:
@@ -71,7 +75,9 @@ def _pairwise_cosine_distance(x: tf.Tensor, y: Union[tf.Tensor, None] = None) ->
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
     sample_embeddings = tf.linalg.l2_normalize(sample_embeddings, axis=-1)
     d = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
-    sample_inner_prod = tf.matmul(sample_embeddings, sample_embeddings, transpose_b=True)
+    sample_inner_prod = tf.matmul(
+        sample_embeddings, sample_embeddings, transpose_b=True
+    )
     non_matching_pairs = sample_inner_prod[non_matching_pairs_mask]
 
     m1 = tf.reduce_mean(non_matching_pairs)
@@ -80,7 +86,9 @@ def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
 
 
 class PairwiseLoss(tf.keras.losses.Loss):
-    def __init__(self, loss_type="mse", use_mean_pairs=True, reduction="none", **kwargs):
+    def __init__(
+        self, loss_type="mse", use_mean_pairs=True, reduction="none", **kwargs
+    ):
         super().__init__(reduction=reduction, **kwargs)
         self.loss_type = loss_type
         self.use_mean_pairs = use_mean_pairs
@@ -91,14 +99,23 @@ class PairwiseLoss(tf.keras.losses.Loss):
         if self.loss_type == "mse":
             differences = tf.math.square(y_pred_dist - y_true)
         elif self.loss_type == "msle":
-            differences = tf.math.square(tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true))
+            differences = tf.math.square(
+                tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true)
+            )
 
         if not self.use_mean_pairs:
-            batch_dim = tf.shape(y_true)[0]
-            valid_pairs = tf.linalg.band_part(tf.ones_like(differences), 0, -1) - tf.linalg.diag(tf.ones(shape=[batch_dim])) > 0
-            loss = differences[valid_pairs]
+            # batch_dim = tf.shape(y_true)[0]
+            # valid_pairs = (
+            #     tf.linalg.band_part(tf.ones_like(differences), 0, -1)
+            #     - tf.linalg.diag(tf.ones(shape=[batch_dim]))
+            #     > 0
+            # )
+            loss = tf.reduce_mean(differences, axis=-1)
         else:
-            mean_mask = tf.cast(differences < tf.reduce_mean(differences, axis=-1, keepdims=True), dtype=tf.float32)
+            mean_mask = tf.cast(
+                differences < tf.reduce_mean(differences, axis=-1, keepdims=True),
+                dtype=tf.float32,
+            )
             loss = tf.math.reduce_max(differences * mean_mask, axis=-1)
         return loss
 
@@ -120,12 +137,10 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
     non_matching_pairs = tf.reshape(distances[non_matching_mask], shape=[batch_dim, -1])
 
     triplet_loss = (matching_pairs + soft_margin) - non_matching_pairs
-    valid_mask = tf.cast(triplet_loss > 0, dtype=tf.float32)
-    triplet_loss = triplet_loss * valid_mask
 
-    hard_mask = tf.cast(non_matching_pairs < matching_pairs + hard_margin, dtype=tf.float32)
-    semi_hard_mask = tf.cast(non_matching_pairs < matching_pairs + soft_margin, dtype=tf.float32) * (1 - hard_mask)
-    semi_hard_loss = triplet_loss[tf.cast(semi_hard_mask, tf.bool)]
+    easy_mask = tf.cast(triplet_loss < 0, dtype=tf.float32)
+    hard_mask = tf.cast(triplet_loss > (soft_margin - hard_margin), dtype=tf.float32)
+    semi_hard_mask = tf.cast(1 - (easy_mask + hard_mask), dtype=tf.bool)
 
-    loss = tf.reduce_mean(semi_hard_loss)
+    loss = tf.reduce_mean(triplet_loss[semi_hard_mask])
     return tf.where(loss > 0, loss, 0.0)

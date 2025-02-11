@@ -39,7 +39,11 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
-        self.hidden_dim = input_shape[-1]
+        if isinstance(input_shape, (list, tuple)):
+            shape = input_shape[0]
+        else:
+            shape = input_shape
+        self.hidden_dim = shape[-1]
         if self.use_residual_connections:
             self._rezero = self.add_weight(
                 name="rezero_alpha",
@@ -60,8 +64,8 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 share_rezero=True,
                 name=("layer_%d" % i),
             )
-            transformer.build(input_shape)
-            transformer._attention_layer._build_from_signature(input_shape, input_shape)
+            transformer.build(shape)
+            transformer._attention_layer._build_from_signature(shape, shape)
 
             if self.use_linear_bias:
                 setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
@@ -108,17 +112,31 @@ class TransformerEncoder(tf.keras.layers.Layer):
             `(batch_size, input_length, hidden_size)`.
         """
         attention_mask = mask
-        if attention_mask is not None:
-            attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
 
-        output_tensor = inputs
-        for layer_idx in range(self.num_layers):
-            output_tensor = tf.cast(
-                self.encoder_layers[layer_idx](
-                    [output_tensor, attention_mask], training=training
-                ),
-                dtype=self.compute_dtype,
-            )
+        if isinstance(inputs, (list, tuple)):
+            if attention_mask is not None:
+                attention_mask = tf.transpose(attention_mask, perm=[0, 2, 1])
+            output_tensor, key_value = inputs
+            for layer_idx in range(self.num_layers):
+                output_tensor = tf.cast(
+                    self.encoder_layers[layer_idx](
+                        [output_tensor, key_value, attention_mask], training=training
+                    ),
+                    dtype=self.compute_dtype,
+                )
+        else:
+            if attention_mask is not None:
+                attention_mask = tf.matmul(
+                    attention_mask, attention_mask, transpose_b=True
+                )
+            output_tensor = inputs
+            for layer_idx in range(self.num_layers):
+                output_tensor = tf.cast(
+                    self.encoder_layers[layer_idx](
+                        [output_tensor, attention_mask], training=training
+                    ),
+                    dtype=self.compute_dtype,
+                )
 
         if self.use_residual_connections:
             print("Encoder residual connection...")
