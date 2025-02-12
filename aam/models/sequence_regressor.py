@@ -223,13 +223,11 @@ class SequenceRegressor(tf.keras.Model):
         y_true = tf.reshape(tf.cast(y_true, tf.float32), shape=[-1, 1])
 
         # step 1: minimize mse
-        # mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
-        mse_loss = 0.0
+        mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
 
         # step 2: pairwise distance of sample_embeddings should match pairwise distance of target
         y_true_dist = _pairwise_distances(y_true, squared=False)
         embedding_loss = tf.reduce_mean(self.embedding_loss(y_true_dist, sample_embeddings))
-        embedding_loss = 0.0
         return mse_loss + embedding_loss, mse_loss, embedding_loss
 
     def _compute_metric(
