@@ -359,19 +359,19 @@ class SequenceRegressor(tf.keras.Model):
         # )
 
         # compute sample embeddings and target
-        asv_embeddings = tf.cast(asv_embeddings, dtype=tf.float32) * counts
-        asv_embeddings = self.input_ff(asv_embeddings)
+        query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
+        query = self.input_ff(query)
 
-        query = tf.repeat(self.query, repeats=batch_dim, axis=0)
-        sample_embedding = self.encoder(
+        #query = tf.repeat(self.query, repeats=batch_dim, axis=0)
+        asv_embeddings = self.encoder(
             [query, tf.cast(asv_embeddings, dtype=self.compute_dtype)],
             mask=mask,
             training=training,
         )
-        sample_embedding = tf.squeeze(sample_embedding, axis=1)
-        # sample_embedding = self.attention_pooling(
-        #     asv_embeddings, mask=mask, training=training
-        # )
+        #sample_embedding = tf.squeeze(sample_embedding, axis=1)
+        sample_embedding = self.attention_pooling(
+            asv_embeddings, mask=mask, training=training
+        )
         return tf.cast(sample_embedding, dtype=tf.float32), self.output_activation(self.target_ff(sample_embedding))
 
     def get_config(self):

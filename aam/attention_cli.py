@@ -1010,6 +1010,7 @@ def fit_sample_regressor(
                 accumulation_steps=p_accumulation_steps,
                 scale_losses=p_scale_loss,
                 use_linear_bias=True,
+                use_residual_connections=False
             )
             # for x, y in train_data["dataset"].take(1):
             #     model(x)

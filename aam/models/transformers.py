@@ -111,9 +111,10 @@ class TransformerEncoder(tf.keras.layers.Layer):
         """
         attention_mask = mask
 
+        if attention_mask is not None:
+            attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
+        
         if isinstance(inputs, (list, tuple)):
-            if attention_mask is not None:
-                attention_mask = tf.transpose(attention_mask, perm=[0, 2, 1])
             output_tensor, key_value = inputs
             inputs = output_tensor
             for layer_idx in range(self.num_layers):
@@ -122,8 +123,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     dtype=self.compute_dtype,
                 )
         else:
-            if attention_mask is not None:
-                attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
             output_tensor = inputs
             for layer_idx in range(self.num_layers):
                 output_tensor = tf.cast(
