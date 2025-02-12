@@ -167,18 +167,19 @@ class SequenceRegressor(tf.keras.Model):
         #     trainable=True,
         #     dtype=tf.float32,
         # )
-        # self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-        #     self.token_limit,
-        #     seq_axis=1,
-        #     initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
-        # )
-        self.query = self.add_weight(
-            name="query",
-            shape=[1, 1, self.embedding_dim],
+        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+            self.token_limit,
+            seq_axis=1,
             initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
-            trainable=True,
-            dtype=tf.float32,
         )
+        self.ln = tf.keras.layers.LayerNormalization()
+        # self.query = self.add_weight(
+        #     name="query",
+        #     shape=[1, 1, self.embedding_dim],
+        #     initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
+        #     trainable=True,
+        #     dtype=tf.float32,
+        # )
         self.input_ff = tf.keras.layers.Dense(self.embedding_dim, dtype=tf.float32)
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
@@ -343,7 +344,7 @@ class SequenceRegressor(tf.keras.Model):
         asv_embeddings, counts = self.base_model.extract_asv_embeddings(
             (tokens, batch_indices, asv_indices, counts),
             batch_embeddings=True,
-            sort_counts=True,
+            sort_counts=False,
         )
         mask = tf.cast(counts > 0, dtype=self.compute_dtype)
 
@@ -351,27 +352,22 @@ class SequenceRegressor(tf.keras.Model):
         counts = tf.cast(counts, dtype=tf.float32)
         total_counts = tf.reduce_sum(counts, axis=1, keepdims=True)
         counts = counts / total_counts
-        batch_dim = tf.shape(counts)[0]
-        # counts = (
-        #     counts
-        #     * tf.cast(self._rezero, dtype=tf.float32)
-        #     * tf.cast(self.pos_emb(counts), dtype=tf.float32)
-        # )
+        # counts = counts * tf.cast(self._rezero, dtype=tf.float32) * tf.cast(self.pos_emb(counts), dtype=tf.float32)
 
         # compute sample embeddings and target
-        query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
-        query = self.input_ff(query)
+        # query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
+        # query = self.input_ff(query)
+        query = asv_embeddings + counts * self.pos_emb(counts)
+        query = self.ln(query)
 
-        #query = tf.repeat(self.query, repeats=batch_dim, axis=0)
+        # query = tf.repeat(self.query, repeats=batch_dim, axis=0)
         asv_embeddings = self.encoder(
-            [query, tf.cast(asv_embeddings, dtype=self.compute_dtype)],
+            [query, asv_embeddings],
             mask=mask,
             training=training,
         )
-        #sample_embedding = tf.squeeze(sample_embedding, axis=1)
-        sample_embedding = self.attention_pooling(
-            asv_embeddings, mask=mask, training=training
-        )
+        # sample_embedding = tf.squeeze(sample_embedding, axis=1)
+        sample_embedding = self.attention_pooling(asv_embeddings, mask=mask, training=training)
         return tf.cast(sample_embedding, dtype=tf.float32), self.output_activation(self.target_ff(sample_embedding))
 
     def get_config(self):

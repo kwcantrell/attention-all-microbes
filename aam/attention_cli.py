@@ -852,7 +852,7 @@ def fit_sample_regressor(
         common_kwargs = {
             "metadata_column": m_metadata_column,
             "max_token_per_sample": p_asv_limit,
-            "sample_depths": [10000, 10000],
+            "sample_depths": [1000, 1000],
             "batch_size": p_batch_size,
             "is_16S": True,
             "is_categorical": p_is_categorical,
@@ -1010,7 +1010,7 @@ def fit_sample_regressor(
                 accumulation_steps=p_accumulation_steps,
                 scale_losses=p_scale_loss,
                 use_linear_bias=True,
-                use_residual_connections=False
+                use_residual_connections=True,
             )
             # for x, y in train_data["dataset"].take(1):
             #     model(x)

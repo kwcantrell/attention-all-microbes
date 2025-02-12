@@ -113,7 +113,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
         if attention_mask is not None:
             attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
-        
+
         if isinstance(inputs, (list, tuple)):
             output_tensor, key_value = inputs
             inputs = output_tensor
