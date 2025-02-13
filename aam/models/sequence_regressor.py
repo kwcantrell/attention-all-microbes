@@ -362,7 +362,7 @@ class SequenceRegressor(tf.keras.Model):
 
         # query = tf.repeat(self.query, repeats=batch_dim, axis=0)
         asv_embeddings = self.encoder(
-            [tf.cast(query, dtype=self.compute_dtype), asv_embeddings],
+            tf.cast(query, dtype=self.compute_dtype),
             mask=mask,
             training=training,
         )
