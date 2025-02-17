@@ -62,7 +62,7 @@ class NucleotideEncoderV3(tf.keras.Model):
             asv_encoder=asv_encoder,
             use_linear_bias=self.use_linear_bias,
         )
-        self.asv_ff = tf.keras.layers.Dense(self.embedding_dim)
+        self.asv_ff = tf.keras.layers.Dense(self.embedding_dim, dtype=tf.float32)
 
     def build(self, input_shape):
         if self.built:
@@ -136,13 +136,17 @@ class NucleotideEncoderV3(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def call(self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def call(
+        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
         tokens = inputs
         include_bert_loss = False
         if hasattr(self, "include_bert_loss"):
             include_bert_loss = self.include_bert_loss
-        embeddings = self.asv_encoder(tokens, include_bert_random_mask=include_bert_loss, training=training)
+        embeddings = self.asv_encoder(
+            tokens, include_bert_random_mask=include_bert_loss, training=training
+        )
         return self.output_activation(self.asv_ff(embeddings))
 
     def get_config(self):

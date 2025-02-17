@@ -100,13 +100,14 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         )
         return (
             (
-                (asv_unique_tokens, asv_sparse_indices, asv_obs_indices, asv_counts),
-                (
-                    gotu_unique_tokens,
-                    gotu_sparse_indices,
-                    gotu_obs_indices,
-                    gotu_counts,
-                ),
+                asv_unique_tokens,
+                asv_sparse_indices,
+                asv_obs_indices,
+                asv_counts,
+                gotu_unique_tokens,
+                gotu_sparse_indices,
+                gotu_obs_indices,
+                gotu_counts,
             ),
             (
                 (asv_y_true, asv_encoder_output),
@@ -132,18 +133,14 @@ def get_dataset(gen: GOTUGenerator):
         enqueuer.get,
         output_signature=(
             (
-                (
-                    tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-                ),
-                (
-                    tf.TensorSpec(shape=[None], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None], dtype=tf.int32),
-                    tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-                ),
+                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
             ),
             (
                 (
