@@ -75,7 +75,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
         for i in range(self.num_layers):
             self.encoder_layers.append(get_transformer(i))
         if self.normalize_outputs:
-            self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=1e-6, dtype=tf.float32)
+            self.output_normalization = tf.keras.layers.LayerNormalization(
+                epsilon=1e-6, dtype=tf.float32
+            )
         super(TransformerEncoder, self).build(input_shape)
 
     def get_config(self):
@@ -119,14 +121,18 @@ class TransformerEncoder(tf.keras.layers.Layer):
             inputs = output_tensor
             for layer_idx in range(self.num_layers):
                 output_tensor = tf.cast(
-                    self.encoder_layers[layer_idx]([output_tensor, key_value, attention_mask], training=training),
+                    self.encoder_layers[layer_idx](
+                        [output_tensor, key_value, attention_mask], training=training
+                    ),
                     dtype=self.compute_dtype,
                 )
         else:
             output_tensor = inputs
             for layer_idx in range(self.num_layers):
                 output_tensor = tf.cast(
-                    self.encoder_layers[layer_idx]([output_tensor, attention_mask], training=training),
+                    self.encoder_layers[layer_idx](
+                        [output_tensor, attention_mask], training=training
+                    ),
                     dtype=self.compute_dtype,
                 )
 
