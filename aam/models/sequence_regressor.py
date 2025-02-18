@@ -172,7 +172,7 @@ class SequenceRegressor(tf.keras.Model):
             seq_axis=1,
             initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
         )
-        self.ln = tf.keras.layers.LayerNormalization()
+        self.ln = tf.keras.layers.LayerNormalization(dtype=tf.float32)
         # self.query = self.add_weight(
         #     name="query",
         #     shape=[1, 1, self.embedding_dim],
@@ -357,8 +357,8 @@ class SequenceRegressor(tf.keras.Model):
         # compute sample embeddings and target
         # query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
         # query = self.input_ff(query)
-        query = tf.cast(asv_embeddings, dtype=tf.float32) + counts * tf.cast(self.pos_emb(counts), dtype=tf.float32)
-        query = self.ln(query)
+        query = self.ln(tf.cast(asv_embeddings, dtype=tf.float32))
+        query = query + counts * tf.cast(self.pos_emb(counts), dtype=tf.float32)
 
         # query = tf.repeat(self.query, repeats=batch_dim, axis=0)
         asv_embeddings = self.encoder(
