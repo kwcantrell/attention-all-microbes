@@ -144,17 +144,22 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
-        self.encoder = TransformerEncoder(
-            num_layers=self.attention_layers,
-            num_attention_heads=self.attention_heads,
-            intermediate_size=self.intermediate_size,
-            dropout_rate=self.dropout_rate,
-            activation=self.intermediate_activation,
-            normalize_outputs=self.normalize_outputs,
-            use_residual_connections=self.use_residual_connections,
-            use_linear_bias=self.use_linear_bias,
-            name="encoder",
-        )
+        #self.encoder = TransformerEncoder(
+        #    num_layers=self.attention_layers,
+        #    num_attention_heads=self.attention_heads,
+        #    intermediate_size=self.intermediate_size,
+        #    dropout_rate=self.dropout_rate,
+        #    activation=self.intermediate_activation,
+        #    normalize_outputs=self.normalize_outputs,
+        #    use_residual_connections=self.use_residual_connections,
+        #    use_linear_bias=self.use_linear_bias,
+        #    name="encoder",
+        #)
+        self.encoder = tf.keras.Sequential([
+            tf.keras.layers.Dense(256, activation="relu", use_bias=True),
+            tf.keras.layers.Dense(128, activation="relu", use_bias=True),
+            tf.keras.layers.Dense(64, activation="relu", use_bias=True),
+        ])
 
         self.attention_pooling = MultiHeadAttentionPooling(
             self.normalize_outputs,
@@ -380,19 +385,18 @@ class SequenceRegressor(tf.keras.Model):
         # compute sample embeddings and target
         # query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
         # query = self.input_ff(query)
-        query = tf.cast(asv_embeddings, dtype=tf.float32) + counts * tf.cast(
-            self.pos_emb(counts), dtype=tf.float32
-        )
-        query = self.ln(query)
+        query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
+        query = tf.reduce_sum(query, axis=1) / tf.reduce_sum(counts, axis=1)
+        # query = self.ln(query)
 
         # query = tf.repeat(self.query, repeats=batch_dim, axis=0)
-        asv_embeddings = self.encoder(
-            tf.cast(query, dtype=self.compute_dtype), mask=mask, training=training
+        sample_embedding = self.encoder(
+            tf.cast(query, dtype=self.compute_dtype), training=training
         )
         # sample_embedding = tf.squeeze(sample_embedding, axis=1)
-        sample_embedding = self.attention_pooling(
-            asv_embeddings, mask=mask, training=training
-        )
+        # sample_embedding = self.attention_pooling(
+        #     asv_embeddings, mask=mask, training=training
+        # )
         return tf.cast(sample_embedding, dtype=tf.float32), self.output_activation(
             self.target_ff(sample_embedding)
         )
