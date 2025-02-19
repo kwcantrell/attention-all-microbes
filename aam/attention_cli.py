@@ -59,17 +59,20 @@ GLOBAL_CONFIGURATIONS = {}
 @cli.command()
 @click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option(
-    "--p-sequence-batch-size", default=8, show_default=True, required=False, type=int
+    "--m-taxonomy", default=None, required=False, type=click.Path(exists=True)
+)
+@click.option(
+    "--p-sequence-batch-size", default=128, show_default=True, required=False, type=int
 )
 @click.option(
     "--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int
 )
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-embedding-dim", default=128, type=int)
-@click.option("--p-attention-heads", default=4, type=int)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=512, type=int)
+@click.option("--p-attention-heads", default=8, type=int)
 @click.option("--p-attention-layers", default=8, type=int)
-@click.option("--p-intermediate-size", default=512, type=int)
+@click.option("--p-intermediate-size", default=2048, type=int)
 @click.option(
     "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
@@ -79,12 +82,13 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
 @click.option("--p-normalize-outputs", default=False, type=bool)
-@click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--p-use-residual-connections", default=False, type=bool)
 @click.option("--i-model", default=None, required=False, type=str)
 @click.option("--p-include-bert-loss", default=True, required=False, type=bool)
-@click.option("--p-use-linear-bias", default=False, type=bool)
+@click.option("--p-use-linear-bias", default=True, type=bool)
 def fit_asv_encoder(
     i_tree: str,
+    m_taxonomy: str,
     p_sequence_batch_size: int,
     p_pairwise_batch_size: int,
     p_epochs: int,
@@ -122,18 +126,11 @@ def fit_asv_encoder(
     }
     train_gen = ASVGenerator(
         tree=i_tree,
+        taxonomy=m_taxonomy,
         shuffle=True,
         **common_kwargs,
     )
     train_dataset = get_dataset(train_gen)
-
-    val_gen = ASVGenerator(
-        tree=i_tree,
-        shuffle=False,
-        subsample=0.01,
-        **common_kwargs,
-    )
-    val_dataset = get_dataset(val_gen)
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -156,6 +153,7 @@ def fit_asv_encoder(
             normalize_outputs=p_normalize_outputs,
             use_residual_connections=p_use_residual_connections,
             use_linear_bias=p_use_linear_bias,
+            num_tax_level_tokens=train_gen.num_tokens,
         )
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
@@ -200,11 +198,9 @@ def fit_asv_encoder(
 
     model.fit(
         train_dataset,
-        validation_data=val_dataset,
         callbacks=[*core_callbacks, lr_scheduler],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
-        validation_steps=val_gen.steps_per_epoch,
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")
@@ -876,7 +872,7 @@ def fit_sample_regressor(
         common_kwargs = {
             "metadata_column": m_metadata_column,
             "max_token_per_sample": p_asv_limit,
-            "sample_depths": [10000, 10000],
+            "sample_depths": [1000, 1000],
             "batch_size": p_batch_size,
             "is_16S": True,
             "is_categorical": p_is_categorical,
@@ -1036,7 +1032,7 @@ def fit_sample_regressor(
                 accumulation_steps=p_accumulation_steps,
                 scale_losses=p_scale_loss,
                 use_linear_bias=True,
-                use_residual_connections=True,
+                use_residual_connections=False,
             )
             # for x, y in train_data["dataset"].take(1):
             #     model(x)
