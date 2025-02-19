@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss, _pairwise_distances
-from aam.models.multihead_attention_pooling_v2 import MultiHeadAttentionPoolingV2
+from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
 from aam.models.transformers import TransformerEncoder
 from aam.models.unifrac_denoising import UnifracDenoiser
 from aam.models.unifrac_encoder import UnifracEncoder
@@ -127,7 +127,7 @@ class SequenceRegressor(tf.keras.Model):
             self.metric_tracker = tf.keras.metrics.SparseCategoricalAccuracy()
             self.metric_string = "accuracy"
 
-        # self.attention_pooling = MultiHeadAttentionPoolingV2()
+        # self.attention_pooling = MultiHeadAttentionPooling()
         # self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
 
         self.loss_metrics = sorted(
@@ -156,7 +156,7 @@ class SequenceRegressor(tf.keras.Model):
             name="encoder",
         )
 
-        self.attention_pooling = MultiHeadAttentionPoolingV2(
+        self.attention_pooling = MultiHeadAttentionPooling(
             self.normalize_outputs,
             num_heads=self.attention_heads,
             use_residual_connections=self.use_residual_connections,
@@ -199,11 +199,10 @@ class SequenceRegressor(tf.keras.Model):
         embeddings, y_pred = model_outputs
 
         # step 1: pairwise distance of embeddings should match pairwise distance of target
-        # y_true_dist = _pairwise_distances(
-        #     tf.reshape(y_true, shape=[-1, 1]), squared=False
-        # )
-        # embedding_loss = self.embedding_loss(y_true_dist, embeddings)
-        embedding_loss = 0.0
+        y_true_dist = _pairwise_distances(
+            tf.reshape(y_true, shape=[-1, 1]), squared=False
+        )
+        embedding_loss = self.embedding_loss(y_true_dist, embeddings)
 
         # step 2: minimize mse
         mse_loss = tf.square(y_true - y_pred)
@@ -381,8 +380,10 @@ class SequenceRegressor(tf.keras.Model):
         # compute sample embeddings and target
         # query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
         # query = self.input_ff(query)
-        query = self.ln(tf.cast(asv_embeddings, dtype=tf.float32))
-        query = query + counts * tf.cast(self.pos_emb(counts), dtype=tf.float32)
+        query = tf.cast(asv_embeddings, dtype=tf.float32) + counts * tf.cast(
+            self.pos_emb(counts), dtype=tf.float32
+        )
+        query = self.ln(query)
 
         # query = tf.repeat(self.query, repeats=batch_dim, axis=0)
         asv_embeddings = self.encoder(
