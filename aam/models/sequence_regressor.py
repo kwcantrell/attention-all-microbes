@@ -373,7 +373,7 @@ class SequenceRegressor(tf.keras.Model):
 
         # compute sample embeddings and target
         # query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
-        # query = self.input_ff(query)
+        query = self.input_ff(asv_embeddings)
         query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
         query = tf.reduce_sum(query, axis=1) / tf.reduce_sum(counts, axis=1)
         # query = self.ln(query)
