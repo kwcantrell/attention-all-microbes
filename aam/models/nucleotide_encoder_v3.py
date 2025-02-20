@@ -88,7 +88,10 @@ class NucleotideEncoderV3(tf.keras.Model):
 
     def predict_step(self, data):
         inputs, asv_ids = data
-        return self(inputs, training=False), asv_ids
+        if self.num_tax_level_tokens is None:
+            return self(inputs, training=False), asv_ids
+        embeddings, _ = self(inputs, training=False)
+        return embeddings, asv_ids
 
     def _compute_loss(self, y_true, embeddings):
         loss = 0.0
