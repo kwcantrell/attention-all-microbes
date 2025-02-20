@@ -104,9 +104,11 @@ class ASVGenerator(tf.keras.utils.Sequence):
         self.sample_indices = np.arange(len(self.obs_encodings), dtype=np.int32)
 
         self.num_tokens = None
+        self.taxonomy = None
         if taxonomy is not None:
             print("step 6: get taxonomy")
             self.taxonomy = taxonomy
+
         self.on_epoch_end()
 
         print("Number of sequences:", self.size)
