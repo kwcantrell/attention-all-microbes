@@ -131,11 +131,16 @@ class SaveModel(tf.keras.callbacks.Callback):
         iterations = float(tf.keras.backend.get_value(self.model.optimizer.iterations))
         logs["iteration"] = iterations
 
+        metric = logs[self.monitor]
+        if self.best_weights is None or self.best_metric > metric:
+            self.best_metric = metric
+            self.best_weights = self.model.get_weights()
         self.model.save(
             self.output_dir,
             save_format="keras",
         )
 
+        logs["best_metric"] = self.best_metric
 
     def get_config(self):
         base_config = super().get_config()

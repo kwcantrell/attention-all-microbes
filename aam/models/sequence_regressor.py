@@ -296,12 +296,12 @@ class SequenceRegressor(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
         self.embedding_tracker.update_state(embedding_loss)
-        self._compute_metric(y_target, outputs)
+        # self._compute_metric(y_target, outputs)
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
             "embedding_loss": self.embedding_tracker.result(),
-            self.metric_string: self.metric_tracker.result(),
+            # self.metric_string: self.metric_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
@@ -320,12 +320,12 @@ class SequenceRegressor(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         self.target_tracker.update_state(target_loss)
         self.embedding_tracker.update_state(embedding_loss)
-        self._compute_metric(y_target, outputs)
+        # self._compute_metric(y_target, outputs)
         return {
             "loss": self.loss_tracker.result(),
             "target_loss": self.target_tracker.result(),
             "embedding_loss": self.embedding_tracker.result(),
-            self.metric_string: self.metric_tracker.result(),
+            # self.metric_string: self.metric_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
