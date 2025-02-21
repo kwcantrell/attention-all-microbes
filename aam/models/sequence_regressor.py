@@ -144,7 +144,7 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
-        #self.encoder = TransformerEncoder(
+        # self.encoder = TransformerEncoder(
         #    num_layers=self.attention_layers,
         #    num_attention_heads=self.attention_heads,
         #    intermediate_size=self.intermediate_size,
@@ -154,12 +154,14 @@ class SequenceRegressor(tf.keras.Model):
         #    use_residual_connections=self.use_residual_connections,
         #    use_linear_bias=self.use_linear_bias,
         #    name="encoder",
-        #)
-        self.encoder = tf.keras.Sequential([
-            tf.keras.layers.Dense(256, activation="relu", use_bias=True),
-            tf.keras.layers.Dense(128, activation="relu", use_bias=True),
-            tf.keras.layers.Dense(64, activation="relu", use_bias=True),
-        ])
+        # )
+        self.encoder = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(256, activation="relu", use_bias=True),
+                tf.keras.layers.Dense(128, activation="relu", use_bias=True),
+                tf.keras.layers.Dense(64, activation="relu", use_bias=True),
+            ]
+        )
 
         self.attention_pooling = MultiHeadAttentionPooling(
             self.normalize_outputs,
@@ -291,8 +293,6 @@ class SequenceRegressor(tf.keras.Model):
         inputs, y = data
         y_target = y
 
-        # shape = tf.shape(encoder_target)
-        # group_dim = shape[-1]
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
             loss, target_loss, embedding_loss = self._compute_loss(y_target, outputs)
