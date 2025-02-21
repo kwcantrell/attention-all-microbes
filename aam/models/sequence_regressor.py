@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import log
 from typing import Optional, Union
 
 import tensorflow as tf
@@ -84,40 +85,8 @@ class SequenceRegressor(tf.keras.Model):
         self.combined_base = False
         self.base_model = base_model
         self.base_model.trainable = False
-        self.embedding_loss = PairwiseLoss()
-
-        # self.base_losses = {"base_loss": self.base_model._compute_encoder_loss}
-        # self.base_metrics = {"base_loss": ["encoder_loss", self.base_model.encoder_tracker]}
-
-        # if self.freeze_base:
-        #     print("Freezing base model...")
-        #     self.base_model.trainable = False
-
-        # self.count_encoder = TransformerEncoder(
-        #     num_layers=self.attention_layers,
-        #     num_attention_heads=self.attention_heads,
-        #     intermediate_size=intermediate_size,
-        #     dropout_rate=self.dropout_rate,
-        #     activation=self.intermediate_activation,
-        # )
-        # self.count_pos = tfm.nlp.layers.PositionEmbedding(self.token_limit + 5, initializer="zeros")
-        # self.count_out = tf.keras.layers.Dense(1, dtype=tf.float32)
-        # self._rezero_a = self.add_weight(
-        #     name="rezero_alpha",
-        #     initializer=tf.keras.initializers.Zeros(),
-        #     trainable=True,
-        #     dtype=tf.float32,
-        # )
-        self.count_loss = tf.keras.losses.MeanSquaredError(reduction="none")
+        self.embedding_loss = PairwiseLoss(use_mean_pairs=False)
         self.embedding_tracker = tf.keras.metrics.Mean()
-
-        # self.target_encoder = TransformerEncoder(
-        #     num_layers=self.attention_layers,
-        #     num_attention_heads=self.attention_heads,
-        #     intermediate_size=intermediate_size,
-        #     dropout_rate=self.dropout_rate,
-        #     activation=self.intermediate_activation,
-        # )
 
         self.target_tracker = tf.keras.metrics.Mean()
         if not self.classifier:
@@ -127,15 +96,6 @@ class SequenceRegressor(tf.keras.Model):
             self.metric_tracker = tf.keras.metrics.SparseCategoricalAccuracy()
             self.metric_string = "accuracy"
 
-        # self.attention_pooling = MultiHeadAttentionPooling()
-        # self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
-
-        self.loss_metrics = sorted(
-            ["loss", "target_loss", "count_mse", self.metric_string]
-        )
-        self.gradient_accumulator = GradientAccumulator(self.accumulation_steps)
-        self.loss_scaler = LossScaler(self.gradient_accumulator.accum_steps)
-
     def build(self, input_shape):
         if self.built:
             return
@@ -144,83 +104,24 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
-        self.encoder = TransformerEncoder(
-            num_layers=self.attention_layers,
-            num_attention_heads=self.attention_heads,
-            intermediate_size=self.intermediate_size,
-            dropout_rate=self.dropout_rate,
-            activation=self.intermediate_activation,
-            normalize_outputs=self.normalize_outputs,
-            use_residual_connections=self.use_residual_connections,
-            use_linear_bias=self.use_linear_bias,
-            name="encoder",
-        )
-
-        self.attention_pooling = MultiHeadAttentionPooling(
-            self.normalize_outputs,
-            num_heads=self.attention_heads,
-            use_residual_connections=self.use_residual_connections,
-            use_linear_bias=self.use_linear_bias,
-        )
-
-        # self._rezero = self.add_weight(
-        #     name="rezero_alpha",
-        #     initializer=tf.keras.initializers.Zeros(),
-        #     trainable=True,
-        #     dtype=tf.float32,
-        # )
-        self.pos_emb = tfm.nlp.layers.PositionEmbedding(
-            self.token_limit,
-            seq_axis=1,
-            initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
-        )
-        self.ln = tf.keras.layers.LayerNormalization(dtype=tf.float32)
-        # self.query = self.add_weight(
-        #     name="query",
-        #     shape=[1, 1, self.embedding_dim],
-        #     initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
-        #     trainable=True,
-        #     dtype=tf.float32,
-        # )
-        self.input_ff = tf.keras.layers.Dense(self.embedding_dim, dtype=tf.float32)
+        ff_layers = []
+        embedding_dim = 256
+        current_dim = embedding_dim
+        while current_dim > 32:
+            ff_layers.append(tf.keras.layers.BatchNormalization())
+            ff_layers.append(
+                tf.keras.layers.Dense(current_dim, use_bias=True, activation="relu")
+            )
+            ff_layers.append(
+                tf.keras.layers.Dense(current_dim, use_bias=True, activation="relu")
+            )
+            ff_layers.append(tf.keras.layers.Dense(current_dim // 2, use_bias=False))
+            current_dim = current_dim // 2
+        self.regressor = tf.keras.Sequential(ff_layers)
+        self.out_ff = tf.keras.layers.Dense(self.out_dim)
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-        self.target_ff = tf.keras.layers.Dense(self.out_dim, dtype=tf.float32)
-        # self.sample_ff = tf.keras.layers.Dense(self.embedding_dim, dtype=tf.float32)
+
         super(SequenceRegressor, self).build(input_shape)
-
-    def evaluate_metric(self, dataset, metric, **kwargs):
-        metric_index = self.loss_metrics.index(metric)
-        evaluated_metrics = super(SequenceRegressor, self).evaluate(dataset, **kwargs)
-        return evaluated_metrics[metric_index]
-
-    def _compute_target_loss(
-        self, y_true: tf.Tensor, model_outputs: tf.Tensor
-    ) -> tf.Tensor:
-        embeddings, y_pred = model_outputs
-
-        # step 1: pairwise distance of embeddings should match pairwise distance of target
-        y_true_dist = _pairwise_distances(
-            tf.reshape(y_true, shape=[-1, 1]), squared=False
-        )
-        embedding_loss = self.embedding_loss(y_true_dist, embeddings)
-
-        # step 2: minimize mse
-        mse_loss = tf.square(y_true - y_pred)
-        return mse_loss, embedding_loss
-
-    def _compute_count_loss(
-        self, counts: tf.Tensor, count_pred: tf.Tensor, count_mask
-    ) -> tf.Tensor:
-        count_mask = counts > 0
-        count_mask = tf.reshape(count_mask, shape=[-1])
-        relative_counts = tf.reshape(self._relative_abundance(counts), shape=[-1])[
-            count_mask
-        ]
-        count_pred = tf.reshape(count_pred, shape=[-1])[count_mask]
-
-        loss = tf.square(tf.math.log(relative_counts) - tf.math.log(count_pred))
-        loss = tf.reduce_mean(loss)
-        return loss
 
     def _compute_loss(
         self,
@@ -232,6 +133,7 @@ class SequenceRegressor(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
         sample_embeddings, y_pred = model_outputs
         y_true = tf.reshape(tf.cast(y_true, tf.float32), shape=[-1, 1])
+        y_pred = tf.reshape(tf.cast(y_pred, tf.float32), shape=[-1, 1])
 
         # step 1: minimize mse
         mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
@@ -241,6 +143,7 @@ class SequenceRegressor(tf.keras.Model):
         embedding_loss = tf.reduce_mean(
             self.embedding_loss(y_true_dist, sample_embeddings)
         )
+        embedding_loss = 0.0
         return mse_loss + embedding_loss, mse_loss, embedding_loss
 
     def _compute_metric(
@@ -286,8 +189,6 @@ class SequenceRegressor(tf.keras.Model):
         inputs, y = data
         y_target = y
 
-        # shape = tf.shape(encoder_target)
-        # group_dim = shape[-1]
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
             loss, target_loss, embedding_loss = self._compute_loss(y_target, outputs)
@@ -335,18 +236,6 @@ class SequenceRegressor(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def _extract_asv_embeddings(self, inputs):
-        asv_embeddings, counts = self.base_model(
-            inputs, return_asv_embeddings=True, training=False
-        )
-        return asv_embeddings, counts
-
-    def _group_embeddings(self, asv_embeddings, inputs, group, samples_per_group):
-        base_inputs = self.base_model._group_embeddings(
-            asv_embeddings, inputs, group, samples_per_group
-        )
-        return self.base_model(base_inputs, return_asv_embeddings=True, training=False)
-
     def call(
         self, inputs, training: bool = False
     ) -> Union[
@@ -354,48 +243,23 @@ class SequenceRegressor(tf.keras.Model):
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
         training = training and self.trainable
-        tokens, batch_indices, asv_indices, counts = inputs
-        tokens = tf.cast(tokens, dtype=tf.int32)
-        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-        # get denoised embeddings and attention mask
-        # asv_embeddings, counts = self.base_model.extract_asv_embeddings(
-        #     (tokens, batch_indices, asv_indices, counts),
-        #     batch_embeddings=True,
-        #     sort_counts=False,
-        # )
-        asv_embeddings, counts = self.base_model(
-            (tokens, batch_indices, asv_indices, counts),
-            return_asv_embeddings=True,
-            training=False,
-        )
+
+        asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
         mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+        asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
         # compute relative abundance
-        counts = tf.cast(counts, dtype=tf.float32)
-        total_counts = tf.reduce_sum(counts, axis=1, keepdims=True)
-        counts = counts / total_counts
+        # counts = tf.cast(counts, dtype=tf.float32)
+        # total_counts = tf.reduce_sum(counts, axis=1, keepdims=True)
+        # counts = counts / total_counts
         # counts = counts * tf.cast(self._rezero, dtype=tf.float32) * tf.cast(self.pos_emb(counts), dtype=tf.float32)
 
-        # compute sample embeddings and target
-        # query = tf.cast(asv_embeddings, dtype=tf.float32) * counts
-        # query = self.input_ff(query)
-        query = tf.cast(asv_embeddings, dtype=tf.float32) + counts * tf.cast(
-            self.pos_emb(counts), dtype=tf.float32
+        sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+            mask, axis=1
         )
-        query = self.ln(query)
-
-        # query = tf.repeat(self.query, repeats=batch_dim, axis=0)
-        asv_embeddings = self.encoder(
-            tf.cast(query, dtype=self.compute_dtype), mask=mask, training=training
-        )
-        # sample_embedding = tf.squeeze(sample_embedding, axis=1)
-        sample_embedding = self.attention_pooling(
-            asv_embeddings, mask=mask, training=training
-        )
-        return tf.cast(sample_embedding, dtype=tf.float32), self.output_activation(
-            self.target_ff(sample_embedding)
-        )
+        sample_embeddings = self.regressor(sample_embeddings, training=training)
+        output = self.out_ff(sample_embeddings)
+        return self.output_activation(sample_embeddings), self.output_activation(output)
 
     def get_config(self):
         config = super(SequenceRegressor, self).get_config()

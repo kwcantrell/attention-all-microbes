@@ -183,10 +183,11 @@ class UnifracDenoiser(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        unifrac_embeddings, denoise_unifrac_embeddings = self.call(
-            inputs, training=False
-        )
-        return denoise_unifrac_embeddings, y
+        # unifrac_embeddings, denoise_unifrac_embeddings = self.call(
+        #     inputs, training=False
+        # )
+        # return unifrac_embeddings, y
+        return self.asv_embeddings(inputs), y
 
     def train_step(
         self,
@@ -254,6 +255,9 @@ class UnifracDenoiser(tf.keras.Model):
         self, asv_embeddings, batch_indicies, counts, asv_indices=None
     ):
         emb_dim = tf.shape(asv_embeddings)[-1]
+        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
         if asv_indices is not None:
             asv_embeddings = tf.gather(asv_embeddings, asv_indices)
         batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
@@ -421,13 +425,14 @@ class UnifracDenoiser(tf.keras.Model):
         else:
             return unifrac_embeddings, denoised_unifrac_embeddings
 
-    def asv_embeddings(
-        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def asv_embeddings(self, inputs: tuple[tf.Tensor, tf.Tensor]):
         # keras cast all input to float so we need to manually cast to expected type
-        tokens = inputs
-        sample_embeddings = self.unifrac_encoder.base_encoder(tokens, training=False)
-        return sample_embeddings
+        if not isinstance(inputs, (tuple, list)):
+            tokens = inputs
+            sample_embeddings = self.asv_encoder(tokens, training=False)
+            return sample_embeddings
+
+        return self.extract_asv_embeddings(inputs, batch_embeddings=True)
 
     def get_config(self):
         config = super(UnifracDenoiser, self).get_config()
