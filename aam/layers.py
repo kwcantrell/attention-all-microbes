@@ -66,7 +66,9 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
-        self.nucleotide_position = tf.range(0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32)
+        self.nucleotide_position = tf.range(
+            0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
+        )
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
 
     def build(self, input_shape):
@@ -74,16 +76,23 @@ class ASVEncoder(tf.keras.layers.Layer):
             print("ASVEncoder is already built")
             return
 
-        self.emb_layer = tf.keras.layers.Embedding(self.num_tokens, self.embedding_dim, input_length=self.max_bp)
+        self.emb_layer = tf.keras.layers.Embedding(
+            self.num_tokens, self.embedding_dim, input_length=self.max_bp
+        )
 
         if not self.use_linear_bias:
-            self._rezero = self.add_weight(name="rezero_alpha", initializer="zeros", trainable=True, dtype=tf.float32)
+            self._rezero = self.add_weight(
+                name="rezero_alpha",
+                initializer="zeros",
+                trainable=True,
+                dtype=tf.float32,
+            )
             self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp + 1, seq_axis=1)
 
         self.asv_attention = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
-            dropout_rate=self.dropout_rate,
+            dropout_rate=0.0,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
             normalize_outputs=self.normalize_outputs,
@@ -91,7 +100,9 @@ class ASVEncoder(tf.keras.layers.Layer):
             use_linear_bias=self.use_linear_bias,
         )
 
-        self.nuc_pred = tf.keras.layers.Dense(self.num_tokens, use_bias=True, dtype=tf.float32)
+        self.nuc_pred = tf.keras.layers.Dense(
+            self.num_tokens, use_bias=True, dtype=tf.float32
+        )
         self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         super().build(input_shape)
 
@@ -105,16 +116,23 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         masked_inputs = inputs
-        random_mask = create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
+        random_mask = (
+            create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
+        )
         if include_bert_random_mask and training and self.trainable:
             print("applying bert mask")
             # of the masked tokens, select 20% to either keep or change to
             # random token
-            random_non_mask = create_random_mask(inputs_shape, percent=0.2, dtype=tf.int32) * random_mask
+            random_non_mask = (
+                create_random_mask(inputs_shape, percent=0.2, dtype=tf.int32)
+                * random_mask
+            )
 
             # of the 20% of masked tokens to either keep or change, select 50%  to keep
             # and 50% to change
-            random_change = create_random_mask(inputs_shape, percent=0.5, dtype=tf.int32)
+            random_change = create_random_mask(
+                inputs_shape, percent=0.5, dtype=tf.int32
+            )
 
             # tokens to keep the same
             random_keep = random_non_mask * random_change
@@ -126,13 +144,19 @@ class ASVEncoder(tf.keras.layers.Layer):
             masked_input = masked_inputs * (1 - random_mask)
 
             # step 2: change 10% of <MASK> tokens back to original token
-            masked_input = masked_input + masked_inputs * random_keep * random_mask * valid_mask
+            masked_input = (
+                masked_input + masked_inputs * random_keep * random_mask * valid_mask
+            )
 
             # step 3: change 10% of <MASK> tokens to random token
-            random_tokens = tf.random.uniform(tf.shape(masked_inputs), minval=1, maxval=4, dtype=tf.int32)
+            random_tokens = tf.random.uniform(
+                tf.shape(masked_inputs), minval=1, maxval=4, dtype=tf.int32
+            )
 
             # step 4: create masked input
-            masked_input = masked_input + random_tokens * random_change * random_mask * valid_mask
+            masked_input = (
+                masked_input + random_tokens * random_change * random_mask * valid_mask
+            )
             masked_inputs = masked_input
 
         # convert random_mask to boolean mask
@@ -144,7 +168,9 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # only add positional embeddings if using vanilla Transforer
         if not self.use_linear_bias:
-            asv_input = asv_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.pos_emb(asv_input)
+            asv_input = asv_input + tf.cast(
+                self._rezero, dtype=self.compute_dtype
+            ) * self.pos_emb(asv_input)
 
         # pass embeddings through Transformer
         output = self.asv_attention(asv_input, training=training)
@@ -235,10 +261,14 @@ class SampleEncoder(tf.keras.layers.Layer):
         asv_embeddings = tf.concat([inputs, sample_token], axis=1)
 
         # extend mask to account for <SAMPLE> token
-        attention_mask = tf.pad(attention_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1)
+        attention_mask = tf.pad(
+            attention_mask, [[0, 0], [0, 1], [0, 0]], constant_values=1
+        )
         attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
 
-        sample_embeddings = self.sample_attention(asv_embeddings, attention_mask=attention_mask > 0, training=training)
+        sample_embeddings = self.sample_attention(
+            asv_embeddings, attention_mask=attention_mask > 0, training=training
+        )
         return sample_embeddings
 
     def get_config(self):
@@ -300,14 +330,18 @@ class NucleotideAttention(tf.keras.layers.Layer):
                     name=("layer_%d" % i),
                 )
             )
-        self.output_normalization = tf.keras.layers.LayerNormalization(epsilon=self.epsilon, dtype=tf.float32)
+        self.output_normalization = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
         super(NucleotideAttention, self).build(input_shape)
 
     def call(self, attention_input, attention_mask=None, training=False):
         attention_input = attention_input + self.pos_emb(attention_input)
         attention_input = attention_input  # * (9 * 3) ** (-0.25)
         for layer_idx in range(self.num_layers):
-            attention_input = self.attention_layers[layer_idx](attention_input, training=training)
+            attention_input = self.attention_layers[layer_idx](
+                attention_input, training=training
+            )
         # output = self.output_normalization(attention_input)
         return attention_input
 
@@ -351,10 +385,14 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.hidden_dim = input_shape[3]
         self.head_size = tf.cast(self.hidden_dim / self.num_heads, dtype=tf.int32)
 
-        self.attention_norm = tf.keras.layers.LayerNormalization(epsilon=self.epsilon, dtype=tf.float32)
+        self.attention_norm = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
         self.attention_dropout = tf.keras.layers.Dropout(self.dropout)
         self.ff_dropout = tf.keras.layers.Dropout(self.dropout)
-        self.ff_norm = tf.keras.layers.LayerNormalization(epsilon=self.epsilon, dtype=tf.float32)
+        self.ff_norm = tf.keras.layers.LayerNormalization(
+            epsilon=self.epsilon, dtype=tf.float32
+        )
         self.nuc_alpha = self.add_weight(
             name="nuc_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -368,12 +406,18 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
         self.w_vi = self.add_weight("w_kv", wi_shape, trainable=True, dtype=tf.float32)
 
         wo_shape = [1, 1, self.hidden_dim, self.hidden_dim]
-        self.o_dense = self.add_weight("w_o", wo_shape, trainable=True, dtype=tf.float32)
+        self.o_dense = self.add_weight(
+            "w_o", wo_shape, trainable=True, dtype=tf.float32
+        )
         # self.o_dense = tf.keras.layers.Dense(self.hidden_dim, use_bias=False)
 
-        self.scale_dot_factor = tf.math.sqrt(tf.cast(self.head_size, dtype=self.compute_dtype))
+        self.scale_dot_factor = tf.math.sqrt(
+            tf.cast(self.head_size, dtype=self.compute_dtype)
+        )
 
-        self.inter_ff = tf.keras.layers.Dense(self.intermediate_ff, activation=self.intermediate_activation, use_bias=True)
+        self.inter_ff = tf.keras.layers.Dense(
+            self.intermediate_ff, activation=self.intermediate_activation, use_bias=True
+        )
         self.outer_ff = tf.keras.layers.Dense(self.hidden_dim, use_bias=True)
 
         super(NucleotideAttentionBlock, self).build(input_shape)
@@ -385,18 +429,24 @@ class NucleotideAttentionBlock(tf.keras.layers.Layer):
 
         # [B, A, 1, N, E] => [B, A, H, N, S]
         wi_output = tf.matmul(transformed_input, tf.cast(w, dtype=self.compute_dtype))
-        transformed_input = tf.ensure_shape(wi_output, [None, None, self.num_heads, self.nucleotides, self.head_size])
+        transformed_input = tf.ensure_shape(
+            wi_output, [None, None, self.num_heads, self.nucleotides, self.head_size]
+        )
         return wi_output
 
     def scaled_dot_attention(self, attention_input):
         wq_tensor = self.compute_wi(attention_input, self.w_qi)
         wk_tensor = self.compute_wi(attention_input, self.w_ki)
-        wv_tensor = self.compute_wi(attention_input, self.w_vi)  # * (0.67 * 3) ** -0.25)
+        wv_tensor = self.compute_wi(
+            attention_input, self.w_vi
+        )  # * (0.67 * 3) ** -0.25)
 
         # (multihead) scaled dot product attention sublayer
         # [B, A, H, N, S] => [B, A, H, N, N]
         dot_tensor = tf.linalg.matmul(wq_tensor, wk_tensor, transpose_b=True)
-        dot_tensor = tf.ensure_shape(dot_tensor, [None, None, self.num_heads, self.nucleotides, self.nucleotides])
+        dot_tensor = tf.ensure_shape(
+            dot_tensor, [None, None, self.num_heads, self.nucleotides, self.nucleotides]
+        )
 
         scaled_dot_tensor = tf.multiply(dot_tensor, 1 / self.scale_dot_factor)
         softmax_tensor = tf.keras.activations.softmax(scaled_dot_tensor, axis=-1)
