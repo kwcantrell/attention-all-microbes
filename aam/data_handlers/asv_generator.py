@@ -259,7 +259,7 @@ def get_dataset(gen: ASVGenerator):
     else:
         y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
 
-    if gen.taxonomy is None:
+    if gen.return_asv_ids or gen.taxonomy is None:
         dataset = tf.data.Dataset.from_generator(
             enqueuer.get,
             output_signature=(
@@ -302,11 +302,11 @@ if __name__ == "__main__":
         sequence_batch_size=4,
         pairwise_batch_size=4,
         shuffle=False,
+        return_asv_ids=True,
     )
     dataset = get_dataset(ug)
-    for x, y in dataset.take(1):
-        print(x)
-        dist, tokens = y
-        print(dist)
-        print(tokens)
-    print(ug.num_tokens)
+    model = tf.keras.models.load_model(
+        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/asv-encoder-tax-v4/model.keras",
+        compile=False,
+    )
+    print(model.predict(dataset.take(1)))

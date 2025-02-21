@@ -67,12 +67,10 @@ class NucleotideEncoderV4(tf.keras.Model):
                     self.embedding_dim,
                     use_bias=True,
                     activation="relu",
-                    dtype=tf.float32,
                 ),
                 tf.keras.layers.Dense(
                     self.embedding_dim,
                     use_bias=True,
-                    dtype=tf.float32,
                 ),
             ]
         )
@@ -212,10 +210,7 @@ class NucleotideEncoderV4(tf.keras.Model):
             tokens, include_bert_random_mask=include_bert_loss, training=training
         )
 
-        token_mask = tf.cast(tokens == 0, dtype=self.compute_dtype)
-        asv_embeddings = tf.math.divide_no_nan(
-            tf.reduce_sum(embeddings, axis=1), tf.reduce_sum(token_mask, axis=1)
-        )
+        asv_embeddings = tf.reduce_mean(embeddings, axis=1)
         embeddings = self.asv_ff_block(asv_embeddings)
 
         if self.num_tax_level_tokens is None:
