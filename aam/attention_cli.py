@@ -712,6 +712,11 @@ def fit_taxonomy_regressor(
     help="Numeric metadata column to use as prediction target.",
 )
 @click.option(
+    "--m-taxonomy",
+    required=True,
+    type=click.Path(exists=True),
+)
+@click.option(
     "--p-missing-samples",
     default="error",
     type=click.Choice(["error", "ignore"], case_sensitive=False),
@@ -769,6 +774,7 @@ def fit_sample_regressor(
     p_no_freeze_base_weights: bool,
     m_metadata_file: str,
     m_metadata_column: str,
+    m_taxonomy: str,
     p_missing_samples: str,
     p_epochs: int,
     p_cv: int,
@@ -808,7 +814,7 @@ def fit_sample_regressor(
     p_train_nuc_encoder: bool,
     p_include_count_encoder: bool,
 ):
-    from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
+    from aam.data_handlers.generator_dataset_v2 import GeneratorDatasetV2, get_dataset
     from aam.models.sequence_regressor import SequenceRegressor
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -844,93 +850,33 @@ def fit_sample_regressor(
 
     print(len(test_indices), len(fold_indices))
 
-    common_kwargs = {
-        "metadata_column": m_metadata_column,
-        "max_token_per_sample": p_asv_limit,
-        "rarefy_depth": p_rarefy_depth,
-        "batch_size": p_batch_size,
-        "is_16S": is_16S,
-        "is_categorical": p_is_categorical,
-    }
-
-    # def tax_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
-    #     return TaxonomyGenerator(
-    #         table=table,
-    #         metadata=df,
-    #         taxonomy=p_taxonomy,
-    #         tax_level=p_taxonomy_level,
-    #         shuffle=shuffle,
-    #         shift=shift,
-    #         scale=scale,
-    #         epochs=epochs,
-    #         gen_new_tables=gen_new_tables,
-    #         max_bp=p_max_bp,
-    #         **common_kwargs,
-    #     )
+    taxonomy = pd.read_csv(m_taxonomy, sep="\t", index_col=0)
+    taxonomy = taxonomy.loc[taxonomy["Taxon"].str[-len("s__") :] != "s__"]
 
     def unifrac_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
         common_kwargs = {
             "metadata_column": m_metadata_column,
             "max_token_per_sample": p_asv_limit,
-            "sample_depths": [1000, 1000],
+            "rarefy_depth": 5000,
             "batch_size": p_batch_size,
             "is_16S": True,
             "is_categorical": p_is_categorical,
             "max_bp": p_max_bp,
-            "tree_path": p_tree,
             "metadata": df,
+            "taxonomy": taxonomy,
         }
-        # return UniFracGenerator(
-        #     table=table,
-        #     metadata=df,
-        #     tree_path=p_tree,
-        #     shuffle=shuffle,
-        #     shift=shift,
-        #     scale=scale,
-        #     epochs=epochs,
-        #     gen_new_tables=gen_new_tables,
-        #     max_bp=p_max_bp,
-        #     unifrac_metric=p_unifrac_metric,
-        #     **common_kwargs,
-        # )
-        return MultiDepthGenerator(
+        return GeneratorDatasetV2(
             table=table,
             shuffle=shuffle,
             shift=shift,
             scale=scale,
             gen_new_tables=gen_new_tables,
             epochs=epochs,
-            unifrac_metric=None,
             **common_kwargs,
         )
 
-    # def combine_gen(table, df, shuffle, shift, scale, epochs, gen_new_tables):
-    #     return CombinedGenerator(
-    #         table=table,
-    #         metadata=df,
-    #         tree_path=p_tree,
-    #         taxonomy=p_taxonomy,
-    #         tax_level=p_taxonomy_level,
-    #         shuffle=shuffle,
-    #         shift=shift,
-    #         scale=scale,
-    #         epochs=epochs,
-    #         gen_new_tables=gen_new_tables,
-    #         max_bp=p_max_bp,
-    #         **common_kwargs,
-    #     )
-
-    # if p_unifrac_metric == "combined":
-    #     base_model = "combined"
-    #     generator = combine_gen
-    # elif p_taxonomy is not None and p_tree is None:
-    #     base_model = "taxonomy"
-    #     generator = tax_gen
-    # elif p_taxonomy is None and p_tree is not None:
     base_model = p_unifrac_metric
     generator = unifrac_gen
-    # else:
-    #     raise Exception("Only taxonomy or UniFrac is supported.")
 
     if i_base_model_path is not None:
         base_model = tf.keras.models.load_model(i_base_model_path, compile=False)
@@ -1034,32 +980,31 @@ def fit_sample_regressor(
                 use_linear_bias=True,
                 use_residual_connections=False,
             )
-            # for x, y in train_data["dataset"].take(1):
-            #     model(x)
             token_shape = tf.TensorShape([None, 150])
             batch_indicies = tf.TensorShape([None, 2])
             indicies_shape = tf.TensorShape([None])
             count_shape = tf.TensorShape([None, 1])
-            model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+            taxonomy_count = tf.TensorShape(
+                [p_batch_size, train_data["generator"].num_tax_values]
+            )
+            model.build(
+                [
+                    token_shape,
+                    batch_indicies,
+                    indicies_shape,
+                    count_shape,
+                    taxonomy_count,
+                ]
+            )
         model.summary()
         fold_label = i + 1
         if not p_is_categorical:
             loss = tf.keras.losses.MeanSquaredError(reduction="none")
-            callbacks = [
-                # MeanAbsoluteError(
-                #     monitor="val_mae",
-                #     dataset=val_data["dataset"],
-                #     output_dir=os.path.join(
-                #         figure_path, f"model_f{fold_label}-val.png"
-                #     ),
-                #     report_back=p_report_back,
-                # )
-            ]
+            callbacks = []
         else:
             loss = tf.keras.losses.CategoricalFocalCrossentropy(
                 from_logits=False, reduction="none"
             )
-            # loss = tf.keras.losses.CategoricalHinge(reduction="none")
             callbacks = [
                 ConfusionMatrx(
                     monitor="val_target_loss",

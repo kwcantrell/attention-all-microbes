@@ -104,11 +104,14 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
+        self.sample_emb_batch_norm = tf.keras.layers.BatchNormalization(
+            dtype=tf.float32
+        )
+
         ff_layers = []
-        embedding_dim = 256
+        embedding_dim = 512
         current_dim = embedding_dim
         while current_dim > 32:
-            ff_layers.append(tf.keras.layers.BatchNormalization())
             ff_layers.append(
                 tf.keras.layers.Dense(current_dim, use_bias=True, activation="relu")
             )
@@ -116,11 +119,13 @@ class SequenceRegressor(tf.keras.Model):
                 tf.keras.layers.Dense(current_dim, use_bias=True, activation="relu")
             )
             ff_layers.append(tf.keras.layers.Dense(current_dim // 2, use_bias=False))
+            ff_layers.append(tf.keras.layers.BatchNormalization(dtype=tf.float32))
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
+
+        self.out_emb_ff = tf.keras.layers.Dense(32)
         self.out_ff = tf.keras.layers.Dense(self.out_dim)
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-
         super(SequenceRegressor, self).build(input_shape)
 
     def _compute_loss(
@@ -143,6 +148,7 @@ class SequenceRegressor(tf.keras.Model):
         embedding_loss = tf.reduce_mean(
             self.embedding_loss(y_true_dist, sample_embeddings)
         )
+        embedding_loss = 0.0
         return mse_loss + embedding_loss, mse_loss, embedding_loss
 
     def _compute_metric(
@@ -165,10 +171,10 @@ class SequenceRegressor(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, y_true = data
-        target_embeddings, count_pred, y_pred, base_pred, nuc_mask, nuc_pred = self(
-            inputs, training=False
-        )
+        inputs, y = data
+        y_true = y
+
+        _, y_pred = self(inputs, training=True)
 
         if not self.classifier:
             y_true = y_true * self.scale + self.shift
@@ -242,23 +248,44 @@ class SequenceRegressor(tf.keras.Model):
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
         training = training and self.trainable
+        if len(inputs) == 5:
+            inputs, taxonomy_counts = inputs[:4], inputs[4]
+            asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
+            mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+            asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
-        asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
-        mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+                mask, axis=1
+            )
+            sample_embeddings = self.sample_emb_batch_norm(
+                sample_embeddings, training=training
+            )
 
-        # compute relative abundance
-        # counts = tf.cast(counts, dtype=tf.float32)
-        # total_counts = tf.reduce_sum(counts, axis=1, keepdims=True)
-        # counts = counts / total_counts
-        # counts = counts * tf.cast(self._rezero, dtype=tf.float32) * tf.cast(self.pos_emb(counts), dtype=tf.float32)
+            # compute relative abundance
+            taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
+            total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
+            taxonomy_counts = taxonomy_counts / total_counts
 
-        sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-            mask, axis=1
-        )
-        sample_embeddings = self.regressor(sample_embeddings, training=training)
-        output = self.out_ff(sample_embeddings)
-        return self.output_activation(sample_embeddings), self.output_activation(output)
+            sample_embeddings = tf.concat([sample_embeddings, taxonomy_counts], axis=1)
+            sample_embeddings = self.regressor(sample_embeddings, training=training)
+            sample_embeddings = self.out_emb_ff(sample_embeddings)
+            output = self.out_ff(sample_embeddings)
+            return self.output_activation(sample_embeddings), self.output_activation(
+                output
+            )
+        else:
+            asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
+            mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+            asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+
+            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+                mask, axis=1
+            )
+            sample_embeddings = self.regressor(sample_embeddings, training=training)
+            output = self.out_ff(sample_embeddings)
+            return self.output_activation(sample_embeddings), self.output_activation(
+                output
+            )
 
     def get_config(self):
         config = super(SequenceRegressor, self).get_config()
@@ -302,12 +329,13 @@ class SequenceRegressor(tf.keras.Model):
         config["base_model"] = tf.keras.saving.deserialize_keras_object(
             config["base_model"]
         )
-        model = cls(**config)
 
         input_shape = None
         if "build_input_shape" in config:
             build_input_shape = config.pop("build_input_shape")
             input_shape = build_input_shape["input_shape"]
+
+        model = cls(**config)
 
         if input_shape is not None:
             model.build(input_shape)

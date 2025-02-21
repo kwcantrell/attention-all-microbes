@@ -36,7 +36,9 @@ def batch_embeddings(asv_embeddings, batch_indicies, counts, asv_indices=None):
         asv_embeddings = tf.gather(asv_embeddings, asv_indices)
     batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
     max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
-    batch_embeddings = tf.scatter_nd(batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim])
+    batch_embeddings = tf.scatter_nd(
+        batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+    )
     counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
     return batch_embeddings, counts
 
@@ -99,7 +101,9 @@ class GeneratorDataset(tf.keras.utils.Sequence):
 
         if self.tree_path is not None:
             self.tree = to_skbio_treenode(parse_newick(open(self.tree_path).read()))
-            self.postorder_pos = {n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()}
+            self.postorder_pos = {
+                n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()
+            }
 
         print("rarefy table...")
         self.rarefied_table: Table = self.table.subsample(rarefy_depth)
@@ -158,7 +162,9 @@ class GeneratorDataset(tf.keras.utils.Sequence):
                 asv = asv.lower()
                 return np.array([lookup[c] for c in asv], dtype=np.int32)[np.newaxis, :]
 
-            tokens = np.concatenate([map(asv) for asv in self.asv_ids[unique_obs]], axis=0)
+            tokens = np.concatenate(
+                [map(asv) for asv in self.asv_ids[unique_obs]], axis=0
+            )
         else:
             tokens = unique_obs
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
@@ -173,7 +179,10 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
 
     def on_epoch_end(self):
-        if self.gen_new_tables and self.epochs_since_last_table > self.gen_new_table_frequency:
+        if (
+            self.gen_new_tables
+            and self.epochs_since_last_table > self.gen_new_table_frequency
+        ):
             print("resampling dataset...")
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
             self.epochs_since_last_table = 0
@@ -199,7 +208,9 @@ class GeneratorDataset(tf.keras.utils.Sequence):
                 sorted_indices = np.argsort(post_pos)
                 return obs[sorted_indices]
 
-            self._rarefied_table = self._rarefied_table.sort(sort_obs, axis="observation")
+            self._rarefied_table = self._rarefied_table.sort(
+                sort_obs, axis="observation"
+            )
 
         self.sample_ids = self._rarefied_table.ids()
         self.asv_ids = self._rarefied_table.ids(axis="observation")
@@ -266,6 +277,32 @@ class GeneratorDataset(tf.keras.utils.Sequence):
         print("done preprocessing metadata")
 
 
+def get_dataset(gen: GeneratorDataset):
+    enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
+    enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
+    gen.stop = lambda: enqueuer.stop(0.1)
+
+    batch_dim = gen.samples_per_minibatch
+    if not gen.return_sample_ids:
+        y_type = tf.TensorSpec(shape=(batch_dim, 1), dtype=tf.float32)
+    else:
+        y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
+
+    dataset = tf.data.Dataset.from_generator(
+        enqueuer.get,
+        output_signature=(
+            (
+                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+                tf.TensorSpec(shape=[None], dtype=tf.int32),
+                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+            ),
+            y_type,
+        ),
+    )
+    return dataset
+
+
 if __name__ == "__main__":
     ug = GeneratorDataset(
         table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
@@ -276,14 +313,13 @@ if __name__ == "__main__":
         max_token_per_sample=100,
         batch_size=4,
     )
-
-    # for i, (x, y) in enumerate(ug):
-    #     print(x, y)
-    x, y = ug[0]
-    (tokens, batch_indices, obs_indices, counts) = x
-    print("tokens:", tokens.shape)
-    print("batch_indices:", batch_indices.shape, batch_indices)
-    print("obs indices:", obs_indices.shape)
-    print("counts:", counts)
-    print("y_true", y[0].shape)
-    print("encoder output", y[1].shape)
+    dataset = get_dataset(ug)
+    for x, y in dataset.take(1):
+        print(x, y)
+    # print(ug[0])
+    # (tokens, batch_indices, obs_indices, counts) = x
+    # print("tokens:", tokens.shape)
+    # print("batch_indices:", batch_indices.shape, batch_indices)
+    # print("obs indices:", obs_indices.shape)
+    # print("counts:", counts)
+    # print("y", y)
