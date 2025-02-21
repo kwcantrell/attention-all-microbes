@@ -104,12 +104,6 @@ class PairwiseLoss(tf.keras.losses.Loss):
             )
 
         if not self.use_mean_pairs:
-            # batch_dim = tf.shape(y_true)[0]
-            # valid_pairs = (
-            #     tf.linalg.band_part(tf.ones_like(differences), 0, -1)
-            #     - tf.linalg.diag(tf.ones(shape=[batch_dim]))
-            #     > 0
-            # )
             loss = tf.reduce_mean(differences, axis=-1)
         else:
             mean_mask = tf.cast(
@@ -144,3 +138,96 @@ def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
 
     loss = tf.reduce_mean(triplet_loss[semi_hard_mask])
     return tf.where(loss > 0, loss, 0.0)
+
+
+def _roll(inputs):
+    tensor, shift = inputs
+    return tf.roll(tensor, shift=shift, axis=1)
+
+
+def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
+    shape = tf.shape(embeddings)
+    batch_dim = shape[0]
+    samples_per_group = batch_dim // num_groups
+    num_pos_examples_per_sample = samples_per_group - 1
+    batch_dim = num_groups * samples_per_group
+    group_matching_pairs_mask = tf.ones(
+        shape=[samples_per_group, samples_per_group], dtype=tf.int32
+    )
+    group_matching_pairs_mask = tf.pad(
+        group_matching_pairs_mask, paddings=[[0, 0], [0, batch_dim - samples_per_group]]
+    )
+    matching_pair_mask = tf.reshape(
+        tf.tile(group_matching_pairs_mask, multiples=[num_groups, 1]),
+        shape=[num_groups, -1, batch_dim],
+    )
+
+    matching_pair_mask = tf.map_fn(
+        _roll,
+        elems=(
+            matching_pair_mask,
+            tf.range(start=0, limit=num_groups, dtype=tf.int32) * samples_per_group,
+        ),
+        fn_output_signature=tf.int32,
+    )
+    matching_pair_mask = tf.reshape(tf.stack(matching_pair_mask), shape=[batch_dim, -1])
+
+    distances = _pairwise_distances(embeddings)
+    matching_pairs = tf.reshape(
+        distances[matching_pair_mask == 1], shape=[batch_dim, samples_per_group]
+    )
+    matching_pairs = tf.reshape(
+        matching_pairs, shape=[num_groups, samples_per_group, samples_per_group]
+    )
+    non_matching_pairs = tf.reshape(
+        distances[(1 - matching_pair_mask) == 1],
+        shape=[batch_dim, samples_per_group * (num_groups - 1)],
+    )
+    non_matching_pairs = tf.reshape(
+        non_matching_pairs,
+        shape=[num_groups, samples_per_group, (num_groups - 1) * samples_per_group],
+    )
+    matching_pairs, non_matching_pairs
+
+    def _group_triplet_loss(inputs):
+        group_dist, non_group_dist = inputs
+
+        # remove the group distances that represent the distance from a sample to itself
+        group_pair_mask = (
+            1 - tf.linalg.diag(tf.ones(samples_per_group, dtype=tf.int32))
+        ) > 0
+        group_dist = tf.reshape(
+            group_dist[group_pair_mask],
+            shape=[samples_per_group, samples_per_group - 1, 1],
+        )
+        group_dist = tf.transpose(group_dist, perm=[1, 0, 2])
+        group_dist = group_dist - tf.expand_dims(non_group_dist, axis=0)
+        return tf.transpose(group_dist, perm=[1, 0, 2])
+
+    triplets = tf.map_fn(
+        _group_triplet_loss,
+        (matching_pairs, non_matching_pairs),
+        fn_output_signature=tf.float32,
+    )
+    triplets = tf.reshape(
+        triplets,
+        shape=[
+            num_groups * samples_per_group,
+            num_pos_examples_per_sample,
+            samples_per_group * (num_groups - 1),
+        ],
+    )
+
+    # find semi-hard triplets
+    non_hard_mask = tf.cast(triplets > 0, dtype=tf.float32)
+    semi_hard_mask = tf.cast(triplets <= soft_margin, dtype=tf.float32)
+    triplet_mask = non_hard_mask * semi_hard_mask
+
+    # compute loss per positive example in group
+    per_sample_loss = tf.reduce_sum(triplets * triplet_mask, axis=-1)
+    per_sample_loss = tf.math.divide_no_nan(
+        per_sample_loss, tf.reduce_sum(triplet_mask, axis=-1)
+    )
+
+    # compute loss across entire group for each sample
+    return tf.reduce_mean(per_sample_loss, axis=-1)

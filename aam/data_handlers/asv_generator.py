@@ -108,6 +108,7 @@ class ASVGenerator(tf.keras.utils.Sequence):
         if taxonomy is not None:
             print("step 6: get taxonomy")
             self.taxonomy = taxonomy
+
         self.on_epoch_end()
 
         print("Number of sequences:", self.size)
