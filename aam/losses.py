@@ -104,12 +104,6 @@ class PairwiseLoss(tf.keras.losses.Loss):
             )
 
         if not self.use_mean_pairs:
-            # batch_dim = tf.shape(y_true)[0]
-            # valid_pairs = (
-            #     tf.linalg.band_part(tf.ones_like(differences), 0, -1)
-            #     - tf.linalg.diag(tf.ones(shape=[batch_dim]))
-            #     > 0
-            # )
             loss = tf.reduce_mean(differences, axis=-1)
         else:
             mean_mask = tf.cast(
