@@ -190,7 +190,7 @@ def fit_asv_encoder(
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     model_save_path = os.path.join(output_dir, "model.keras")
-    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+    model_saver = SaveModel(model_save_path, 1, monitor="asv_loss")
     core_callbacks = [
         # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
         model_saver,

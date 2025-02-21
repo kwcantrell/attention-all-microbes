@@ -56,7 +56,9 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
         labels = []
         for label in ax.get_xticklabels():
             text = label.get_text()
-            labels.append(textwrap.fill(text, width=width, break_long_words=break_long_words))
+            labels.append(
+                textwrap.fill(text, width=width, break_long_words=break_long_words)
+            )
         ax.set_xticklabels(labels, rotation=0)
         ax.set_yticklabels(labels, rotation=0)
 
@@ -131,13 +133,13 @@ class SaveModel(tf.keras.callbacks.Callback):
         iterations = float(tf.keras.backend.get_value(self.model.optimizer.iterations))
         logs["iteration"] = iterations
 
+        metric = logs[self.monitor]
+        if self.best_weights is None or self.best_metric > metric:
+            self.best_metric = metric
+            self.best_weights = self.model.get_weights()
         self.model.save(
             self.output_dir,
             save_format="keras",
         )
 
-
-    def get_config(self):
-        base_config = super().get_config()
-        config = {"output_dir": self.output_dir, "report_back": self.report_back}
-        return {**base_config, **config}
+        logs["best_metric"] = self.best_metric
