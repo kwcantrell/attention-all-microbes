@@ -1147,8 +1147,8 @@ def fit_sample_regressor(
         dataset = get_dataset(gen)
 
         data_obj = {
-            "shift": shift,
-            "scale": scale,
+            "shift": gen.shift,
+            "scale": gen.scale,
             "dataset": dataset,
             "generator": gen,
             "num_tokens": None,
@@ -1172,8 +1172,7 @@ def fit_sample_regressor(
         train_data = _get_fold(
             train_ind,
             shuffle=True,
-            shift=0.0,
-            scale=100.0,
+            scale="standscale",
             gen_new_tables=p_gen_new_table,
         )
         val_data = _get_fold(

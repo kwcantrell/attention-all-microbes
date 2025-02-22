@@ -110,7 +110,7 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
                 n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()
             }
 
-        self.tax_level = f"Level {4}"
+        self.tax_level = f"Level {1}"
         self.taxonomy = taxonomy
         if taxonomy is not None:
             print("taxonomy info", self.num_tax_values)
@@ -235,9 +235,7 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         taxonomy[self.levels] = taxonomy[self.taxon_field].str.split("; ", expand=True)
         taxonomy = taxonomy.loc[taxonomy[self.tax_level].str.len() > 3]
         taxonomy = taxonomy.loc[:, self.levels]
-        taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels[2:]].agg(
-            "; ".join, axis=1
-        )
+        taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels].agg("; ".join, axis=1)
         self.table = self.table.filter(
             set(self.table.ids(axis="observation")).intersection(set(taxonomy.index)),
             axis="observation",

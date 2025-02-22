@@ -111,8 +111,8 @@ class SequenceRegressor(tf.keras.Model):
             dtype=tf.float32
         )
 
-        def _ff_block(output_dim, use_bias=True):
-            return [
+        def _ff_block(output_dim, use_bias=True, dropout_rate=None):
+            block = [
                 tf.keras.layers.Dense(
                     output_dim,
                     use_bias=use_bias,
@@ -121,15 +121,18 @@ class SequenceRegressor(tf.keras.Model):
                 tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
             ]
+            if dropout_rate:
+                block.append(tf.keras.layers.Dropout(dropout_rate))
+            return block
 
         embedding_dim = 512
-        self.tax_count_ff = tf.keras.Sequential(_ff_block(512))
+        self.tax_count_ff = tf.keras.Sequential(_ff_block(32))
 
         ff_layers = []
         current_dim = embedding_dim
         while current_dim > 32:
-            ff_layers += _ff_block(current_dim)
-            ff_layers += _ff_block(current_dim)
+            ff_layers += _ff_block(current_dim, dropout_rate=0.1)
+            ff_layers += _ff_block(current_dim, dropout_rate=0.1)
             ff_layers += _ff_block(current_dim // 2)
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
