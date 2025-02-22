@@ -131,9 +131,9 @@ class SequenceRegressor(tf.keras.Model):
         ff_layers = []
         current_dim = embedding_dim
         while current_dim > 32:
-            ff_layers += _ff_block(current_dim, dropout_rate=0.1)
-            ff_layers += _ff_block(current_dim, dropout_rate=0.1)
-            ff_layers += _ff_block(current_dim // 2)
+            ff_layers += _ff_block(current_dim, dropout_rate=0.25)
+            ff_layers += _ff_block(current_dim, dropout_rate=0.25)
+            ff_layers += _ff_block(current_dim // 2, dropout_rate=0.25)
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
 
