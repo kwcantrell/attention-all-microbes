@@ -12,7 +12,9 @@ from aam.models.utils import cos_decay_with_warmup
 
 
 class CVModel:
-    def __init__(self, model: tf.keras.Model, train_data, val_data, output_dir, fold_label):
+    def __init__(
+        self, model: tf.keras.Model, train_data, val_data, output_dir, fold_label
+    ):
         self.model: tf.keras.Model = model
         self.train_data = train_data
         self.val_data = val_data
@@ -23,11 +25,12 @@ class CVModel:
             output_dir,
             f"logs/fold-{self.fold_label}-{self.time_stamp}",
         )
-        self.log_dir = os.path.join(output_dir, f"logs/fold-{self.fold_label}-{self.time_stamp}")
+        self.log_dir = os.path.join(
+            output_dir, f"logs/fold-{self.fold_label}-{self.time_stamp}"
+        )
 
     def fit_fold(
         self,
-        loss: tf.keras.losses.Loss,
         epochs: int,
         model_save_path: str,
         metric: str = "loss",
@@ -37,60 +40,65 @@ class CVModel:
         lr: float = 1e-4,
         warmup_steps: int = 10000,
         decay_steps: int = 1000,
-        weight_decay: float = 0.004,
+        weight_decay: float = 0.0,
     ):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         print(f"weight decay: {weight_decay}")
-        # optimizer = tf.keras.optimizers.AdamW(
-        #     cos_decay_with_warmup(lr, warmup_steps, decay_steps),
-        #     weight_decay=weight_decay,
+        optimizer = tf.keras.optimizers.AdamW(
+            cos_decay_with_warmup(lr, warmup_steps, decay_steps),
+            weight_decay=weight_decay,
+        )
+        optimizer.exclude_from_weight_decay(
+            var_names=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                "embeddings",
+            ]
+        )
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+        # lr_scheduler = LAMBLRScheduler(
+        #     cos_decay_with_warmup(lr, warmup_steps, decay_steps)
         # )
-        # optimizer.exclude_from_weight_decay(
-        #     var_names=[
+
+        # optimizer = tfa.optimizers.LAMB(
+        #     learning_rate=lr,
+        #     weight_decay=weight_decay,
+        #     exclude_from_weight_decay=[
         #         "bias",
         #         "rezero_alpha",
         #         "layer_norm",
         #         "LayerNorm",
-        #         "embeddings",
-        #     ]
+        #         # "embeddings",
+        #     ],
+        #     exclude_from_layer_adaptation=[
+        #         "bias",
+        #         "rezero_alpha",
+        #         "layer_norm",
+        #         "LayerNorm",
+        #         # "embeddings",
+        #     ],
         # )
         # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-        lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(lr, warmup_steps, decay_steps))
-
-        optimizer = tfa.optimizers.LAMB(
-            learning_rate=lr,
-            weight_decay=weight_decay,
-            exclude_from_weight_decay=[
-                "bias",
-                "rezero_alpha",
-                "layer_norm",
-                "LayerNorm",
-                # "embeddings",
-            ],
-            exclude_from_layer_adaptation=[
-                "bias",
-                "rezero_alpha",
-                "layer_norm",
-                "LayerNorm",
-                # "embeddings",
-            ],
-        )
-        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
-            tf.keras.callbacks.TensorBoard(log_dir=self.log_dir, histogram_freq=0, write_graph=False),
+            tf.keras.callbacks.TensorBoard(
+                log_dir=self.log_dir, histogram_freq=0, write_graph=False
+            ),
             # tf.keras.callbacks.EarlyStopping(
             #     "val_loss", patience=patience, start_from_epoch=early_stop_warmup
             # ),
             model_saver,
         ]
-        self.model.compile(optimizer=optimizer, loss=loss, run_eagerly=False)
+        self.model.compile(optimizer=optimizer, run_eagerly=False)
         # Set up the summary writer
         self.model.fit(
             self.train_data["dataset"],
             validation_data=self.val_data["dataset"],
-            callbacks=[*callbacks, *core_callbacks, model_saver, lr_scheduler],
+            # callbacks=[*callbacks, *core_callbacks, model_saver, lr_scheduler],
+            callbacks=[*callbacks, *core_callbacks, model_saver],
             epochs=epochs,
             steps_per_epoch=self.train_data["steps_per_epoch"],
             validation_steps=self.val_data["steps_per_epoch"],

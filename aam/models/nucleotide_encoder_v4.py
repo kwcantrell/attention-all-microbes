@@ -62,11 +62,11 @@ class NucleotideEncoderV4(tf.keras.Model):
 
         self.asv_ff_block = tf.keras.Sequential(
             [
-                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Dense(
                     self.embedding_dim,
                     use_bias=True,
-                    activation="relu",
+                    activation="gelu",
                 ),
                 tf.keras.layers.Dense(
                     self.embedding_dim,

@@ -107,18 +107,24 @@ class SequenceRegressor(tf.keras.Model):
         self.sample_emb_batch_norm = tf.keras.layers.BatchNormalization(
             dtype=tf.float32
         )
+        self.taxon_count_batch_norm = tf.keras.layers.BatchNormalization(
+            dtype=tf.float32
+        )
+
+        def _ff_block(current_dim, use_bias=True):
+            return [
+                tf.keras.layers.Dense(current_dim, use_bias=use_bias),
+                tf.keras.layers.BatchNormalization(dtype=tf.float32),
+                tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
+            ]
 
         ff_layers = []
         embedding_dim = 512
         current_dim = embedding_dim
         while current_dim > 32:
-            ff_layers.append(
-                tf.keras.layers.Dense(current_dim, use_bias=True, activation="relu")
-            )
-            ff_layers.append(
-                tf.keras.layers.Dense(current_dim, use_bias=True, activation="relu")
-            )
-            ff_layers.append(tf.keras.layers.Dense(current_dim // 2, use_bias=False))
+            ff_layers += _ff_block(current_dim)
+            ff_layers += _ff_block(current_dim)
+            ff_layers.append(tf.keras.layers.Dense(current_dim // 2))
             ff_layers.append(tf.keras.layers.BatchNormalization(dtype=tf.float32))
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
@@ -174,7 +180,7 @@ class SequenceRegressor(tf.keras.Model):
         inputs, y = data
         y_true = y
 
-        _, y_pred = self(inputs, training=True)
+        _, y_pred = self(inputs, training=False)
 
         if not self.classifier:
             y_true = y_true * self.scale + self.shift
@@ -265,6 +271,9 @@ class SequenceRegressor(tf.keras.Model):
             taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
             total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
             taxonomy_counts = taxonomy_counts / total_counts
+            taxonomy_counts = self.taxon_count_batch_norm(
+                taxonomy_counts, training=training
+            )
 
             sample_embeddings = tf.concat([sample_embeddings, taxonomy_counts], axis=1)
             sample_embeddings = self.regressor(sample_embeddings, training=training)

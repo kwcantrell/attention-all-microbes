@@ -117,7 +117,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
 def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
     emb_shape = tf.shape(embeddings, out_type=tf.int32)
     batch_dim = emb_shape[0]
-    group_size = batch_dim // tf.cast(groups, dtype=tf.int32)
+    group_size = tf.math.floordiv(batch_dim, tf.cast(groups, dtype=tf.int32))
 
     matching_mask = tf.linalg.diag(tf.ones(shape=[group_size]))
     matching_mask = tf.tile(matching_mask, [groups, groups])

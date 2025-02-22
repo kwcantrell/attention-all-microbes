@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
+import os
 from functools import wraps
-from typing import Optional, Union
+from typing import Iterable, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -29,7 +31,20 @@ def add_lock(func):
     return wrapper
 
 
-class TripletGenerator(tf.keras.utils.Sequence):
+def batch_embeddings(asv_embeddings, batch_indicies, counts, asv_indices=None):
+    emb_dim = tf.shape(asv_embeddings)[-1]
+    if asv_indices is not None:
+        asv_embeddings = tf.gather(asv_embeddings, asv_indices)
+    batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+    max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+    batch_embeddings = tf.scatter_nd(
+        batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+    )
+    counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+    return batch_embeddings, counts
+
+
+class GeneratorDatasetV2(tf.keras.utils.Sequence):
     taxon_field = "Taxon"
     levels = [f"Level {i}" for i in range(1, 8)]
 
@@ -43,18 +58,16 @@ class TripletGenerator(tf.keras.utils.Sequence):
         scale: Union[str, float] = "minmax",
         max_token_per_sample: int = 1024,
         shuffle: bool = False,
-        rarefy_depth: int = 1000,
+        rarefy_depth: int = 5000,
         epochs: int = 1000,
         gen_new_tables: bool = False,
-        samples_per_group: int = 8,
+        batch_size: int = 8,
         max_bp: int = 150,
         is_16S: bool = True,
         is_categorical: Optional[bool] = None,
         gen_new_table_frequency=3,
         return_sample_ids=False,
         tree_path=None,
-        steps_per_epoch=100,
-        max_groups=10,
         seed=None,
     ):
         if isinstance(table, str):
@@ -70,14 +83,15 @@ class TripletGenerator(tf.keras.utils.Sequence):
         self.rarefy_depth: int = rarefy_depth
         self.max_token_per_sample: int = max_token_per_sample
         self.return_sample_ids: bool = return_sample_ids
-        self.max_groups = max_groups
 
         self.include_sample_weight: bool = is_categorical
 
         self.shuffle = shuffle
         self.epochs = epochs
         self.gen_new_tables = gen_new_tables
+        self.samples_per_minibatch = batch_size
 
+        self.batch_size = batch_size
         self.max_bp = max_bp
         self.is_16S = is_16S
         self.seed = seed
@@ -105,30 +119,20 @@ class TripletGenerator(tf.keras.utils.Sequence):
         self.rarefied_table: Table = self.table.subsample(rarefy_depth)
 
         self.size = self.rarefied_table.shape[1]
-        self.groups = self.metadata.unique()
-        self.num_groups = len(self.groups)
-        self.samples_per_group = samples_per_group
-        self.groups_per_step = min(self.max_groups, self.num_groups)
-        self.batch_size = self.groups_per_step * self.samples_per_group
-        self.samples_per_minibatch = self.batch_size
-        self.steps_per_epoch = steps_per_epoch
-        self.y_data = self.metadata.loc[self._rarefied_table.ids()]
+        self.steps_per_epoch = self.size // self.batch_size
 
+        self.y_data = self.metadata.loc[self._rarefied_table.ids()]
         self.on_epoch_end()
 
     def __len__(self):
         return self.steps_per_epoch
 
     def __getitem__(self, idx):
-        batch_sample_ids = []
-        metadata = self.metadata.loc[self.rarefied_table.ids()]
-        groups = metadata.unique()
-        for group in np.random.choice(groups, self.groups_per_step, replace=False):
-            ids = metadata[metadata == group].index.to_numpy()
-            batch_sample_ids.append(
-                np.random.choice(ids, self.samples_per_group, replace=True)
-            )
-        return self._batch_data(np.hstack(batch_sample_ids))
+        start = idx * self.batch_size
+        end = start + self.batch_size
+        sample_indices = self.sample_indices[start:end]
+        batch_sample_ids = self.sample_ids[sample_indices]
+        return self._batch_data(batch_sample_ids)
 
     def _batch_data(self, batch_sample_ids):
         num_unique_asvs, sparse_indices, obs_indices, counts, taxon_counts = (
@@ -238,12 +242,14 @@ class TripletGenerator(tf.keras.utils.Sequence):
         taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels[2:]].agg(
             "; ".join, axis=1
         )
-
+        print(np.unique(taxonomy.Taxon.unique()))
         self.table = self.table.filter(
             set(self.table.ids(axis="observation")).intersection(set(taxonomy.index)),
             axis="observation",
         )
         self.table.remove_empty()
+
+        print(taxonomy["Taxon"].to_numpy())
 
         le = preprocessing.LabelEncoder()
         taxonomy["Taxon"] = le.fit_transform(taxonomy.loc[taxonomy.index, "Taxon"])
@@ -258,7 +264,6 @@ class TripletGenerator(tf.keras.utils.Sequence):
     @rarefied_table.setter
     def rarefied_table(self, table: Table):
         self._rarefied_table = table
-        self._metadata = self._metadata.loc[self._rarefied_table.ids()]
         print("removing empty sample/obs from table")
         self._rarefied_table.remove_empty()
         if self.tree_path is not None:
@@ -317,18 +322,33 @@ class TripletGenerator(tf.keras.utils.Sequence):
         metadata = metadata.loc[self.table.ids(), self.metadata_column]
         print(f"aligned table shape: {self.table.shape}")
         print(f"aligned metadata shape: {metadata.shape}")
+        if not self.is_categorical:
+            metadata = metadata.astype(np.float32)
+            # if not isinstance(self.scale, (str, float)):
+            #     raise Exception("Invalid scale argument.")
+            # if self.shift is None and isinstance(self.scale, float):
+            #     raise Exception("Invalid shift argument")
+
+            if self.scale == "minmax":
+                self.shift = np.min(metadata)
+                self.scale = np.max(metadata) - self.shift
+            elif self.scale == "standscale":
+                self.shift = np.mean(metadata)
+                self.scale = np.std(metadata)
+
+            metadata = (metadata - self.shift) / self.scale
         self._metadata = metadata.reindex(self.table.ids())
         print("done preprocessing metadata")
 
 
-def get_dataset(gen: TripletGenerator):
+def get_dataset(gen: GeneratorDatasetV2):
     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
     enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
     gen.stop = lambda: enqueuer.stop(0.1)
 
     batch_dim = gen.samples_per_minibatch
     if not gen.return_sample_ids:
-        y_type = tf.TensorSpec(shape=(batch_dim, 1), dtype=tf.string)
+        y_type = tf.TensorSpec(shape=(batch_dim, 1), dtype=tf.float32)
     else:
         y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
 
@@ -340,9 +360,7 @@ def get_dataset(gen: TripletGenerator):
                 tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
                 tf.TensorSpec(shape=[None], dtype=tf.int32),
                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-                tf.TensorSpec(
-                    shape=[gen.batch_size, gen.num_tax_values], dtype=tf.float32
-                ),
+                tf.TensorSpec(shape=[gen.batch_size, gen.num_tax_values]),
             ),
             y_type,
         ),
@@ -351,49 +369,33 @@ def get_dataset(gen: TripletGenerator):
 
 
 if __name__ == "__main__":
-    from aam.models.triplet_encoder import TripletEncoder
+    import pandas as pd
 
     taxonomy = pd.read_csv(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet_table_gg2.asv_taxonomy.tsv",
+        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-taxonomy.tsv",
         sep="\t",
         index_col=0,
     )
-    # taxonomy = taxonomy.loc[taxonomy["Taxon"].str.len() > 3]
-
-    ug = TripletGenerator(
-        table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet_table_gg2.asv.biom",
-        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet-training-metadata.tsv",
-        metadata_column="sample_alias",
+    ug = GeneratorDatasetV2(
+        table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
+        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-healthy.txt",
         taxonomy=taxonomy,
+        metadata_column="host_age",
+        scale="minmax",
         gen_new_tables=True,
-        samples_per_group=2,
-        max_groups=10,
+        max_token_per_sample=100,
+        batch_size=4,
+        rarefy_depth=1000,
     )
+    # dataset = get_dataset(ug)
+    # for x, y in dataset.take(1):
+    #     print(x, y)
     # x, y = ug[0]
-    # print(y)
-    # print(ug.num_groups)
-    dataset = get_dataset(ug)
+    # print(x)
     # (tokens, batch_indices, obs_indices, counts) = x
     # print("tokens:", tokens.shape)
     # print("batch_indices:", batch_indices.shape, batch_indices)
     # print("obs indices:", obs_indices.shape)
     # print("counts:", counts)
-    # print("y_true", y)
-
-    asv_encoder = tf.keras.models.load_model(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-encoder-large/model.keras",
-        compile=False,
-    )
-    model = TripletEncoder(asv_encoder)
-
-    token_shape = tf.TensorShape([None, 150])
-    batch_indicies = tf.TensorShape([None, 2])
-    indicies_shape = tf.TensorShape([None])
-    count_shape = tf.TensorShape([None, 1])
-    taxonomy_count = tf.TensorShape([None, ug.num_tax_values])
-    model.build(
-        [token_shape, batch_indicies, indicies_shape, count_shape, taxonomy_count]
-    )
-    for x, y in dataset:
-        print(model(x))
-    # print(model(x))
+    # print("y_true", y[0].shape)
+    # print("encoder output", y[1].shape)
