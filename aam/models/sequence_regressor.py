@@ -118,8 +118,8 @@ class SequenceRegressor(tf.keras.Model):
                 block.append(tf.keras.layers.Dropout(dropout_rate))
             return block
 
-        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.25))
-        self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.25))
+        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
+        self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.regressor = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
