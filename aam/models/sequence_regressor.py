@@ -123,7 +123,7 @@ class SequenceRegressor(tf.keras.Model):
             ]
 
         ff_layers = []
-        embedding_dim = 256
+        embedding_dim = 512
         current_dim = embedding_dim
         while current_dim > 32:
             ff_layers += _ff_block(current_dim)
