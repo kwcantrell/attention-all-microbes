@@ -60,20 +60,19 @@ class NucleotideEncoderV4(tf.keras.Model):
             name="asv_encoder",
         )
 
-        self.asv_ff_block = tf.keras.Sequential(
-            [
+        def _ff_block(output_dim):
+            block = [
                 tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Dense(
-                    self.embedding_dim,
+                    output_dim,
                     use_bias=True,
-                    activation="gelu",
-                ),
-                tf.keras.layers.Dense(
-                    self.embedding_dim,
-                    use_bias=True,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                    dtype=tf.float32,
                 ),
             ]
-        )
+            return block
+
+        self.asv_ff_block = tf.keras.Sequential(_ff_block(self.embedding_dim))
         self.num_tax_level_tokens = num_tax_level_tokens
         self.tax_ff = []
         if self.num_tax_level_tokens is not None:
@@ -85,9 +84,7 @@ class NucleotideEncoderV4(tf.keras.Model):
                 for _ in self.num_tax_level_tokens
             ]
             for num_tokens in self.num_tax_level_tokens:
-                self.tax_ff.append(
-                    tf.keras.layers.Dense(num_tokens, use_bias=True, dtype=tf.float32)
-                )
+                self.tax_ff.append(tf.keras.Sequential(_ff_block(num_tokens)))
 
     def build(self, input_shape):
         if self.built:
@@ -216,7 +213,10 @@ class NucleotideEncoderV4(tf.keras.Model):
         if self.num_tax_level_tokens is None:
             return self.output_activation(embeddings)
 
-        tax_preds = [tax_ff(embeddings) for tax_ff in self.tax_ff]
+        tax_preds = [
+            self.output_activation(tax_ff(embeddings), training=training)
+            for tax_ff in self.tax_ff
+        ]
         return self.output_activation(embeddings), tax_preds
 
     def get_config(self):
