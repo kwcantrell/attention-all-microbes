@@ -646,8 +646,7 @@ def fit_triplet_regressor(
     model = None
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
-
-    if p_nuc_encoder is not None:
+    elif p_nuc_encoder is not None:
         asv_encoder = tf.keras.models.load_model(p_nuc_encoder, compile=False)
         asv_encoder.trainable = p_train_nuc_encoder
 

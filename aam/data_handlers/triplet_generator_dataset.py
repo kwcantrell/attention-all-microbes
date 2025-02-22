@@ -96,7 +96,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
                 n.name: i for i, n in enumerate(self.tree.postorder()) if n.is_tip()
             }
 
-        self.tax_level = f"Level {4}"
+        self.tax_level = f"Level {1}"
         self.taxonomy = taxonomy
         if taxonomy is not None:
             print("taxonomy info", self.num_tax_values)
