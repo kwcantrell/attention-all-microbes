@@ -123,7 +123,7 @@ class SequenceRegressor(tf.keras.Model):
             ]
 
         embedding_dim = 512
-        self.tax_count_ff = _ff_block(512)
+        self.tax_count_ff = tf.keras.Sequential(_ff_block(512))
 
         ff_layers = []
         current_dim = embedding_dim
@@ -280,7 +280,7 @@ class SequenceRegressor(tf.keras.Model):
             taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
             total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
             taxonomy_counts = taxonomy_counts / total_counts
-            taxonomy_counts = self.tax_count_ff(taxonomy_counts)
+            taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
             taxonomy_counts = self.taxon_count_batch_norm(
                 taxonomy_counts, training=training
             )
