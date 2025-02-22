@@ -40,7 +40,7 @@ class NucleotideEncoderV3(tf.keras.Model):
 
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
-        self.asv_loss = PairwiseLoss(use_mean_pairs=False)
+        self.asv_loss = PairwiseLoss(use_mean_pairs=True)
         self.asv_tracker = tf.keras.metrics.Mean()
 
         self.use_linear_bias = use_linear_bias

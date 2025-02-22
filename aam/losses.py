@@ -96,21 +96,18 @@ class PairwiseLoss(tf.keras.losses.Loss):
     def call(self, y_true, y_pred):
         y_pred_dist = _pairwise_distances(y_pred, squared=False)
 
-        if self.loss_type == "mse":
-            differences = tf.math.square(y_pred_dist - y_true)
-        elif self.loss_type == "msle":
-            differences = tf.math.square(
-                tf.math.log1p(y_pred_dist) - tf.math.log1p(y_true)
-            )
+        differences = tf.math.square(y_pred_dist - y_true)
 
         if not self.use_mean_pairs:
             loss = tf.reduce_mean(differences, axis=-1)
         else:
             mean_mask = tf.cast(
-                differences < tf.reduce_mean(differences, axis=-1, keepdims=True),
+                differences >= tf.reduce_mean(differences, axis=-1, keepdims=True),
                 dtype=tf.float32,
             )
-            loss = tf.math.reduce_max(differences * mean_mask, axis=-1)
+            loss = tf.math.reduce_sum(differences * mean_mask, axis=-1) / tf.reduce_sum(
+                mean_mask, axis=-1
+            )
         return loss
 
 

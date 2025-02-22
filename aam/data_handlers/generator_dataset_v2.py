@@ -242,7 +242,6 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels[2:]].agg(
             "; ".join, axis=1
         )
-        print(np.unique(taxonomy.Taxon.unique()))
         self.table = self.table.filter(
             set(self.table.ids(axis="observation")).intersection(set(taxonomy.index)),
             axis="observation",
