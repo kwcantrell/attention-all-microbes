@@ -111,10 +111,10 @@ class SequenceRegressor(tf.keras.Model):
             dtype=tf.float32
         )
 
-        def _ff_block(current_dim, use_bias=True):
+        def _ff_block(output_dim, use_bias=True):
             return [
                 tf.keras.layers.Dense(
-                    current_dim,
+                    output_dim,
                     use_bias=use_bias,
                     kernel_initializer=tf.keras.initializers.HeUniform(),
                 ),
@@ -122,8 +122,10 @@ class SequenceRegressor(tf.keras.Model):
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
             ]
 
-        ff_layers = []
         embedding_dim = 512
+        self.tax_count_ff = _ff_block(512)
+
+        ff_layers = []
         current_dim = embedding_dim
         while current_dim > 32:
             ff_layers += _ff_block(current_dim)
@@ -278,6 +280,7 @@ class SequenceRegressor(tf.keras.Model):
             taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
             total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
             taxonomy_counts = taxonomy_counts / total_counts
+            taxonomy_counts = self.tax_count_ff(taxonomy_counts)
             taxonomy_counts = self.taxon_count_batch_norm(
                 taxonomy_counts, training=training
             )
