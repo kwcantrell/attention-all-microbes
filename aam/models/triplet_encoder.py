@@ -46,7 +46,11 @@ class TripletEncoder(tf.keras.Model):
 
         def _ff_block(current_dim, use_bias=True):
             return [
-                tf.keras.layers.Dense(current_dim, use_bias=use_bias),
+                tf.keras.layers.Dense(
+                    current_dim,
+                    use_bias=use_bias,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                ),
                 tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
                 tf.keras.layers.Dropout(0.25),
@@ -62,7 +66,9 @@ class TripletEncoder(tf.keras.Model):
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
 
-        self.out_emb_ff = tf.keras.layers.Dense(32)
+        self.out_emb_ff = tf.keras.layers.Dense(
+            32, kernel_initializer=tf.keras.initializers.HeUniform()
+        )
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
 
         super(TripletEncoder, self).build(input_shape)
@@ -209,10 +215,5 @@ class TripletEncoder(tf.keras.Model):
             input_shape = build_input_shape["input_shape"]
 
         model = cls(**config)
-        token_shape = tf.TensorShape([None, 150])
-        batch_indices = tf.TensorShape([None, 2])
-        indicies_shape = tf.TensorShape([None])
-        count_shape = tf.TensorShape([None, 1])
-        if input_shape is not None:
-            model.build([token_shape, batch_indices, indicies_shape, count_shape])
+        model.build(input_shape)
         return model

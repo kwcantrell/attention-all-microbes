@@ -195,19 +195,15 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
 
         if self.return_sample_ids:
-            return (tokens, sparse_indices, obs_indices, counts), batch_sample_ids
+            y = batch_sample_ids
+        else:
+            y = y_true
 
         if self.encoder_target is None:
             if self.taxonomy is None:
-                return (tokens, sparse_indices, obs_indices, counts), y_true
-
-            return (
-                tokens,
-                sparse_indices,
-                obs_indices,
-                counts,
-                taxon_counts,
-            ), y_true
+                return (tokens, sparse_indices, obs_indices, counts), y
+            else:
+                return (tokens, sparse_indices, obs_indices, counts, taxon_counts), y
 
         encoder_output = self._encoder_output(batch_sample_ids)
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
@@ -385,10 +381,9 @@ if __name__ == "__main__":
         max_token_per_sample=100,
         batch_size=4,
         rarefy_depth=1000,
+        return_sample_ids=True,
     )
-    # dataset = get_dataset(ug)
-    # for x, y in dataset.take(1):
-    #     print(x, y)
+    dataset = get_dataset(ug)
     # x, y = ug[0]
     # print(x)
     # (tokens, batch_indices, obs_indices, counts) = x

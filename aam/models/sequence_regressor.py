@@ -120,7 +120,6 @@ class SequenceRegressor(tf.keras.Model):
                 ),
                 tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
-                tf.keras.layers.Dropout(0.25),
             ]
 
         ff_layers = []
