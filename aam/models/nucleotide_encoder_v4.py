@@ -211,7 +211,7 @@ class NucleotideEncoderV4(tf.keras.Model):
         )
 
         asv_embeddings = tf.reduce_mean(embeddings, axis=1)
-        embeddings = self.asv_ff_block(asv_embeddings)
+        embeddings = self.asv_ff_block(asv_embeddings, training=training)
 
         if self.num_tax_level_tokens is None:
             return self.output_activation(embeddings)

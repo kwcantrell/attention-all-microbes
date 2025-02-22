@@ -113,24 +113,32 @@ class SequenceRegressor(tf.keras.Model):
 
         def _ff_block(current_dim, use_bias=True):
             return [
-                tf.keras.layers.Dense(current_dim, use_bias=use_bias),
+                tf.keras.layers.Dense(
+                    current_dim,
+                    use_bias=use_bias,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                ),
                 tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
+                tf.keras.layers.Dropout(0.25),
             ]
 
         ff_layers = []
-        embedding_dim = 512
+        embedding_dim = 256
         current_dim = embedding_dim
         while current_dim > 32:
             ff_layers += _ff_block(current_dim)
             ff_layers += _ff_block(current_dim)
-            ff_layers.append(tf.keras.layers.Dense(current_dim // 2))
-            ff_layers.append(tf.keras.layers.BatchNormalization(dtype=tf.float32))
+            ff_layers += _ff_block(current_dim // 2)
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
 
-        self.out_emb_ff = tf.keras.layers.Dense(32)
-        self.out_ff = tf.keras.layers.Dense(self.out_dim)
+        self.out_emb_ff = tf.keras.layers.Dense(
+            32, kernel_initializer=tf.keras.initializers.HeUniform()
+        )
+        self.out_ff = tf.keras.layers.Dense(
+            self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
+        )
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(SequenceRegressor, self).build(input_shape)
 

@@ -169,13 +169,18 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
     )
     matching_pair_mask = tf.reshape(tf.stack(matching_pair_mask), shape=[batch_dim, -1])
 
+    # compute all pairwise distances
     distances = _pairwise_distances(embeddings)
+
+    # extract all distances that are between samples of the same class
     matching_pairs = tf.reshape(
         distances[matching_pair_mask == 1], shape=[batch_dim, samples_per_group]
     )
     matching_pairs = tf.reshape(
         matching_pairs, shape=[num_groups, samples_per_group, samples_per_group]
     )
+
+    # extrall all distances that are between samples of different classes
     non_matching_pairs = tf.reshape(
         distances[(1 - matching_pair_mask) == 1],
         shape=[batch_dim, samples_per_group * (num_groups - 1)],
@@ -184,9 +189,9 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
         non_matching_pairs,
         shape=[num_groups, samples_per_group, (num_groups - 1) * samples_per_group],
     )
-    matching_pairs, non_matching_pairs
 
     def _group_triplet_loss(inputs):
+        """Computes all triplets for a given class."""
         group_dist, non_group_dist = inputs
 
         # remove the group distances that represent the distance from a sample to itself

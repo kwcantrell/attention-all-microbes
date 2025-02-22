@@ -49,16 +49,16 @@ class TripletEncoder(tf.keras.Model):
                 tf.keras.layers.Dense(current_dim, use_bias=use_bias),
                 tf.keras.layers.BatchNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
+                tf.keras.layers.Dropout(0.25),
             ]
 
         ff_layers = []
-        embedding_dim = 512
+        embedding_dim = 256
         current_dim = embedding_dim
         while current_dim > 32:
             ff_layers += _ff_block(current_dim)
             ff_layers += _ff_block(current_dim)
-            ff_layers.append(tf.keras.layers.Dense(current_dim // 2))
-            ff_layers.append(tf.keras.layers.BatchNormalization(dtype=tf.float32))
+            ff_layers += _ff_block(current_dim // 2)
             current_dim = current_dim // 2
         self.regressor = tf.keras.Sequential(ff_layers)
 
