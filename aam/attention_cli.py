@@ -619,6 +619,7 @@ def fit_triplet_regressor(
         shuffle=True,
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
+        steps_per_epoch=1000,
         **common_kwargs,
     )
     training_dataset = get_dataset(train_gen)

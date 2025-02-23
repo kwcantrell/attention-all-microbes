@@ -51,8 +51,8 @@ class TripletEncoder(tf.keras.Model):
                 block.append(tf.keras.layers.Dropout(dropout_rate))
             return block
 
-        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.25))
-        self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.25))
+        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
+        self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.regressor = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.out_ff = tf.keras.layers.Dense(
             32, kernel_initializer=tf.keras.initializers.HeUniform()
@@ -150,16 +150,18 @@ class TripletEncoder(tf.keras.Model):
         sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
             mask, axis=1
         )
-        sample_embeddings = self.sample_embedding_ff(sample_embeddings)
+        sample_embeddings = self.sample_embedding_ff(
+            sample_embeddings, training=training
+        )
 
         # compute relative abundance
         taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
         total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
         taxonomy_counts = taxonomy_counts / total_counts
-        taxonomy_counts = self.tax_count_ff(taxonomy_counts)
+        taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
 
         sample_embeddings = tf.concat([sample_embeddings, taxonomy_counts], axis=1)
-        sample_embeddings = self.regressor(sample_embeddings)
+        sample_embeddings = self.regressor(sample_embeddings, training=training)
         sample_embeddings = self.out_ff(sample_embeddings)
         print("Triplet encoder exit...")
         return self.output_activation(sample_embeddings)
