@@ -104,9 +104,8 @@ class SequenceRegressor(tf.keras.Model):
             print("Freezing base model...")
             self.base_model.trainable = False
 
-        def _ff_block(output_dim, use_bias=True, dropout_rate=None):
+        def _ff_block(output_dim, use_bias=True, dropout_rate=None, init_input=True):
             block = [
-                tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Dense(
                     output_dim,
                     use_bias=use_bias,
@@ -115,12 +114,19 @@ class SequenceRegressor(tf.keras.Model):
                 tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
             ]
+            if init_input:
+                block = [tf.keras.layers.BatchNormalization(dtype=tf.float32)] + block
+
             if dropout_rate:
                 block.append(tf.keras.layers.Dropout(dropout_rate))
             return block
 
-        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
-        self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
+        self.sample_embedding_ff = tf.keras.Sequential(
+            _ff_block(32, dropout_rate=0.5, init_input=True)
+        )
+        self.tax_count_ff = tf.keras.Sequential(
+            _ff_block(32, dropout_rate=0.5, init_input=False)
+        )
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
         )
@@ -256,7 +262,14 @@ class SequenceRegressor(tf.keras.Model):
             # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
             #     mask, axis=1
             # )
-            _, sample_embeddings = self.base_model(inputs, training=False)
+            if self.base_model is not None:
+                _, sample_embeddings = self.base_model(inputs, training=False)
+            else:
+                asv_embeddings, counts = inputs
+                mask = tf.cast(counts > 0, dtype=tf.float32)
+                sample_embeddings = tf.reduce_sum(
+                    asv_embeddings, axis=1
+                ) / tf.reduce_sum(mask, axis=1)
             sample_embeddings = self.sample_embedding_ff(
                 sample_embeddings, training=training
             )
