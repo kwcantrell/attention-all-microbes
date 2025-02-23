@@ -87,7 +87,8 @@ class SequenceRegressor(tf.keras.Model):
         # layers used in model
         self.combined_base = False
         self.base_model = base_model
-        self.base_model.trainable = False
+        if self.base_model is not None:
+            self.base_model.trainable = False
         self.embedding_loss = PairwiseLoss(use_mean_pairs=False)
         self.embedding_tracker = tf.keras.metrics.Mean()
 
@@ -105,7 +106,8 @@ class SequenceRegressor(tf.keras.Model):
 
         if self.freeze_base:
             print("Freezing base model...")
-            self.base_model.trainable = False
+            if self.base_model is not None:
+                self.base_model.trainable = False
 
         def _ff_block(output_dim, use_bias=True, dropout_rate=None, init_input=True):
             block = [
