@@ -317,7 +317,7 @@ class UnifracDenoiser(tf.keras.Model):
         asv_embeddings, denoised_unifrac_embeddings = self.unifrac_denoiser(
             asv_embeddings, attention_mask=attention_mask, training=training
         )
-        return asv_embeddings, unifrac_embeddings, unifrac_embeddings
+        return asv_embeddings, unifrac_embeddings, denoised_unifrac_embeddings
 
     def extract_asv_embeddings(
         self, asv_inputs, batch_embeddings=False, sort_counts=False

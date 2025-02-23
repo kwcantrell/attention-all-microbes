@@ -249,13 +249,14 @@ class SequenceRegressor(tf.keras.Model):
         training = training and self.trainable
         if len(inputs) == 5:
             inputs, taxonomy_counts = inputs[:4], inputs[4]
-            asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
-            mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-            asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+            # asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
+            # mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+            # asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
-            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-                mask, axis=1
-            )
+            # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+            #     mask, axis=1
+            # )
+            _, sample_embeddings = self.base_model(inputs, training=False)
             sample_embeddings = self.sample_embedding_ff(
                 sample_embeddings, training=training
             )

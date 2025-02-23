@@ -31,6 +31,7 @@ class TripletEncoder(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.triplet_loss = categorical_triplet_loss
         self.triplet_tracker = tf.keras.metrics.Mean(name="triplet_loss")
+        self.ortho_tracker = tf.keras.metrics.Mean(name="triplet_loss")
 
     def build(self, input_shape):
         if self.built:
@@ -39,6 +40,7 @@ class TripletEncoder(tf.keras.Model):
 
         def _ff_block(output_dim, use_bias=True, dropout_rate=None):
             block = [
+                tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Dense(
                     output_dim,
                     use_bias=use_bias,
@@ -70,10 +72,11 @@ class TripletEncoder(tf.keras.Model):
         y = tf.squeeze(y, axis=-1)
         groups, _ = tf.unique(y)
         num_groups = tf.shape(groups)[0]
-        triplet_loss = tf.reduce_mean(self.triplet_loss(triplet_embeddings, num_groups))
-
-        loss = triplet_loss
-        return loss, triplet_loss
+        triplet_loss, ortho_loss = self.triplet_loss(triplet_embeddings, num_groups)
+        triplet_loss = tf.reduce_mean(triplet_loss)
+        ortho_loss = tf.reduce_mean(ortho_loss)
+        loss = triplet_loss + ortho_loss
+        return loss, triplet_loss, ortho_loss
 
     def predict_step(
         self,
@@ -97,7 +100,7 @@ class TripletEncoder(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, triplet_loss = self._compute_loss(y, outputs)
+            loss, triplet_loss, ortho_loss = self._compute_loss(y, outputs)
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -105,12 +108,13 @@ class TripletEncoder(tf.keras.Model):
             gradients = self.optimizer.get_unscaled_gradients(gradients)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(triplet_loss)
+        self.loss_tracker.update_state(loss)
         self.triplet_tracker.update_state(triplet_loss)
-
+        self.ortho_tracker.update_state(ortho_loss)
         return {
             "loss": self.loss_tracker.result(),
             "triplet_loss": self.triplet_tracker.result(),
+            "ortho_loss": self.ortho_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
@@ -124,13 +128,15 @@ class TripletEncoder(tf.keras.Model):
         inputs, y = data
 
         outputs = self(inputs, training=False)
-        loss, triplet_loss = self._compute_loss(y, outputs)
+        loss, triplet_loss, ortho_loss = self._compute_loss(y, outputs)
 
-        self.loss_tracker.update_state(triplet_loss)
+        self.loss_tracker.update_state(loss)
         self.triplet_tracker.update_state(triplet_loss)
+        self.ortho_tracker.update_state(ortho_loss)
         return {
             "loss": self.loss_tracker.result(),
             "triplet_loss": self.triplet_tracker.result(),
+            "ortho_loss": self.ortho_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 

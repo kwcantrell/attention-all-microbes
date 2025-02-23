@@ -237,10 +237,10 @@ def fit_asv_encoder(
 @click.option("--i-unifrac-model", default=None, required=False, type=str)
 @click.option("--p-embedding-dim", default=128, type=int)
 @click.option("--p-attention-heads", default=4, type=int)
-@click.option("--p-attention-layers", default=4, type=int)
-@click.option("--p-intermediate-size", default=1024, type=int)
+@click.option("--p-attention-layers", default=1, type=int)
+@click.option("--p-intermediate-size", default=512, type=int)
 @click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
@@ -257,12 +257,12 @@ def fit_asv_encoder(
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
 @click.option("--p-loss-type", default="mse", required=False, type=str)
-@click.option("--p-normalize-outputs", default=True, type=bool)
-@click.option("--p-use-residual-connections", default=True, type=bool)
+@click.option("--p-normalize-outputs", default=False, type=bool)
+@click.option("--p-use-residual-connections", default=False, type=bool)
 @click.option("--p-use-residual-pool", default=None, type=bool)
 @click.option("--p-train-nuc-encoder", default=True, type=bool)
 @click.option("--p-nuc-encoder", default=None)
-@click.option("--p-use-linear-bias", default=False, type=bool)
+@click.option("--p-use-linear-bias", default=True, type=bool)
 def fit_denoised_unifrac_regressor(
     i_table: str,
     i_tree: str,
@@ -608,7 +608,7 @@ def fit_triplet_regressor(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "rarefy_depth": 1000,
-        "samples_per_group": 3,
+        "samples_per_group": 10,
         "is_16S": True,
         "tree_path": i_tree,
         "metadata": df,

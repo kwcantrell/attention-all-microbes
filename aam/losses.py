@@ -145,7 +145,7 @@ def _roll(inputs):
     return tf.roll(tensor, shift=shift, axis=1)
 
 
-def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
+def categorical_triplet_loss(embeddings, num_groups, soft_margin=1.0):
     shape = tf.shape(embeddings)
     batch_dim = shape[0]
     samples_per_group = batch_dim // num_groups
@@ -193,6 +193,11 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
         shape=[num_groups, samples_per_group, (num_groups - 1) * samples_per_group],
     )
 
+    # groups should be orthogal to each other
+    ortho_loss = global_orthogonal_regulization(
+        embeddings, (1 - matching_pair_mask) == 1
+    )
+
     def _group_triplet_loss(inputs):
         """Computes all triplets for a given class."""
         group_dist, non_group_dist = inputs
@@ -235,4 +240,4 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
     )
 
     # compute loss across entire group for each sample
-    return tf.reduce_mean(per_sample_loss, axis=-1)
+    return tf.reduce_mean(per_sample_loss, axis=-1), ortho_loss
