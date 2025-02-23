@@ -127,9 +127,10 @@ class SequenceRegressor(tf.keras.Model):
         self.sample_embedding_ff = tf.keras.Sequential(
             _ff_block(32, dropout_rate=0.5, init_input=True)
         )
-        self.tax_count_ff = tf.keras.Sequential(
-            _ff_block(32, dropout_rate=0.5, init_input=False)
-        )
+        if self.base_model is not None:
+            self.tax_count_ff = tf.keras.Sequential(
+                _ff_block(32, dropout_rate=0.5, init_input=False)
+            )
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
         )
@@ -289,21 +290,11 @@ class SequenceRegressor(tf.keras.Model):
                 output
             )
         else:
-            # asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
-            # mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-            # asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
-
-            # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-            #     mask, axis=1
-            # )
-            if self.base_model is not None:
-                _, sample_embeddings = self.base_model(inputs, training=False)
-            else:
-                asv_embeddings, counts = inputs
-                mask = tf.cast(counts > 0, dtype=tf.float32)
-                sample_embeddings = tf.reduce_sum(
-                    asv_embeddings, axis=1
-                ) / tf.reduce_sum(mask, axis=1)
+            asv_embeddings, counts = inputs
+            mask = tf.cast(counts > 0, dtype=tf.float32)
+            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+                mask, axis=1
+            )
             sample_embeddings = self.sample_embedding_ff(
                 sample_embeddings, training=training
             )
@@ -327,7 +318,6 @@ class SequenceRegressor(tf.keras.Model):
                 "attention_layers": self.attention_layers,
                 "intermediate_size": self.intermediate_size,
                 "intermediate_activation": self.intermediate_activation,
-                "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
                 "freeze_base": self.freeze_base,
                 "penalty": self.penalty,
                 "nuc_penalty": self.nuc_penalty,
@@ -348,13 +338,19 @@ class SequenceRegressor(tf.keras.Model):
                 "use_linear_bias": self.use_linear_bias,
             }
         )
+
+        if self.base_model is not None:
+            config.update(
+                {"base_model": tf.keras.saving.serialize_keras_object(self.base_model)}
+            )
         return config
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
-        config["base_model"] = tf.keras.saving.deserialize_keras_object(
-            config["base_model"]
-        )
+        if hasattr(config, "base_model"):
+            config["base_model"] = tf.keras.saving.deserialize_keras_object(
+                config["base_model"]
+            )
 
         input_shape = None
         if "build_input_shape" in config:
