@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from math import log
 from typing import Optional, Union
 
@@ -15,6 +16,8 @@ from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import create_random_mask, float_mask
+
+json.dumps()
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceRegressor")
@@ -286,14 +289,25 @@ class SequenceRegressor(tf.keras.Model):
                 output
             )
         else:
-            asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
-            mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-            asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+            # asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
+            # mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+            # asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
-            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-                mask, axis=1
+            # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+            #     mask, axis=1
+            # )
+            if self.base_model is not None:
+                _, sample_embeddings = self.base_model(inputs, training=False)
+            else:
+                asv_embeddings, counts = inputs
+                mask = tf.cast(counts > 0, dtype=tf.float32)
+                sample_embeddings = tf.reduce_sum(
+                    asv_embeddings, axis=1
+                ) / tf.reduce_sum(mask, axis=1)
+            sample_embeddings = self.sample_embedding_ff(
+                sample_embeddings, training=training
             )
-            sample_embeddings = self.regressor(sample_embeddings, training=training)
+
             output = self.out_ff(sample_embeddings)
             return self.output_activation(sample_embeddings), self.output_activation(
                 output
