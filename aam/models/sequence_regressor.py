@@ -120,7 +120,6 @@ class SequenceRegressor(tf.keras.Model):
 
         self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
-        # self.regressor = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
         )
@@ -264,11 +263,9 @@ class SequenceRegressor(tf.keras.Model):
             taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
             total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
             taxonomy_counts = taxonomy_counts / total_counts
-            taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=True)
+            taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
 
-            # sample_embeddings = tf.concat([sample_embeddings, taxonomy_counts], axis=1)
             sample_embeddings = (sample_embeddings + taxonomy_counts) / 2.0
-            # sample_embeddings = self.regressor(sample_embeddings, training=training)
             output = self.out_ff(sample_embeddings)
             return self.output_activation(sample_embeddings), self.output_activation(
                 output
