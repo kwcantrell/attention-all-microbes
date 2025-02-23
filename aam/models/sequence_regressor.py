@@ -17,8 +17,6 @@ from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import create_random_mask, float_mask
 
-json.dumps()
-
 
 @tf.keras.saving.register_keras_serializable(package="SequenceRegressor")
 class SequenceRegressor(tf.keras.Model):
