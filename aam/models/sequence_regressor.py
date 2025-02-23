@@ -106,6 +106,7 @@ class SequenceRegressor(tf.keras.Model):
 
         def _ff_block(output_dim, use_bias=True, dropout_rate=None):
             block = [
+                tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Dense(
                     output_dim,
                     use_bias=use_bias,

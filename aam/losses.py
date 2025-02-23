@@ -97,9 +97,12 @@ class PairwiseLoss(tf.keras.losses.Loss):
         y_pred_dist = _pairwise_distances(y_pred, squared=False)
 
         differences = tf.math.square(y_pred_dist - y_true)
-
+        shape = tf.shape(y_true)
+        batch_dim = shape[0]
         if not self.use_mean_pairs:
-            loss = tf.reduce_mean(differences, axis=-1)
+            loss = tf.reduce_sum(differences, axis=-1) / tf.cast(
+                batch_dim - 1, dtype=tf.float32
+            )
         else:
             mean_mask = tf.cast(
                 differences >= tf.reduce_mean(differences, axis=-1, keepdims=True),
