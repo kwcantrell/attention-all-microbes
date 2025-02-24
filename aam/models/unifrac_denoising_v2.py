@@ -31,7 +31,7 @@ class UnifracDenoiserV2(tf.keras.Model):
         self.asv_encoder.trainable = False
 
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        self.pairwise_loss = PairwiseLoss()
+        self.pairwise_loss = PairwiseLoss(use_mean_pairs=False)
         self.triplet_loss = triplet_loss
         self.unifrac_tracker = tf.keras.metrics.Mean(name="unifrac_loss")
         self.denoise_tracker = tf.keras.metrics.Mean(name="denoised_loss")
@@ -114,7 +114,7 @@ class UnifracDenoiserV2(tf.keras.Model):
         unifrac_embeddings, denoise_unifrac_embeddings = self.call(
             inputs, training=False
         )
-        return denoise_unifrac_embeddings, y
+        return unifrac_embeddings, y
 
     def train_step(
         self,
