@@ -1257,7 +1257,7 @@ def predict_sample_regressor(
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True, type=click.Path(exists=False))
 @click.option("--p-is-categorical", default=False, required=False, type=bool)
-@click.option("--p-gotu-rarefy-depth", default=100000, required=False, type=int)
+@click.option("--p-gotu-max-tokens", default=128, required=False, type=int)
 @click.option("--p-asv-rarefy-depth", default=10000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.0001, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
@@ -1286,7 +1286,7 @@ def fit_gotu(
     p_max_bp: int,
     output_dir: str,
     p_is_categorical: bool,
-    p_gotu_rarefy_depth: int,
+    p_gotu_max_tokens: int,
     p_asv_rarefy_depth: int,
     p_weight_decay: float,
     p_accumulation_steps: int,
@@ -1320,7 +1320,7 @@ def fit_gotu(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "max_token_per_sample": p_asv_limit,
-        "rarefy_depth": p_gotu_rarefy_depth,
+        "gotu_max_tokens": p_gotu_max_tokens,
         "asv_rarefy_depth": p_asv_rarefy_depth,
         "batch_size": p_batch_size,
         "is_16S": False,
@@ -1449,10 +1449,8 @@ def fit_gotu(
     indices_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
 
-    gotu_token_shape = tf.TensorShape([None])
-    gotu_batch_indices = tf.TensorShape([None, 2])
-    gotu_indices_shape = tf.TensorShape([None])
-    gotu_count_shape = tf.TensorShape([None, 1])
+    gotu_token_shape = tf.TensorShape([None, p_gotu_max_tokens])
+    gotu_count_shape = tf.TensorShape([None, p_gotu_max_tokens])
     model.build(
         [
             token_shape,
@@ -1460,8 +1458,6 @@ def fit_gotu(
             indices_shape,
             count_shape,
             gotu_token_shape,
-            gotu_batch_indices,
-            gotu_indices_shape,
             gotu_count_shape,
         ],
     )
