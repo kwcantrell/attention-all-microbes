@@ -40,19 +40,11 @@ class UnifracDenoiserV2(tf.keras.Model):
 
         def _ff_block(units):
             block = [
-                tf.keras.layers.Dense(
-                    units,
-                    use_bias=True,
-                    kernel_initializer=tf.keras.initializers.HeUniform(),
-                ),
+                tf.keras.layers.Dense(units, use_bias=True),
                 tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
                 tf.keras.layers.Dropout(self.dropout_rate),
-                tf.keras.layers.Dense(
-                    units,
-                    use_bias=True,
-                    kernel_initializer=tf.keras.initializers.HeUniform(),
-                ),
+                tf.keras.layers.Dense(units, use_bias=True),
             ]
 
             return block
