@@ -123,8 +123,11 @@ class TransformerDecoder(tf.keras.layers.Layer):
                 gotu_mask, gotu_mask, transpose_b=True
             )
         for layer_idx in range(self.num_layers):
-            causal_inputs = self.causal_encoders[layer_idx](
-                [causal_inputs, causal_mask], training=training
+            causal_inputs = tf.cast(
+                self.causal_encoders[layer_idx](
+                    [causal_inputs, causal_mask], training=training
+                ),
+                dtype=self.compute_dtype,
             )
 
         query_inputs = causal_inputs
@@ -133,9 +136,9 @@ class TransformerDecoder(tf.keras.layers.Layer):
         # if asv_mask is not None and gotu_mask is not None:
         attention_mask = tf.matmul(gotu_mask, asv_mask, transpose_b=True)
         for layer_idx in range(self.num_layers):
-            query_inputs = self.cross_attention_encoders[layer_idx](
+            query_inputs = tf.cast(self.cross_attention_encoders[layer_idx](
                 [query_inputs, key_inputs, attention_mask], training=training
-            )
+            ), dtype=self.compute_dtype)
         output_tensor = query_inputs
 
         if self.normalize_outputs:
