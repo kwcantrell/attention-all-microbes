@@ -45,43 +45,43 @@ class CVModel:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         print(f"weight decay: {weight_decay}")
-        optimizer = tf.keras.optimizers.AdamW(
-            cos_decay_with_warmup(lr, warmup_steps, decay_steps),
-            weight_decay=weight_decay,
+        # optimizer = tf.keras.optimizers.AdamW(
+        #     cos_decay_with_warmup(lr, warmup_steps, decay_steps),
+        #     weight_decay=weight_decay,
+        # )
+        # optimizer.exclude_from_weight_decay(
+        #     var_names=[
+        #         "bias",
+        #         "rezero_alpha",
+        #         "layer_norm",
+        #         "LayerNorm",
+        #         "embeddings",
+        #     ]
+        # )
+        # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+        lr_scheduler = LAMBLRScheduler(
+            cos_decay_with_warmup(lr, warmup_steps, decay_steps)
         )
-        optimizer.exclude_from_weight_decay(
-            var_names=[
+
+        optimizer = tfa.optimizers.LAMB(
+            learning_rate=lr,
+            weight_decay=weight_decay,
+            exclude_from_weight_decay=[
                 "bias",
                 "rezero_alpha",
                 "layer_norm",
                 "LayerNorm",
-                "embeddings",
-            ]
+                # "embeddings",
+            ],
+            exclude_from_layer_adaptation=[
+                "bias",
+                "rezero_alpha",
+                "layer_norm",
+                "LayerNorm",
+                # "embeddings",
+            ],
         )
         optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-        # lr_scheduler = LAMBLRScheduler(
-        #     cos_decay_with_warmup(lr, warmup_steps, decay_steps)
-        # )
-
-        # optimizer = tfa.optimizers.LAMB(
-        #     learning_rate=lr,
-        #     weight_decay=weight_decay,
-        #     exclude_from_weight_decay=[
-        #         "bias",
-        #         "rezero_alpha",
-        #         "layer_norm",
-        #         "LayerNorm",
-        #         # "embeddings",
-        #     ],
-        #     exclude_from_layer_adaptation=[
-        #         "bias",
-        #         "rezero_alpha",
-        #         "layer_norm",
-        #         "LayerNorm",
-        #         # "embeddings",
-        #     ],
-        # )
-        # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
         model_saver = SaveModel(model_save_path, 10, f"val_{metric}")
         core_callbacks = [
             tf.keras.callbacks.TensorBoard(
@@ -97,8 +97,8 @@ class CVModel:
         self.model.fit(
             self.train_data["dataset"],
             validation_data=self.val_data["dataset"],
-            # callbacks=[*callbacks, *core_callbacks, model_saver, lr_scheduler],
-            callbacks=[*callbacks, *core_callbacks, model_saver],
+            callbacks=[*callbacks, *core_callbacks, model_saver, lr_scheduler],
+            # callbacks=[*callbacks, *core_callbacks, model_saver],
             epochs=epochs,
             steps_per_epoch=self.train_data["steps_per_epoch"],
             validation_steps=self.val_data["steps_per_epoch"],

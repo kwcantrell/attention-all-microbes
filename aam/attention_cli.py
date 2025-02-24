@@ -1092,7 +1092,7 @@ def fit_sample_regressor(
         common_kwargs = {
             "metadata_column": m_metadata_column,
             "max_token_per_sample": p_asv_limit,
-            "rarefy_depth": 5000,
+            "rarefy_depth": 1000,
             "batch_size": p_batch_size,
             "is_16S": True,
             "is_categorical": p_is_categorical,
