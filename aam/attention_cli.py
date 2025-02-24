@@ -1230,6 +1230,8 @@ def fit_sample_regressor(
                     taxonomy_count,
                 ]
             )
+        x, y = train_data["generator"][0]
+        print(model(x))
         model.summary()
         fold_label = i + 1
         if not p_is_categorical:

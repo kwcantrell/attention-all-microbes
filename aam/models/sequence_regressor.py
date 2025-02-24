@@ -98,16 +98,50 @@ class SequenceRegressor(tf.keras.Model):
             self.metric_tracker = tf.keras.metrics.SparseCategoricalAccuracy()
             self.metric_string = "accuracy"
 
+    # def build(self, input_shape):
+    #     if self.built:
+    #         return
+
+    #     if self.freeze_base:
+    #         print("Freezing base model...")
+    #         if self.base_model is not None:
+    #             self.base_model.trainable = False
+
+    #     def _ff_block(output_dim, use_bias=True, dropout_rate=None, init_input=True):
+    #         block = [
+    #             tf.keras.layers.Dense(
+    #                 output_dim,
+    #                 use_bias=use_bias,
+    #                 kernel_initializer=tf.keras.initializers.HeUniform(),
+    #             ),
+    #             tf.keras.layers.LayerNormalization(dtype=tf.float32),
+    #             tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
+    #         ]
+    #         if init_input:
+    #             block = [tf.keras.layers.BatchNormalization(dtype=tf.float32)] + block
+
+    #         if dropout_rate:
+    #             block.append(tf.keras.layers.Dropout(dropout_rate))
+    #         return block
+
+    #     self.sample_embedding_ff = tf.keras.Sequential(
+    #         _ff_block(32, dropout_rate=0.5, init_input=True)
+    #     )
+    #     if self.base_model is not None:
+    #         self.tax_count_ff = tf.keras.Sequential(
+    #             _ff_block(32, dropout_rate=0.5, init_input=False)
+    #         )
+    #     self.out_ff = tf.keras.layers.Dense(
+    #         self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
+    #     )
+    #     self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
+    #     super(SequenceRegressor, self).build(input_shape)
     def build(self, input_shape):
         if self.built:
+            print("TripletEncoder is already built")
             return
 
-        if self.freeze_base:
-            print("Freezing base model...")
-            if self.base_model is not None:
-                self.base_model.trainable = False
-
-        def _ff_block(output_dim, use_bias=True, dropout_rate=None, init_input=True):
+        def _ff_block(output_dim, use_bias=True, dropout_rate=None):
             block = [
                 tf.keras.layers.Dense(
                     output_dim,
@@ -116,26 +150,16 @@ class SequenceRegressor(tf.keras.Model):
                 ),
                 tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
+                tf.keras.layers.Dropout(dropout_rate),
             ]
-            if init_input:
-                block = [tf.keras.layers.BatchNormalization(dtype=tf.float32)] + block
-
-            if dropout_rate:
-                block.append(tf.keras.layers.Dropout(dropout_rate))
             return block
 
-        self.sample_embedding_ff = tf.keras.Sequential(
-            _ff_block(32, dropout_rate=0.5, init_input=True)
-        )
-        if self.base_model is not None:
-            self.tax_count_ff = tf.keras.Sequential(
-                _ff_block(32, dropout_rate=0.5, init_input=False)
-            )
+        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
+        self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
         )
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-        super(SequenceRegressor, self).build(input_shape)
 
     def _compute_loss(
         self,
@@ -250,59 +274,113 @@ class SequenceRegressor(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
+    def batch_embeddings(self, asv_embeddings, batch_indicies, counts, asv_indices):
+        emb_dim = tf.shape(asv_embeddings)[-1]
+        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+        if asv_indices is not None:
+            asv_embeddings = tf.gather(asv_embeddings, asv_indices)
+        batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+        max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+        batch_embeddings = tf.scatter_nd(
+            batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+        )
+        counts = tf.scatter_nd(
+            batch_indicies, counts, shape=[batch_shape, max_unique, 1]
+        )
+        return batch_embeddings, counts
+
+    def sample_embeddings(self, asv_embeddings, batch_indicies, counts, asv_indices):
+        batched_embeddigns, batch_counts = self.batch_embeddings(
+            asv_embeddings, batch_indicies, counts, asv_indices
+        )
+        asv_mask = tf.cast(batch_counts > 0, dtype=tf.float32)
+        batched_embeddigns = batched_embeddigns * asv_mask
+        sample_embeddings = tf.reduce_sum(batched_embeddigns, axis=1) / tf.reduce_sum(
+            asv_mask, axis=1
+        )
+        return sample_embeddings
+
     def call(
         self, inputs, training: bool = False
     ) -> Union[
         tuple[tf.Tensor, tf.Tensor, tf.Tensor],
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
+        # training = training and self.trainable
+        # if len(inputs) == 5:
+        #     inputs, taxonomy_counts = inputs[:4], inputs[4]
+        #     # asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
+        #     # mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+        #     # asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+
+        #     # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+        #     #     mask, axis=1
+        #     # )
+        #     if self.base_model is not None:
+        #         _, sample_embeddings = self.base_model(inputs, training=False)
+        #     else:
+        #         asv_embeddings, counts = inputs
+        #         mask = tf.cast(counts > 0, dtype=tf.float32)
+        #         sample_embeddings = tf.reduce_sum(
+        #             asv_embeddings, axis=1
+        #         ) / tf.reduce_sum(mask, axis=1)
+        #     sample_embeddings = self.sample_embedding_ff(
+        #         sample_embeddings, training=training
+        #     )
+
+        #     # compute relative abundance
+        #     taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
+        #     total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
+        #     taxonomy_counts = taxonomy_counts / total_counts
+        #     taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
+
+        #     sample_embeddings = (sample_embeddings + taxonomy_counts) / 2.0
+        #     output = self.out_ff(sample_embeddings)
+        #     return self.output_activation(sample_embeddings), self.output_activation(
+        #         output
+        #     )
+        # else:
+        #     asv_embeddings, counts = inputs
+        #     mask = tf.cast(counts > 0, dtype=tf.float32)
+        #     sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+        #         mask, axis=1
+        #     )
+        #     sample_embeddings = self.sample_embedding_ff(
+        #         sample_embeddings, training=training
+        #     )
+
+        #     output = self.out_ff(sample_embeddings)
+        #     return self.output_activation(sample_embeddings), self.output_activation(
+        #         output
+        #     )
         training = training and self.trainable
-        if len(inputs) == 5:
-            inputs, taxonomy_counts = inputs[:4], inputs[4]
-            # asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
-            # mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-            # asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
-            # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-            #     mask, axis=1
-            # )
-            if self.base_model is not None:
-                _, sample_embeddings = self.base_model(inputs, training=False)
-            else:
-                asv_embeddings, counts = inputs
-                mask = tf.cast(counts > 0, dtype=tf.float32)
-                sample_embeddings = tf.reduce_sum(
-                    asv_embeddings, axis=1
-                ) / tf.reduce_sum(mask, axis=1)
-            sample_embeddings = self.sample_embedding_ff(
-                sample_embeddings, training=training
-            )
+        inputs, taxonomy_counts = inputs[:4], inputs[4]
+        tokens, batch_indices, asv_indices, counts = inputs
+        tokens = tf.cast(tokens, dtype=tf.int32)
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
-            # compute relative abundance
-            taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-            total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-            taxonomy_counts = taxonomy_counts / total_counts
-            taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
+        asv_embeddings = self.base_model.asv_embeddings(tokens)
+        sample_embeddings = self.sample_embeddings(
+            asv_embeddings, batch_indices, counts, asv_indices
+        )
+        sample_embeddings = self.sample_embedding_ff(
+            sample_embeddings, training=training
+        )
 
-            sample_embeddings = (sample_embeddings + taxonomy_counts) / 2.0
-            output = self.out_ff(sample_embeddings)
-            return self.output_activation(sample_embeddings), self.output_activation(
-                output
-            )
-        else:
-            asv_embeddings, counts = inputs
-            mask = tf.cast(counts > 0, dtype=tf.float32)
-            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-                mask, axis=1
-            )
-            sample_embeddings = self.sample_embedding_ff(
-                sample_embeddings, training=training
-            )
+        # compute relative abundance
+        taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
+        total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
+        taxonomy_counts = taxonomy_counts / total_counts
+        taxonomy_embeddings = self.tax_count_ff(taxonomy_counts, training=training)
 
-            output = self.out_ff(sample_embeddings)
-            return self.output_activation(sample_embeddings), self.output_activation(
-                output
-            )
+        output_embedding = sample_embeddings + taxonomy_embeddings
+        output = self.out_ff(output_embedding)
+        print("Triplet encoder exit...")
+        return self.output_activation(output_embedding), self.output_activation(output)
 
     def get_config(self):
         config = super(SequenceRegressor, self).get_config()
