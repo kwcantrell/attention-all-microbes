@@ -48,6 +48,7 @@ class GOTUGenerator(tf.keras.utils.Sequence):
             assume_unique=True,
         )
         self.gotu_tree_index = load_json(gotu_tree_index)
+        self.gotu_tree_index.update({-1: 0})
         self.size = len(self.common_ids)
         self.sample_indices = np.arange(self.size)
 
@@ -91,21 +92,29 @@ class GOTUGenerator(tf.keras.utils.Sequence):
             non_zero_mask = sample_counts > 0.0
             obs_idx = obs_idx[non_zero_mask]
             sample_counts = sample_counts[non_zero_mask]
+            sorted_indices = np.argsort(sample_counts)
+            sorted_indices = sorted_indices[::-1]
+            obs_idx = obs_idx[sorted_indices]
+            sample_counts = sample_counts[sorted_indices]
+            if len(sample_counts) < self.gotu_max_tokens:
+                pad_amount = self.gotu_max_tokens - len(sample_counts)
+                sample_counts = np.pad(sample_counts, pad_width=(0, pad_amount))
+                obs_idx = np.pad(obs_idx, pad_width=(0, pad_amount), constant_values=-1)
+            obs_indices.append(obs_idx[: self.gotu_max_tokens])
+            counts.append(sample_counts[: self.gotu_max_tokens])
 
-            obs_indices.append(obs_idx)
-            counts.append(sample_counts)
-        obs_indices = np.hstack(obs_indices, dtype=np.int32)
-        sample_counts = np.hstack(sample_counts, dtype=np.float32)
-        sorted_indices = np.argsort(sample_counts)
-        sorted_indices = sorted_indices[::-1]
-        obs_indices = obs_indices[sorted_indices]
+        obs_indices = np.vstack(obs_indices, dtype=np.int32)
+        sample_counts = np.vstack(counts, dtype=np.float32)
+
         obs_ids = self.gotu_obs_ids[obs_indices]
-        sample_counts = sample_counts[sorted_indices]
-        tokens = [self.gotu_tree_index[obs_id] for obs_id in obs_ids]
-        tokens = np.array(tokens, dtype=np.int32)
-        if len(tokens) < self.gotu_max_tokens:
-            pad_amount = self.gotu_max_tokens - len(tokens)
-            tokens = np.pad(tokens, pad_width=(0, pad_amount))
+
+        def _cast_to_tokens(sample_obs_ids):
+            tokens = [self.gotu_tree_index[obs_id] for obs_id in sample_obs_ids]
+            tokens = np.array(tokens, dtype=np.int32)
+            return tokens
+
+        tokens = [_cast_to_tokens(sample_obs_ids) for sample_obs_ids in obs_ids]
+        tokens = np.vstack(tokens, dtype=np.int32)
 
         return tokens[: self.gotu_max_tokens], sample_counts[: self.gotu_max_tokens]
 
@@ -145,8 +154,8 @@ def get_dataset(gen: GOTUGenerator):
             tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
             tf.TensorSpec(shape=[None], dtype=tf.int32),
             tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-            tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-            tf.TensorSpec(shape=[None, 1], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, gen.gotu_max_tokens], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, gen.gotu_max_tokens], dtype=tf.float32),
         ),
     )
 
