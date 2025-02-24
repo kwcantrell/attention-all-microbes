@@ -112,7 +112,7 @@ class NucleotideEncoderV4(tf.keras.Model):
             y_true, tax_tokens = y_true
             embeddings, tax_preds = embeddings
             tax_losses = [
-                tax_loss(tax_token, tax_pred)
+                0.0
                 for tax_loss, tax_token, tax_pred in zip(
                     self.tax_losses, tax_tokens, tax_preds
                 )
