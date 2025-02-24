@@ -48,6 +48,11 @@ class UnifracDenoiserV2(tf.keras.Model):
                 tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
                 tf.keras.layers.Dropout(self.dropout_rate),
+                tf.keras.layers.Dense(
+                    units,
+                    use_bias=True,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                ),
             ]
 
             return block
@@ -55,13 +60,6 @@ class UnifracDenoiserV2(tf.keras.Model):
         self.unifrac_ff = tf.keras.Sequential(
             _ff_block(self.embedding_dim), name="unifrac_ff"
         )
-        # self.unifrac_out = tf.keras.layers.Dense(
-        #     self.embedding_dim,
-        #     use_bias=True,
-        #     kernel_initializer=tf.keras.initializers.HeUniform(),
-        #     dtype=tf.float32,
-        # )
-
         self.denoise_ff = tf.keras.Sequential(
             _ff_block(self.embedding_dim), name="denoise_ff"
         )
@@ -220,10 +218,7 @@ class UnifracDenoiserV2(tf.keras.Model):
         )
 
         unifrac_embeddings = self.unifrac_ff(sample_embeddings, training=training)
-        denoised_embeddings = self.denoise_ff(sample_embeddings, training=training)
-        denoised_embeddings = (
-            tf.cast(unifrac_embeddings, dtype=self.compute_dtype) + denoised_embeddings
-        )
+        denoised_embeddings = self.denoise_ff(unifrac_embeddings, training=training)
         return (
             self.output_activation(unifrac_embeddings),
             self.output_activation(denoised_embeddings),
