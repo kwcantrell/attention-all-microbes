@@ -48,6 +48,7 @@ class GOTUModel(tf.keras.Model):
         self.gotu_embedding_layer = tf.keras.layers.Embedding(
             self.gotu_count, self.embedding_dim
         )
+        self.asv_norm_layer = tf.keras.layers.LayerNormalization(dtype=tf.float32)
 
         self.gotu_decoder = TransformerDecoder(
             num_attention_heads=self.attention_heads,
@@ -202,8 +203,6 @@ class GOTUModel(tf.keras.Model):
             asv_indicies,
             asv_counts,
             gotu_tokens,
-            gotu_batch_indices,
-            gotu_indicies,
             gotu_counts,
         ) = inputs
         asv_tokens = tf.cast(asv_tokens, dtype=tf.int32)
@@ -211,17 +210,24 @@ class GOTUModel(tf.keras.Model):
         asv_indicies = tf.cast(asv_indicies, dtype=tf.int32)
         asv_counts = tf.cast(asv_counts, dtype=tf.int32)
         gotu_tokens = tf.cast(gotu_tokens, dtype=tf.int32)
-        gotu_batch_indices = tf.cast(gotu_batch_indices, dtype=tf.int32)
-        gotu_indicies = tf.cast(gotu_indicies, dtype=tf.int32)
-        gotu_counts = tf.cast(gotu_counts, dtype=tf.int32)
+        gotu_counts = tf.cast(gotu_counts, dtype=tf.float32)
+
+        # This is getting relative abundance per sample for gotus
+        gotu_tokens_per_sample = tf.cast(gotu_tokens == 0, dtype=tf.float32)
+        gotu_tokens_per_sample = tf.reduce_sum(
+            gotu_tokens_per_sample, axis=-1, keepdims=True
+        )
+        gotu_counts_per_sample = (
+            tf.reduce_sum(gotu_counts, axis=-1, keepdims=True) / gotu_tokens_per_sample
+        )
+
+        gotu_counts = gotu_counts / gotu_counts_per_sample
         return (
             asv_tokens,
             asv_batch_indices,
             asv_indicies,
             asv_counts,
             gotu_tokens,
-            gotu_batch_indices,
-            gotu_indicies,
             gotu_counts,
         )
 
@@ -251,8 +257,6 @@ class GOTUModel(tf.keras.Model):
             asv_indicies,
             asv_counts,
             gotu_tokens,
-            gotu_batch_indices,
-            gotu_indicies,
             gotu_counts,
         ) = self.cast_inputs(inputs)
         asv_embeddings, asv_counts = self.base_model.extract_asv_embeddings(
@@ -260,12 +264,13 @@ class GOTUModel(tf.keras.Model):
             batch_embeddings=True,
             sort_counts=True,
         )
+        asv_embeddings = self.asv_norm_layer(asv_embeddings)
+        asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype)
         asv_mask = tf.cast(asv_counts > 0, dtype=self.compute_dtype)
 
         gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
-        gotu_tokens, gotu_counts = self.base_model.batch_embeddings(
-            gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
-        )
+        gotu_counts = tf.expand_dims(gotu_counts, axis=-1)
+
         gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
         if add_start_token:
             gotu_tokens = tf.pad(
