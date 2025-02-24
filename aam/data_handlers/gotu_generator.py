@@ -30,7 +30,7 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         return_sample_ids=False,
         epochs=1000,
         asv_rarefy_depth=1000,
-        gotu_rarefy_depth=100000,
+        gotu_max_tokens=128,
         gotu_tree_index=None,
         **kwargs,
     ):
@@ -39,14 +39,12 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         kwargs["rarefy_depth"] = asv_rarefy_depth
         kwargs["is_16S"] = True
         self.asv_generator = UniFracGenerator(**kwargs)
-        kwargs["table"] = gotu_table
-        kwargs["rarefy_depth"] = gotu_rarefy_depth
-        kwargs["is_16S"] = False
-        self.gotu_generator = UniFracGenerator(**kwargs)
-        self.generators = [self.asv_generator, self.gotu_generator]
+        if isinstance(gotu_table, str):
+            gotu_table = load_table(gotu_table)
+        self.gotu_table = gotu_table
         self.common_ids = np.intersect1d(
-            self.generators[0].sample_ids,
-            self.generators[1].sample_ids,
+            self.asv_generator.sample_ids,
+            self.gotu_table.ids(axis="sample"),
             assume_unique=True,
         )
         self.gotu_tree_index = load_json(gotu_tree_index)
@@ -60,12 +58,13 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         self.epochs_since_last_table = 0
         self.return_sample_ids = return_sample_ids
         self.epochs = epochs
+        self.gotu_obs_ids = self.gotu_table.ids(axis="observation")
+        self.gotu_max_tokens = gotu_max_tokens
         self.sample_indices = np.arange(self.size, dtype=np.int32)
         self.on_epoch_end()
 
     def on_epoch_end(self):
-        for g in self.generators:
-            g.on_epoch_end()
+        self.asv_generator.on_epoch_end()
 
         if self.shuffle:
             np.random.shuffle(self.sample_indices)
@@ -82,37 +81,44 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         batch_sample_ids = self.common_ids[sample_indices]
         return self._batch_data(batch_sample_ids)
 
+    def _batch_gotu_data(self, batch_sample_ids):
+        num_unique_asvs, sparse_indices, obs_indices, counts = [], [], [], []
+        for s_id in batch_sample_ids:
+            sample_data = self.gotu_table.data(s_id, dense=False).tocoo()
+            (obs_idx, _), sample_counts = sample_data.coords, sample_data.data
+
+            # remove zeros
+            non_zero_mask = sample_counts > 0.0
+            obs_idx = obs_idx[non_zero_mask]
+            sample_counts = sample_counts[non_zero_mask]
+
+            obs_indices.append(obs_idx)
+            counts.append(sample_counts)
+        obs_indices = np.hstack(obs_indices, dtype=np.int32)
+        sample_counts = np.hstack(sample_counts, dtype=np.float32)
+        sorted_indices = np.argsort(sample_counts)
+        sorted_indices = sorted_indices[::-1]
+        obs_indices = obs_indices[sorted_indices]
+        obs_ids = self.gotu_obs_ids[obs_indices]
+        sample_counts = sample_counts[sorted_indices]
+        tokens = [self.gotu_tree_index[obs_id] for obs_id in obs_ids]
+        tokens = np.array(tokens, dtype=np.int32)
+
+        return tokens[: self.gotu_max_tokens], sample_counts[: self.gotu_max_tokens]
+
     def _batch_data(self, batch_sample_ids):
         (
             (asv_unique_tokens, asv_sparse_indices, asv_obs_indices, asv_counts),
             (asv_y_true, asv_encoder_output),
         ) = self.asv_generator._batch_data(batch_sample_ids)
-        (
-            (gotu_unique_tokens, gotu_sparse_indices, gotu_obs_indices, gotu_counts),
-            (gotu_y_true, gotu_encoder_output),
-        ) = self.gotu_generator._batch_data(batch_sample_ids)
-
-        gotu_ids = self.gotu_generator._rarefied_table.ids(axis="observation")
-        gotu_node_ids = [gotu_ids[i] for i in gotu_unique_tokens]
-        gotu_unique_tokens = (
-            np.array([self.gotu_tree_index[id] for id in gotu_node_ids], dtype=np.int32)
-            + 3
-        )
+        gotu_tokens, gotu_counts = self._batch_gotu_data(batch_sample_ids)
         return (
-            (
-                asv_unique_tokens,
-                asv_sparse_indices,
-                asv_obs_indices,
-                asv_counts,
-                gotu_unique_tokens,
-                gotu_sparse_indices,
-                gotu_obs_indices,
-                gotu_counts,
-            ),
-            (
-                (asv_y_true, asv_encoder_output),
-                (gotu_y_true, gotu_encoder_output),
-            ),
+            asv_unique_tokens,
+            asv_sparse_indices,
+            asv_obs_indices,
+            asv_counts,
+            gotu_tokens,
+            gotu_counts,
         )
 
 
@@ -132,32 +138,12 @@ def get_dataset(gen: GOTUGenerator):
     dataset = tf.data.Dataset.from_generator(
         enqueuer.get,
         output_signature=(
-            (
-                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-            ),
-            (
-                (
-                    tf.TensorSpec(
-                        shape=[gen.batch_size, 1],
-                        dtype=tf.float32,
-                    ),
-                    y_type,
-                ),
-                (
-                    tf.TensorSpec(
-                        shape=[gen.batch_size, 1],
-                        dtype=tf.float32,
-                    ),
-                    y_type,
-                ),
-            ),
+            tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+            tf.TensorSpec(shape=[None], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, 1], dtype=tf.float32),
         ),
     )
 
@@ -170,13 +156,14 @@ if __name__ == "__main__":
         asv_table="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/asv_ordered_table.biom",
         tree_path="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/tulsa-tree.nwk",
         metadata="/home/jokirkland/data/asv2gotu/rotation_results/tulsa1000/metag_metadata.tsv",
+        gotu_tree_index="/home/jokirkland/data/trees/gotu_node_dict.json",
         metadata_column="host_age",
         shift=0.0,
         scale=100.0,
         gen_new_tables=True,
         is_16S=False,
         asv_rarefy_depth=1000,
-        gotu_rarefy_depth=100000,
+        gotu_max_tokens=128,
     )
     dataset = get_dataset(gotu_gen)
     print(gotu_gen[0])
