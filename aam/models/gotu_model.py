@@ -38,11 +38,12 @@ class GOTUModel(tf.keras.Model):
         self.base_model = base_model
         self.base_model.trainable = False
 
-        self.encoder_tracker = tf.keras.metrics.Mean()
+        #  loss, early_rank_loss, late_rank_loss, wrong_token_loss
         self.loss_tracker = tf.keras.metrics.Mean()
-        self.gotu_tracker = tf.keras.metrics.Mean()
+        self.early_rank_tracker = tf.keras.metrics.Mean()
+        self.late_rank_tracker = tf.keras.metrics.Mean()
+        self.wrong_token_tracker = tf.keras.metrics.Mean()
 
-        self.encoder_loss = PairwiseLoss(self.pairwise_loss_type, reduction="none")
         self.gotu_loss = tf.keras.losses.SparseCategoricalCrossentropy(reduction="none")
 
         self.gotu_embedding_layer = tf.keras.layers.Embedding(
@@ -95,47 +96,63 @@ class GOTUModel(tf.keras.Model):
         model.build(input_shape)
         return model
 
-    def _compute_loss(self, data, outputs):
-        inputs, targets = data
-        (
-            asv_tokens,
-            asv_batch_indices,
-            asv_indicies,
-            asv_counts,
-            gotu_tokens,
-            gotu_batch_indices,
-            gotu_indicies,
-            gotu_counts,
-        ) = inputs
-        asv_targets, gotu_targets = targets
-        gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
-        gotu_tokens, gotu_counts = self.base_model.batch_embeddings(
-            gotu_tokens, gotu_batch_indices, gotu_counts, gotu_indicies
-        )
-        gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
-        gotu_counts = tf.pad(
-            gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
-        )
-        gotu_valid_tokens = tf.cast(tf.squeeze(gotu_counts, axis=-1) > 0, tf.float32)
+    def _compute_loss(self, outputs):
+        gotu_pred, gotu_tokens = outputs
+        gotu_tokens = tf.cast(gotu_tokens, dtype=tf.float32)
+        gotu_tokens = tf.pad(gotu_tokens, paddings=[[0, 0], [0, 1]], constant_values=2)
 
-        gotu_tokens = tf.pad(
-            gotu_tokens, paddings=[[0, 0], [0, 1], [0, 0]], constant_values=2
-        )
-        gotu_pad_mask = tf.cast(gotu_tokens == 0, dtype=tf.int32) * 2
-        gotu_tokens = gotu_tokens + gotu_pad_mask
+        tokens_per_sample = tf.shape(gotu_tokens)[-1]
+        gotu_loss = self.gotu_loss(gotu_tokens, gotu_pred)
 
-        gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
-        gotu_loss = self.gotu_loss(gotu_tokens, outputs)
-
-        gotu_loss = gotu_loss * gotu_valid_tokens
-        gotu_loss = tf.reduce_sum(gotu_loss, axis=-1, keepdims=True) / tf.reduce_sum(
-            gotu_valid_tokens, axis=-1, keepdims=True
+        gotu_valid_mask = tf.cast(gotu_tokens == 0, dtype=tf.float32)
+        gotu_pred_tokens = tf.math.reduce_max(gotu_pred, axis=-1)
+        gotu_pred_tokens = tf.expand_dims(gotu_pred_tokens, axis=-1)
+        gotu_tokens = tf.expand_dims(gotu_tokens, axis=1)
+        gotu_comparison_output = tf.cast(
+            gotu_tokens == gotu_pred_tokens, dtype=tf.float32
         )
-        gotu_loss = tf.reduce_mean(gotu_loss)
-        loss = gotu_loss
-        nuc_loss = 0
-        unifrac_loss = 0
-        return loss, gotu_loss
+        correct_mask = (
+            tf.math.reduce_max(gotu_comparison_output, axis=-1) * gotu_valid_mask
+        )
+
+        # loss for determining if token was called early or late
+        true_rankings = tf.range(tokens_per_sample, dtype=tf.float32)
+        rankings = (
+            tf.cast(tf.argmax(gotu_comparison_output, axis=-1), dtype=tf.float32)
+            - true_rankings
+        )
+        abs_ranking = tf.abs(rankings)
+        rel_ranking = abs_ranking / tf.cast(tokens_per_sample, dtype=tf.float32)
+
+        def _mean_loss(loss, loss_mask):
+            loss = tf.math.divide_no_nan(
+                tf.reduce_sum(loss, axis=-1, keepdims=True),
+                tf.reduce_sum(loss_mask, axis=-1, keepdims=True),
+            )
+            loss = tf.reduce_mean(loss)
+
+            return loss
+
+        def _rankings_loss(early=True):
+            if early:
+                rank_mask = tf.cast(rankings < 0, dtype=tf.float32)
+            else:
+                rank_mask = tf.cast(rankings > 0, dtype=tf.float32)
+            y_rank_scalar = rel_ranking * rank_mask * gotu_valid_mask
+            rank_loss = gotu_loss * y_rank_scalar
+            rank_loss = _mean_loss(rank_loss, rank_mask)
+            return rank_loss
+
+        early_rank_loss = _rankings_loss(early=True)
+        late_rank_loss = _rankings_loss(early=False)
+
+        # create wrong_token_loss
+        wrong_mask = 1 - correct_mask
+        wrong_token_loss = gotu_loss * wrong_mask
+        wrong_token_loss = _mean_loss(wrong_token_loss, wrong_mask)
+
+        loss = early_rank_loss + late_rank_loss + wrong_token_loss
+        return loss, early_rank_loss, late_rank_loss, wrong_token_loss
 
     def batch_embeddings(self, embeddings, batch_indicies, counts, indices=None):
         emb_dim = tf.shape(embeddings)[-1]
@@ -153,10 +170,12 @@ class GOTUModel(tf.keras.Model):
         return batch_embeddings, counts
 
     def train_step(self, data):
-        inputs, targets = data
+        inputs = data
         with tf.GradientTape() as tape:
             outputs = self(inputs, training=True)
-            loss, gotu_loss = self._compute_loss(data, outputs)
+            loss, early_rank_loss, late_rank_loss, wrong_token_loss = (
+                self._compute_loss(outputs)
+            )
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(loss)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -165,24 +184,34 @@ class GOTUModel(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.loss_tracker.update_state(loss)
-        self.gotu_tracker.update_state(gotu_loss)
+        self.early_rank_tracker.update_state(early_rank_loss)
+        self.late_rank_tracker.update_state(late_rank_loss)
+        self.wrong_token_tracker.update_state(wrong_token_loss)
         metrics = {
             "loss": self.loss_tracker.result(),
-            "gotu_loss": self.gotu_tracker.result(),
+            "early_rank_loss": self.early_rank_tracker.result(),
+            "late_rank_loss": self.late_rank_tracker.result(),
+            "wrong_token_loss": self.wrong_token_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
         return metrics
 
     def test_step(self, data):
-        inputs, targets = data
+        inputs = data
         outputs = self(inputs, training=False)
-        loss, gotu_loss = self._compute_loss(data, outputs)
+        loss, early_rank_loss, late_rank_loss, wrong_token_loss = self._compute_loss(
+            outputs
+        )
 
         self.loss_tracker.update_state(loss)
-        self.gotu_tracker.update_state(gotu_loss)
+        self.early_rank_tracker.update_state(early_rank_loss)
+        self.late_rank_tracker.update_state(late_rank_loss)
+        self.wrong_token_tracker.update_state(wrong_token_loss)
         metrics = {
             "loss": self.loss_tracker.result(),
-            "gotu_loss": self.gotu_tracker.result(),
+            "early_rank_loss": self.early_rank_tracker.result(),
+            "late_rank_loss": self.late_rank_tracker.result(),
+            "wrong_token_loss": self.wrong_token_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
@@ -268,21 +297,25 @@ class GOTUModel(tf.keras.Model):
         asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype)
         asv_mask = tf.cast(asv_counts > 0, dtype=self.compute_dtype)
 
-        gotu_tokens = tf.expand_dims(gotu_tokens, axis=-1)
+        gotu_tokens_with_start = tf.expand_dims(gotu_tokens, axis=-1)
         gotu_counts = tf.expand_dims(gotu_counts, axis=-1)
 
-        gotu_tokens, gotu_counts = sort_using_counts(gotu_tokens, gotu_counts)
+        gotu_tokens_with_start, gotu_counts = sort_using_counts(
+            gotu_tokens_with_start, gotu_counts
+        )
         if add_start_token:
-            gotu_tokens = tf.pad(
-                gotu_tokens, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
+            gotu_tokens_with_start = tf.pad(
+                gotu_tokens_with_start,
+                paddings=[[0, 0], [1, 0], [0, 0]],
+                constant_values=1,
             )
             gotu_counts = tf.pad(
                 gotu_counts, paddings=[[0, 0], [1, 0], [0, 0]], constant_values=1
             )
-        gotu_tokens = tf.squeeze(gotu_tokens, axis=-1)
+        gotu_tokens_with_start = tf.squeeze(gotu_tokens_with_start, axis=-1)
         gotu_pred = self.extract_gotu_embeddings(
-            gotu_tokens, gotu_counts, asv_embeddings, asv_mask, training
+            gotu_tokens_with_start, gotu_counts, asv_embeddings, asv_mask, training
         )
         gotu_pred = self._softmax(gotu_pred)
 
-        return gotu_pred
+        return gotu_pred, gotu_tokens
