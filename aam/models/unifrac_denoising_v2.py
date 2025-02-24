@@ -62,14 +62,20 @@ class UnifracDenoiserV2(tf.keras.Model):
             _ff_block(self.intermediate_dim), name="unifrac_ff"
         )
         self.unifrac_out = tf.keras.layers.Dense(
-            self.embedding_dim, tf.keras.initializers.HeUniform(), dtype=tf.float32
+            self.embedding_dim,
+            use_bias=True,
+            kernel_initializer=tf.keras.initializers.HeUniform(),
+            dtype=tf.float32,
         )
 
         self.denoise_ff = tf.keras.Sequential(
             _ff_block(self.intermediate_dim), name="denoise_ff"
         )
         self.denoise_out = tf.keras.layers.Dense(
-            self.embedding_dim, tf.keras.initializers.HeUniform(), dtype=tf.float32
+            self.embedding_dim,
+            use_bias=True,
+            kernel_initializer=tf.keras.initializers.HeUniform(),
+            dtype=tf.float32,
         )
 
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
@@ -218,7 +224,7 @@ class UnifracDenoiserV2(tf.keras.Model):
         tokens = tf.cast(tokens, dtype=tf.int32)
         batch_indices = tf.cast(batch_indices, dtype=tf.int32)
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
         asv_embeddings = self.asv_encoder.asv_embeddings(tokens)
         sample_embeddings = self.sample_embeddings(
             asv_embeddings, batch_indices, counts, asv_indices
@@ -242,6 +248,7 @@ class UnifracDenoiserV2(tf.keras.Model):
             {
                 "dropout_rate": self.dropout_rate,
                 "embedding_dim": self.embedding_dim,
+                "intermediate_dim": self.intermediate_dim,
                 "asv_encoder": tf.keras.saving.serialize_keras_object(self.asv_encoder),
             }
         )
