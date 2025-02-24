@@ -17,12 +17,14 @@ class UnifracDenoiserV2(tf.keras.Model):
     def __init__(
         self,
         dropout_rate: float = 0.0,
+        intermediate_dim: int = 256,
         embedding_dim: int = 32,
         asv_encoder=None,
         **kwargs,
     ):
         super(UnifracDenoiserV2, self).__init__(**kwargs)
         self.dropout_rate = dropout_rate
+        self.intermediate_dim = intermediate_dim
         self.embedding_dim = embedding_dim
 
         if asv_encoder is None:
@@ -36,10 +38,10 @@ class UnifracDenoiserV2(tf.keras.Model):
         self.unifrac_tracker = tf.keras.metrics.Mean(name="unifrac_loss")
         self.denoise_tracker = tf.keras.metrics.Mean(name="denoised_loss")
 
-        def _ff_block():
+        def _ff_block(units):
             block = [
                 tf.keras.layers.Dense(
-                    self.embedding_dim,
+                    units,
                     use_bias=True,
                     kernel_initializer=tf.keras.initializers.HeUniform(),
                 ),
@@ -51,15 +53,25 @@ class UnifracDenoiserV2(tf.keras.Model):
             return block
 
         self.sample_ff = tf.keras.Sequential(
-            [tf.keras.layers.LayerNormalization(dtype=tf.float32)] + _ff_block(),
+            [tf.keras.layers.LayerNormalization(dtype=tf.float32)]
+            + _ff_block(self.intermediate_dim),
             name="sample_ff",
         )
+
         self.unifrac_ff = tf.keras.Sequential(
-            _ff_block() + [tf.keras.layers.Dense(32)], name="unifrac_ff"
+            _ff_block(self.intermediate_dim), name="unifrac_ff"
         )
+        self.unifrac_out = tf.keras.layers.Dense(
+            self.embedding_dim, tf.keras.initializers.HeUniform(), dtype=tf.float32
+        )
+
         self.denoise_ff = tf.keras.Sequential(
-            _ff_block() + [tf.keras.layers.Dense(32)], name="denoise_ff"
+            _ff_block(self.intermediate_dim), name="denoise_ff"
         )
+        self.denoise_out = tf.keras.layers.Dense(
+            self.embedding_dim, tf.keras.initializers.HeUniform(), dtype=tf.float32
+        )
+
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
 
     def _compute_unifrac_loss(self, unifrac_distances, unifrac_embeddings):
@@ -213,8 +225,12 @@ class UnifracDenoiserV2(tf.keras.Model):
         )
 
         sample_embeddings = self.sample_ff(sample_embeddings, training=training)
-        unifrac_embeddings = self.unifrac_ff(sample_embeddings, training=training)
-        denoised_embeddings = self.denoise_ff(unifrac_embeddings, training=training)
+
+        unifrac_intermediate = self.unifrac_ff(sample_embeddings, training=training)
+        unifrac_embeddings = self.unifrac_out(unifrac_intermediate)
+
+        denoised_intermediate = self.denoise_ff(unifrac_intermediate, training=training)
+        denoised_embeddings = self.denoise_out(denoised_intermediate)
         return (
             self.output_activation(unifrac_embeddings),
             self.output_activation(denoised_embeddings),

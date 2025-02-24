@@ -235,10 +235,10 @@ def fit_asv_encoder(
 @click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
 @click.option("--i-model", default=None, required=False, type=str)
 @click.option("--i-unifrac-model", default=None, required=False, type=str)
-@click.option("--p-embedding-dim", default=128, type=int)
+@click.option("--p-embedding-dim", default=32, type=int)
 @click.option("--p-attention-heads", default=4, type=int)
 @click.option("--p-attention-layers", default=1, type=int)
-@click.option("--p-intermediate-size", default=512, type=int)
+@click.option("--p-intermediate-size", default=256, type=int)
 @click.option(
     "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
@@ -387,6 +387,7 @@ def fit_denoised_unifrac_regressor(
 
         model = UnifracDenoiserV2(
             dropout_rate=p_dropout,
+            intermediate_dim=p_intermediate_size,
             embedding_dim=p_embedding_dim,
             asv_encoder=asv_encoder,
         )
