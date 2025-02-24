@@ -222,8 +222,9 @@ class UnifracDenoiserV2(tf.keras.Model):
         unifrac_embeddings = self.unifrac_ff(sample_embeddings, training=training)
         unifrac_embeddings = self.unifrac_out(unifrac_embeddings)
 
-        denoised_embeddings = unifrac_embeddings + self.denoise_ff(
-            sample_embeddings, training=training
+        denoised_embeddings = self.denoise_ff(sample_embeddings, training=training)
+        denoised_embeddings = (
+            tf.cast(unifrac_embeddings, dtype=self.compute_dtype) + denoised_embeddings
         )
         return (
             self.output_activation(unifrac_embeddings),
