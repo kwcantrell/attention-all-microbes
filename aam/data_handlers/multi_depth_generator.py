@@ -34,16 +34,32 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
             print("Using UniFrac generator")
             kwargs["unifrac_metric"] = self.unifrac_metric
             self.generators = [
-                UniFracGenerator(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
+                UniFracGenerator(
+                    table=table,
+                    rarefy_depth=depth,
+                    shuffle=False,
+                    batch_size=batch_size,
+                    **kwargs,
+                )
                 for depth in sample_depths
             ]
         else:
             print("Not using UniFrac generator")
             self.generators = [
-                GeneratorDataset(table=table, rarefy_depth=depth, shuffle=False, batch_size=batch_size, **kwargs)
+                GeneratorDataset(
+                    table=table,
+                    rarefy_depth=depth,
+                    shuffle=False,
+                    batch_size=batch_size,
+                    **kwargs,
+                )
                 for depth in sample_depths
             ]
-        self.common_ids = np.intersect1d(self.generators[0].sample_ids, self.generators[1].sample_ids, assume_unique=True)
+        self.common_ids = np.intersect1d(
+            self.generators[0].sample_ids,
+            self.generators[1].sample_ids,
+            assume_unique=True,
+        )
         self.size = len(self.common_ids)
         self.sample_indices = np.arange(self.size)
 
@@ -80,9 +96,10 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
         tokens, sparse_indices, counts = [], [], []
         y_true, encoder_output = [], []
         for gen_i, generator in enumerate(self.generators):
-            (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts), gen_y_outputs = generator._batch_data(
-                batch_sample_ids
-            )
+            (
+                (gen_tokens, gen_sparse_indices, gen_obs_indices, gen_counts),
+                gen_y_outputs,
+            ) = generator._batch_data(batch_sample_ids)
             gen_tokens = gen_tokens[gen_obs_indices]
             tokens.append(gen_tokens)
 
@@ -107,7 +124,10 @@ class MultiDepthGenerator(tf.keras.utils.Sequence):
 
         if self.unifrac_metric:
             encoder_output = np.concatenate(encoder_output, axis=0)
-            return (unique_tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
+            return (unique_tokens, sparse_indices, obs_indices, counts), (
+                y_true,
+                encoder_output,
+            )
         else:
             return (unique_tokens, sparse_indices, obs_indices, counts), y_true
 
@@ -118,9 +138,14 @@ def get_dataset(gen: MultiDepthGenerator):
     gen.stop = enqueuer.stop
 
     if not gen.return_sample_ids:
-        y_type = tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), gen.batch_size], dtype=tf.float32)
+        y_type = tf.TensorSpec(
+            shape=[gen.batch_size * len(gen.generators), gen.batch_size],
+            dtype=tf.float32,
+        )
     else:
-        y_type = tf.TensorSpec(shape=(gen.batch_size * len(gen.generators)), dtype=tf.string)
+        y_type = tf.TensorSpec(
+            shape=(gen.batch_size * len(gen.generators)), dtype=tf.string
+        )
 
     if gen.unifrac_metric is not None:
         dataset = tf.data.Dataset.from_generator(
@@ -132,7 +157,13 @@ def get_dataset(gen: MultiDepthGenerator):
                     tf.TensorSpec(shape=[None], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
-                (tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32), y_type),
+                (
+                    tf.TensorSpec(
+                        shape=[gen.batch_size * len(gen.generators), 1],
+                        dtype=tf.float32,
+                    ),
+                    y_type,
+                ),
             ),
         )
     else:
@@ -145,7 +176,9 @@ def get_dataset(gen: MultiDepthGenerator):
                     tf.TensorSpec(shape=[None], dtype=tf.int32),
                     tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
                 ),
-                tf.TensorSpec(shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32),
+                tf.TensorSpec(
+                    shape=[gen.batch_size * len(gen.generators), 1], dtype=tf.float32
+                ),
             ),
         )
 
@@ -155,12 +188,14 @@ def get_dataset(gen: MultiDepthGenerator):
 if __name__ == "__main__":
     import numpy as np
 
+    from aam.models.unifrac_denoising_v2 import UnifracDenoiserV2
+
     ug = MultiDepthGenerator(
         table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-no-duplicate-host-bloom-filtered-5000-small-stool-only-very-small.biom",
         tree_path="/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk",
         metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/agp-healthy.txt",
         metadata_column="host_age",
-        sample_depths=[100, 1000],
+        sample_depths=[100, 100],
         # shift=0.0,
         scale="minmax",
         gen_new_tables=True,
@@ -171,9 +206,21 @@ if __name__ == "__main__":
     # dataset = get_dataset(ug)
     # for x in dataset.take(1):
     #     print(x)
+    asv_encoder = tf.keras.models.load_model(
+        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/nuc-encoder--tax/model.keras",
+        compile=False,
+    )
+    model = UnifracDenoiserV2(asv_encoder=asv_encoder)
+    token_shape = tf.TensorShape([None, 150])
+    batch_indicies = tf.TensorShape([None, 2])
+    indicies_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+    model.build([token_shape, batch_indicies, indicies_shape, count_shape])
+    model.summary()
     x, y = ug[0]
-    (tokens, batch_indices, obs_indices, counts) = x
-    print("tokens:", tokens.shape)
-    print("batch_indices:", batch_indices.shape, batch_indices)
-    print("obs indices:", obs_indices.shape)
-    print("counts:", counts.shape)
+    print(model(x))
+    # (tokens, batch_indices, obs_indices, counts) = x
+    # print("tokens:", tokens.shape)
+    # print("batch_indices:", batch_indices.shape, batch_indices)
+    # print("obs indices:", obs_indices.shape)
+    # print("counts:", counts.shape)

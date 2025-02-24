@@ -235,7 +235,7 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         taxonomy[self.levels] = taxonomy[self.taxon_field].str.split("; ", expand=True)
         taxonomy = taxonomy.loc[taxonomy[self.tax_level].str.len() > 3]
         taxonomy = taxonomy.loc[:, self.levels]
-        taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels[:4]].agg(
+        taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels[:6]].agg(
             "; ".join, axis=1
         )
         self.table = self.table.filter(

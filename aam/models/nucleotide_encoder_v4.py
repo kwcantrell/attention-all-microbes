@@ -219,6 +219,14 @@ class NucleotideEncoderV4(tf.keras.Model):
         ]
         return self.output_activation(embeddings), tax_preds
 
+    def asv_embeddings(self, tokens):
+        embeddings = self.asv_encoder(
+            tokens, include_bert_random_mask=False, training=False
+        )
+
+        asv_embeddings = tf.reduce_mean(embeddings, axis=1)
+        return self.asv_ff_block(asv_embeddings, training=False)
+
     def get_config(self):
         config = super(NucleotideEncoderV4, self).get_config()
         if hasattr(config, "include_bert_loss"):

@@ -260,7 +260,7 @@ def fit_asv_encoder(
 @click.option("--p-normalize-outputs", default=False, type=bool)
 @click.option("--p-use-residual-connections", default=False, type=bool)
 @click.option("--p-use-residual-pool", default=None, type=bool)
-@click.option("--p-train-nuc-encoder", default=True, type=bool)
+@click.option("--p-train-nuc-encoder", default=False, type=bool)
 @click.option("--p-nuc-encoder", default=None)
 @click.option("--p-use-linear-bias", default=True, type=bool)
 def fit_denoised_unifrac_regressor(
@@ -309,7 +309,7 @@ def fit_denoised_unifrac_regressor(
 
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.multi_depth_generator import MultiDepthGenerator, get_dataset
-    from aam.models.unifrac_denoising import UnifracDenoiser
+    from aam.models.unifrac_denoising_v2 import UnifracDenoiserV2
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.models.utils import cos_decay_with_warmup
@@ -383,29 +383,12 @@ def fit_denoised_unifrac_regressor(
 
     if p_nuc_encoder is not None:
         asv_encoder = tf.keras.models.load_model(p_nuc_encoder, compile=False)
-        asv_encoder.trainable = p_train_nuc_encoder
+        asv_encoder.trainable = False
 
-        model: tf.keras.Model = UnifracDenoiser(
-            output_dim,
-            p_asv_limit,
-            p_unifrac_metric,
+        model = UnifracDenoiserV2(
             dropout_rate=p_dropout,
             embedding_dim=p_embedding_dim,
-            attention_heads=p_attention_heads,
-            attention_layers=p_attention_layers,
-            intermediate_size=p_intermediate_size,
-            intermediate_activation=p_intermediate_activation,
-            max_bp=p_max_bp,
-            is_16S=True,
-            add_token=p_add_token,
-            asv_dropout_rate=p_asv_dropout,
-            accumulation_steps=p_accumulation_steps,
-            pairwise_loss_type=p_loss_type,
-            normalize_outputs=p_normalize_outputs,
-            use_residual_connections=p_use_residual_connections,
-            use_residual_pool=p_use_residual_pool,
             asv_encoder=asv_encoder,
-            use_linear_bias=p_use_linear_bias,
         )
 
     lr_scheduler = LAMBLRScheduler(

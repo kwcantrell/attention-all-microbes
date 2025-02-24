@@ -235,13 +235,16 @@ class TripletGenerator(tf.keras.utils.Sequence):
         taxonomy[self.levels] = taxonomy[self.taxon_field].str.split("; ", expand=True)
         taxonomy = taxonomy.loc[taxonomy[self.tax_level].str.len() > 3]
         taxonomy = taxonomy.loc[:, self.levels]
-        taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels].agg("; ".join, axis=1)
-
+        taxonomy.loc[:, "Taxon"] = taxonomy.loc[:, self.levels[:6]].agg(
+            "; ".join, axis=1
+        )
         self.table = self.table.filter(
             set(self.table.ids(axis="observation")).intersection(set(taxonomy.index)),
             axis="observation",
         )
         self.table.remove_empty()
+
+        print(taxonomy["Taxon"].to_numpy())
 
         le = preprocessing.LabelEncoder()
         taxonomy["Taxon"] = le.fit_transform(taxonomy.loc[taxonomy.index, "Taxon"])
