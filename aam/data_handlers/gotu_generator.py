@@ -103,6 +103,9 @@ class GOTUGenerator(tf.keras.utils.Sequence):
         sample_counts = sample_counts[sorted_indices]
         tokens = [self.gotu_tree_index[obs_id] for obs_id in obs_ids]
         tokens = np.array(tokens, dtype=np.int32)
+        if len(tokens) < self.gotu_max_tokens:
+            pad_amount = self.gotu_max_tokens - len(tokens)
+            tokens = np.pad(tokens, pad_width=(0, pad_amount))
 
         return tokens[: self.gotu_max_tokens], sample_counts[: self.gotu_max_tokens]
 
