@@ -52,14 +52,8 @@ class UnifracDenoiserV2(tf.keras.Model):
 
             return block
 
-        self.sample_ff = tf.keras.Sequential(
-            [tf.keras.layers.LayerNormalization(dtype=tf.float32)]
-            + _ff_block(self.intermediate_dim),
-            name="sample_ff",
-        )
-
         self.unifrac_ff = tf.keras.Sequential(
-            _ff_block(self.intermediate_dim), name="unifrac_ff"
+            _ff_block(self.embedding_dim), name="unifrac_ff"
         )
         self.unifrac_out = tf.keras.layers.Dense(
             self.embedding_dim,
@@ -69,13 +63,7 @@ class UnifracDenoiserV2(tf.keras.Model):
         )
 
         self.denoise_ff = tf.keras.Sequential(
-            _ff_block(self.intermediate_dim), name="denoise_ff"
-        )
-        self.denoise_out = tf.keras.layers.Dense(
-            self.embedding_dim,
-            use_bias=True,
-            kernel_initializer=tf.keras.initializers.HeUniform(),
-            dtype=tf.float32,
+            _ff_block(self.embedding_dim), name="denoise_ff"
         )
 
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
@@ -212,6 +200,7 @@ class UnifracDenoiserV2(tf.keras.Model):
             asv_embeddings, batch_indicies, counts, asv_indices
         )
         asv_mask = tf.cast(batch_counts > 0, dtype=tf.float32)
+        batched_embeddigns = batched_embeddigns * asv_mask
         sample_embeddings = tf.reduce_sum(batched_embeddigns, axis=1) / tf.reduce_sum(
             asv_mask, axis=1
         )
@@ -230,13 +219,12 @@ class UnifracDenoiserV2(tf.keras.Model):
             asv_embeddings, batch_indices, counts, asv_indices
         )
 
-        sample_embeddings = self.sample_ff(sample_embeddings, training=training)
+        unifrac_embeddings = self.unifrac_ff(sample_embeddings, training=training)
+        unifrac_embeddings = self.unifrac_out(unifrac_embeddings)
 
-        unifrac_intermediate = self.unifrac_ff(sample_embeddings, training=training)
-        unifrac_embeddings = self.unifrac_out(unifrac_intermediate)
-
-        denoised_intermediate = self.denoise_ff(unifrac_intermediate, training=training)
-        denoised_embeddings = self.denoise_out(denoised_intermediate)
+        denoised_embeddings = unifrac_embeddings + self.denoise_ff(
+            sample_embeddings, training=training
+        )
         return (
             self.output_activation(unifrac_embeddings),
             self.output_activation(denoised_embeddings),

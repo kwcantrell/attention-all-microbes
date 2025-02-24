@@ -140,6 +140,34 @@ class TripletEncoder(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
+    def batch_embeddings(self, asv_embeddings, batch_indicies, counts, asv_indices):
+        emb_dim = tf.shape(asv_embeddings)[-1]
+        batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+        if asv_indices is not None:
+            asv_embeddings = tf.gather(asv_embeddings, asv_indices)
+        batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+        max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+        batch_embeddings = tf.scatter_nd(
+            batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+        )
+        counts = tf.scatter_nd(
+            batch_indicies, counts, shape=[batch_shape, max_unique, 1]
+        )
+        return batch_embeddings, counts
+
+    def sample_embeddings(self, asv_embeddings, batch_indicies, counts, asv_indices):
+        batched_embeddigns, batch_counts = self.batch_embeddings(
+            asv_embeddings, batch_indicies, counts, asv_indices
+        )
+        asv_mask = tf.cast(batch_counts > 0, dtype=tf.float32)
+        batched_embeddigns = batched_embeddigns * asv_mask
+        sample_embeddings = tf.reduce_sum(batched_embeddigns, axis=1) / tf.reduce_sum(
+            asv_mask, axis=1
+        )
+        return sample_embeddings
+
     def call(
         self,
         inputs,
@@ -148,13 +176,16 @@ class TripletEncoder(tf.keras.Model):
         training = training and self.trainable
 
         inputs, taxonomy_counts = inputs[:4], inputs[4]
-        asv_embeddings, counts = self.asv_encoder.asv_embeddings(inputs)
-        mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-        asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+        tokens, batch_indices, asv_indices, counts = inputs
+        tokens = tf.cast(tokens, dtype=tf.int32)
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
-        sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-            mask, axis=1
+        asv_embeddings = self.asv_encoder.asv_embeddings(tokens)
+        sample_embeddings = self.sample_embeddings(
+            asv_embeddings, batch_indices, counts, asv_indices
         )
+
         sample_embeddings = self.sample_embedding_ff(
             sample_embeddings, training=training
         )

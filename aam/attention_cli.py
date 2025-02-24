@@ -591,11 +591,11 @@ def fit_triplet_regressor(
 
     common_kwargs = {
         "metadata_column": m_metadata_column,
-        "rarefy_depth": 1000,
+        "rarefy_depth": 500,
         "samples_per_group": 10,
         "is_16S": True,
         "tree_path": i_tree,
-        "metadata": df,
+        # "metadata": df,
         "taxonomy": taxonomy,
     }
     train_gen = TripletGenerator(
@@ -603,7 +603,8 @@ def fit_triplet_regressor(
         shuffle=True,
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
-        steps_per_epoch=1000,
+        steps_per_epoch=100,
+        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet-training-metadata.tsv",
         **common_kwargs,
     )
     training_dataset = get_dataset(train_gen)
@@ -613,6 +614,8 @@ def fit_triplet_regressor(
         shuffle=False,
         gen_new_tables=False,
         epochs=1,
+        steps_per_epoch=10,
+        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet-test-metadata.tsv",
         **common_kwargs,
     )
     val_dataset = get_dataset(val_gen)
