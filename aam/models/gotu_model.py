@@ -104,7 +104,7 @@ class GOTUModel(tf.keras.Model):
         tokens_per_sample = tf.shape(gotu_tokens)[-1]
         gotu_loss = self.gotu_loss(gotu_tokens, gotu_pred)
 
-        gotu_valid_mask = tf.cast(gotu_tokens == 0, dtype=tf.float32)
+        gotu_valid_mask = tf.cast(gotu_tokens > 0, dtype=tf.float32)
         gotu_pred_tokens = tf.math.reduce_max(gotu_pred, axis=-1)
         gotu_pred_tokens = tf.expand_dims(gotu_pred_tokens, axis=-1)
         gotu_tokens = tf.expand_dims(gotu_tokens, axis=1)
