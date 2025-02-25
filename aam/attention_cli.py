@@ -1628,15 +1628,13 @@ def gotu_infer(
     gotu_tokens = tf.ones(shape=(batch_size, 1), dtype=tf.int32)
     gotu_counts = tf.ones(shape=(batch_size, 1, 1), dtype=tf.int32)
 
-    for x, y in data.take(1):
+    for x in data.take(1):
         (
             asv_tokens,
             asv_batch_indices,
             asv_indicies,
             asv_counts,
             true_gotu_tokens,
-            true_gotu_batch_indices,
-            true_gotu_indices,
             true_gotu_counts,
         ) = x
         asv_embeddings, asv_counts = gotu_model.base_model.extract_asv_embeddings(
@@ -1646,18 +1644,13 @@ def gotu_infer(
         )
         asv_mask = tf.cast(asv_counts > 0, dtype=gotu_model.compute_dtype)
         true_gotu_tokens = tf.expand_dims(true_gotu_tokens, axis=-1)
-        true_gotu_tokens, true_gotu_counts = gotu_model.batch_embeddings(
-            true_gotu_tokens,
-            true_gotu_batch_indices,
-            true_gotu_counts,
-            true_gotu_indices,
-        )
+        true_gotu_counts = tf.expand_dims(true_gotu_counts, axis=-1)
         true_gotu_tokens, true_gotu_counts = sort_using_counts(
             true_gotu_tokens, true_gotu_counts
         )
         true_gotu_tokens = tf.squeeze(true_gotu_tokens, axis=-1)
 
-        predicted_token = gotu_model(x)
+        predicted_token, gotu_token = gotu_model(x)
 
         # for _ in range(10):
         #     gotu_embeddings = gotu_model.extract_gotu_embeddings(
