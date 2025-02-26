@@ -591,7 +591,7 @@ def fit_triplet_regressor(
 
     common_kwargs = {
         "metadata_column": m_metadata_column,
-        "rarefy_depth": 5000,
+        "rarefy_depth": 1000,
         "samples_per_group": 10,
         "is_16S": True,
         "tree_path": i_tree,
