@@ -145,7 +145,7 @@ def _roll(inputs):
     return tf.roll(tensor, shift=shift, axis=1)
 
 
-def categorical_triplet_loss(embeddings, num_groups, soft_margin=1.0):
+def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.5):
     shape = tf.shape(embeddings)
     batch_dim = shape[0]
     samples_per_group = batch_dim // num_groups

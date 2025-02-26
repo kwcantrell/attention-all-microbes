@@ -79,8 +79,8 @@ class TripletEncoder(tf.keras.Model):
             ]
             return block
 
-        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(128, dropout_rate=0.5))
-        self.tax_count_ff = tf.keras.Sequential(_ff_block(128, dropout_rate=0.5))
+        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(128, dropout_rate=0.0))
+        self.tax_count_ff = tf.keras.Sequential(_ff_block(128, dropout_rate=0.0))
         self.out_ff = tf.keras.layers.Dense(32, use_bias=True)
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
 
