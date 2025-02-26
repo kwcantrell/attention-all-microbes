@@ -597,6 +597,7 @@ def fit_triplet_regressor(
         "tree_path": i_tree,
         "metadata": df,
         "taxonomy": taxonomy,
+        "max_groups": 10,
     }
     train_gen = TripletGenerator(
         table=train_table,
