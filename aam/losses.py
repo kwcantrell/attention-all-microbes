@@ -73,16 +73,17 @@ def _pairwise_cosine_distance(
 
 
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
-    sample_embeddings = tf.linalg.l2_normalize(sample_embeddings, axis=-1)
-    d = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
+    non_matching_pairs_mask = tf.cast(non_matching_pairs_mask, dtype=tf.float32)
+    d = tf.reduce_max(tf.reduce_sum(non_matching_pairs_mask, axis=-1))
     sample_inner_prod = tf.matmul(
         sample_embeddings, sample_embeddings, transpose_b=True
     )
-    non_matching_pairs = sample_inner_prod[non_matching_pairs_mask]
+    non_matching_pairs = sample_inner_prod * non_matching_pairs_mask
 
-    m1 = tf.reduce_mean(non_matching_pairs)
-    m2 = tf.reduce_mean(tf.square(non_matching_pairs))
-    return m1 * m1 + tf.maximum(0.0, m2 - 1 / d)
+    m1 = tf.reduce_sum(non_matching_pairs, axis=-1) / d
+    m2 = tf.reduce_sum(tf.square(non_matching_pairs), axis=-1) / d
+    ortho_loss = m1 * m1 + tf.maximum(0.0, m2 - 1 / d)
+    return tf.reduce_mean(ortho_loss)
 
 
 class PairwiseLoss(tf.keras.losses.Loss):
