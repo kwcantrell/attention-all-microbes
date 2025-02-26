@@ -54,7 +54,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
         return_sample_ids=False,
         tree_path=None,
         steps_per_epoch=100,
-        max_groups=10,
+        max_groups=5,
         seed=None,
     ):
         if isinstance(table, str):

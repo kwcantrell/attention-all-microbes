@@ -81,7 +81,7 @@ class TripletEncoder(tf.keras.Model):
 
         self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
         self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
-
+        self.out_ff = tf.keras.layers.Dense(8, use_bias=True)
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
 
         super(TripletEncoder, self).build(input_shape)
@@ -251,8 +251,9 @@ class TripletEncoder(tf.keras.Model):
         taxonomy_counts = taxonomy_counts / total_counts
         taxonomy_embeddings = self.tax_count_ff(taxonomy_counts, training=training)
 
+        output_embedding = self.out_ff((sample_embeddings + taxonomy_embeddings) / 2.0)
         print("Triplet encoder exit...")
-        return self.output_activation(sample_embeddings + taxonomy_embeddings)
+        return self.output_activation(output_embedding)
 
     def get_config(self):
         config = super(TripletEncoder, self).get_config()
