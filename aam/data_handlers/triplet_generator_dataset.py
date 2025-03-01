@@ -39,6 +39,8 @@ class TripletGenerator(tf.keras.utils.Sequence):
         taxonomy: Optional[Union[str, pd.DataFrame]] = None,
         metadata: Optional[Union[str, pd.DataFrame]] = None,
         metadata_column: Optional[str] = None,
+        sequence_embeddings: Optional[str] = None,
+        sequence_labels: Optional[str] = None,
         shift: Optional[Union[str, float]] = None,
         scale: Union[str, float] = "minmax",
         max_token_per_sample: int = 1024,
@@ -72,6 +74,17 @@ class TripletGenerator(tf.keras.utils.Sequence):
         self.return_sample_ids: bool = return_sample_ids
         self.max_groups = max_groups
 
+        self.sequence_embeddings = sequence_embeddings
+        self.sequence_labels = sequence_labels
+        if self.sequence_embeddings is not None:
+            self.sequence_embeddings = np.load(self.sequence_embeddings)
+            self.sequence_labels = np.load(self.sequence_labels, allow_pickle=True)
+            self.sequence_labels = self.sequence_labels.astype(np.str_)
+            self.sequence_labels = np.char.encode(
+                self.sequence_labels, encoding="utf-8"
+            )
+            print(self.sequence_labels.dtype)
+
         self.include_sample_weight: bool = is_categorical
 
         self.shuffle = shuffle
@@ -103,7 +116,6 @@ class TripletGenerator(tf.keras.utils.Sequence):
 
         print("rarefy table...")
         self.rarefied_table: Table = self.table.subsample(rarefy_depth)
-
         self.size = self.rarefied_table.shape[1]
         self.groups = self.metadata.unique()
         self.num_groups = len(self.groups)
@@ -112,8 +124,11 @@ class TripletGenerator(tf.keras.utils.Sequence):
         self.batch_size = self.groups_per_step * self.samples_per_group
         self.samples_per_minibatch = self.batch_size
         self.steps_per_epoch = steps_per_epoch
-        self.y_data = self.metadata.loc[self._rarefied_table.ids()]
 
+        le = preprocessing.LabelEncoder()
+        groups = self.metadata.loc[self._rarefied_table.ids()]
+        y_data = le.fit_transform(groups)
+        self.y_data = pd.Series(y_data, groups.index)
         self.on_epoch_end()
 
     def __len__(self):
@@ -123,14 +138,22 @@ class TripletGenerator(tf.keras.utils.Sequence):
         batch_sample_ids = []
         metadata = self.metadata.loc[self.rarefied_table.ids()]
         groups = metadata.unique()
-        for group in np.random.choice(groups, self.groups_per_step, replace=False):
+        counts = np.repeat(
+            metadata.value_counts().to_numpy()[:, np.newaxis],
+            repeats=self.samples_per_group,
+            axis=1,
+        )
+        totals = counts.sum(axis=0)
+        weights = counts / totals[np.newaxis, :]
+        weights = weights.reshape((-1))
+        for group in groups:
             ids = metadata[metadata == group].index.to_numpy()
             batch_sample_ids.append(
                 np.random.choice(ids, self.samples_per_group, replace=True)
             )
-        return self._batch_data(np.hstack(batch_sample_ids))
+        return self._batch_data(np.hstack(batch_sample_ids), weights)
 
-    def _batch_data(self, batch_sample_ids):
+    def _batch_data(self, batch_sample_ids, weights):
         num_unique_asvs, sparse_indices, obs_indices, counts, taxon_counts = (
             [],
             [],
@@ -171,7 +194,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
 
         # get list of unique observations in batch
         unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
-        if self.is_16S:
+        if self.sequence_embeddings is None:
             lookup = {
                 "a": 1,
                 "c": 2,
@@ -187,7 +210,13 @@ class TripletGenerator(tf.keras.utils.Sequence):
                 [map(asv) for asv in self.asv_ids[unique_obs]], axis=0
             )
         else:
-            tokens = unique_obs
+            asvs, asv_ids_idx, sequence_labels_idx = np.intersect1d(
+                self.asv_ids[unique_obs],
+                self.sequence_labels,
+                assume_unique=True,
+                return_indices=True,
+            )
+            tokens = self.sequence_embeddings[sequence_labels_idx]
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
 
         if self.return_sample_ids:
@@ -203,7 +232,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
                 obs_indices,
                 counts,
                 taxon_counts,
-            ), y_true
+            ), (y_true, weights)
 
         encoder_output = self._encoder_output(batch_sample_ids)
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
@@ -355,46 +384,50 @@ if __name__ == "__main__":
     from aam.models.triplet_encoder import TripletEncoder
 
     taxonomy = pd.read_csv(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet_table_gg2.asv_taxonomy.tsv",
+        "/home/kalen/removing-study-id/agp-unique-samples-taxonomy.tsv",
         sep="\t",
         index_col=0,
     )
     # taxonomy = taxonomy.loc[taxonomy["Taxon"].str.len() > 3]
 
     ug = TripletGenerator(
-        table="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet_table_gg2.asv.biom",
-        metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet-training-metadata.tsv",
-        metadata_column="sample_alias",
+        table="/home/kalen/removing-study-id/agp-unique-samples.biom",
+        metadata="/home/kalen/removing-study-id/sg-train.tsv",
+        metadata_column="sequence_group",
         taxonomy=taxonomy,
+        sequence_embeddings="/home/kalen/removing-study-id/sg-train-asv-embeddings.npy",
+        sequence_labels="/home/kalen/removing-study-id/sg-train-asv-labels.npy",
         gen_new_tables=True,
         samples_per_group=2,
         max_groups=10,
     )
-    # x, y = ug[0]
-    # print(y)
-    # print(ug.num_groups)
-    dataset = get_dataset(ug)
-    # (tokens, batch_indices, obs_indices, counts) = x
-    # print("tokens:", tokens.shape)
-    # print("batch_indices:", batch_indices.shape, batch_indices)
-    # print("obs indices:", obs_indices.shape)
-    # print("counts:", counts)
-    # print("y_true", y)
+    x, y = ug[0]
+    # print(x, y, y.shape)
+    # # x, y = ug[0]
+    # # print(y)
+    # # print(ug.num_groups)
+    # dataset = get_dataset(ug)
+    # # (tokens, batch_indices, obs_indices, counts) = x
+    # # print("tokens:", tokens.shape)
+    # # print("batch_indices:", batch_indices.shape, batch_indices)
+    # # print("obs indices:", obs_indices.shape)
+    # # print("counts:", counts)
+    # # print("y_true", y)
 
-    asv_encoder = tf.keras.models.load_model(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-encoder-large/model.keras",
-        compile=False,
-    )
-    model = TripletEncoder(asv_encoder)
+    # asv_encoder = tf.keras.models.load_model(
+    #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/unifrac-encoder-large/model.keras",
+    #     compile=False,
+    # )
+    # model = TripletEncoder(asv_encoder)
 
-    token_shape = tf.TensorShape([None, 150])
-    batch_indicies = tf.TensorShape([None, 2])
-    indicies_shape = tf.TensorShape([None])
-    count_shape = tf.TensorShape([None, 1])
-    taxonomy_count = tf.TensorShape([None, ug.num_tax_values])
-    model.build(
-        [token_shape, batch_indicies, indicies_shape, count_shape, taxonomy_count]
-    )
-    for x, y in dataset:
-        print(model(x))
-    # print(model(x))
+    # token_shape = tf.TensorShape([None, 150])
+    # batch_indicies = tf.TensorShape([None, 2])
+    # indicies_shape = tf.TensorShape([None])
+    # count_shape = tf.TensorShape([None, 1])
+    # taxonomy_count = tf.TensorShape([None, ug.num_tax_values])
+    # model.build(
+    #     [token_shape, batch_indicies, indicies_shape, count_shape, taxonomy_count]
+    # )
+    # for x, y in dataset:
+    #     print(model(x))
+    # # print(model(x))

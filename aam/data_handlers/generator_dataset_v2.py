@@ -54,6 +54,8 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         taxonomy: Optional[Union[str, pd.DataFrame]] = None,
         metadata: Optional[Union[str, pd.DataFrame]] = None,
         metadata_column: Optional[str] = None,
+        sequence_embeddings: Optional[str] = None,
+        sequence_labels: Optional[str] = None,
         shift: Optional[Union[str, float]] = None,
         scale: Union[str, float] = "minmax",
         max_token_per_sample: int = 1024,
@@ -83,7 +85,15 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         self.rarefy_depth: int = rarefy_depth
         self.max_token_per_sample: int = max_token_per_sample
         self.return_sample_ids: bool = return_sample_ids
-
+        self.sequence_embeddings = sequence_embeddings
+        self.sequence_labels = sequence_labels
+        if self.sequence_embeddings is not None:
+            self.sequence_embeddings = np.load(self.sequence_embeddings)
+            self.sequence_labels = np.load(self.sequence_labels, allow_pickle=True)
+            self.sequence_labels = self.sequence_labels.astype(np.str_)
+            self.sequence_labels = np.char.encode(
+                self.sequence_labels, encoding="utf-8"
+            )
         self.include_sample_weight: bool = is_categorical
 
         self.shuffle = shuffle
@@ -175,7 +185,7 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
 
         # get list of unique observations in batch
         unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
-        if self.is_16S:
+        if self.sequence_embeddings is None:
             lookup = {
                 "a": 1,
                 "c": 2,
@@ -191,7 +201,13 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
                 [map(asv) for asv in self.asv_ids[unique_obs]], axis=0
             )
         else:
-            tokens = unique_obs
+            asvs, asv_ids_idx, sequence_labels_idx = np.intersect1d(
+                self.asv_ids[unique_obs],
+                self.sequence_labels,
+                assume_unique=True,
+                return_indices=True,
+            )
+            tokens = self.sequence_embeddings[sequence_labels_idx]
         y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
 
         if self.return_sample_ids:

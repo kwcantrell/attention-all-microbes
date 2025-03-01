@@ -353,7 +353,7 @@ def fit_denoised_unifrac_regressor(
         epochs=p_epochs,
         **common_kwargs,
     )
-    training_dataset = get_dataset(train_gen)
+    # training_dataset = get_dataset(train_gen)
 
     val_gen = MultiDepthGenerator(
         table=val_table,
@@ -555,49 +555,48 @@ def fit_triplet_regressor(
     p_nuc_encoder: Union[None, tf.keras.Model],
     p_use_linear_bias: bool,
 ):
-    import tensorflow_addons as tfa
     from biom import load_table
+    from sklearn.model_selection import StratifiedKFold
 
-    from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.triplet_generator_dataset import (
         TripletGenerator,
         get_dataset,
     )
     from aam.models.triplet_encoder import TripletEncoder
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
-    from aam.models.utils import cos_decay_with_warmup
-
     # start pre processing dataset
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
         [m_metadata_column]
     ]
-    ids, table, df = validate_metadata(table, df, p_missing_samples)
-    indices = np.arange(len(ids), dtype=np.int32)
+    df = df.loc[df.index.isin(table.ids())]
+    print(table.shape)
+    print(df.shape)
 
-    np.random.shuffle(indices)
-    train_size = int(len(ids) * 0.8)
+    kfolds = StratifiedKFold(shuffle=True, random_state=42)
+    for train_indices, val_indices in kfolds.split(
+        df[m_metadata_column], df[m_metadata_column]
+    ):
+        train_df = df.iloc[train_indices]
+        train_table = table.filter(set(train_df.index), inplace=False)
 
-    train_indices = indices[:train_size]
-    train_ids = ids[train_indices]
-    train_table = table.filter(train_ids, inplace=False)
-
-    val_indices = indices[train_size:]
-    val_ids = ids[val_indices]
-    val_table = table.filter(val_ids, inplace=False)
+        val_df = df.iloc[val_indices]
+        val_table = table.filter(set(val_df.index), inplace=False)
+        break
 
     taxonomy = pd.read_csv(m_taxonomy, sep="\t", index_col=0)
 
     common_kwargs = {
         "metadata_column": m_metadata_column,
-        "rarefy_depth": 1000,
+        "rarefy_depth": 10000,
         "samples_per_group": 10,
         "is_16S": True,
         "tree_path": i_tree,
         "metadata": df,
         "taxonomy": taxonomy,
         "max_groups": 10,
+        "sequence_embeddings": "/home/kalen/removing-study-id/sg-train-asv-embeddings.npy",
+        "sequence_labels": "/home/kalen/removing-study-id/sg-train-asv-labels.npy",
     }
     train_gen = TripletGenerator(
         table=train_table,
@@ -605,10 +604,8 @@ def fit_triplet_regressor(
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
         steps_per_epoch=100,
-        # metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet-training-metadata.tsv",
         **common_kwargs,
     )
-    training_dataset = get_dataset(train_gen)
 
     val_gen = TripletGenerator(
         table=val_table,
@@ -616,10 +613,8 @@ def fit_triplet_regressor(
         gen_new_tables=False,
         epochs=1,
         steps_per_epoch=10,
-        # metadata="/home/kalen/aam-research-exam/research-exam/healty-age-regression/cancer-qiita/tissue_cancer_patient/AAM-study-triplet/triplet-test-metadata.tsv",
         **common_kwargs,
     )
-    val_dataset = get_dataset(val_gen)
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -632,41 +627,12 @@ def fit_triplet_regressor(
     if p_unifrac_metric == "faith_pd":
         output_dim = 1
 
-    model = None
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
-    elif p_nuc_encoder is not None:
-        asv_encoder = tf.keras.models.load_model(p_nuc_encoder, compile=False)
-        asv_encoder.trainable = p_train_nuc_encoder
+    else:
+        model = TripletEncoder()
 
-        model = TripletEncoder(asv_encoder)
-
-    lr_scheduler = LAMBLRScheduler(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
-    )
-
-    optimizer = tfa.optimizers.LAMB(
-        learning_rate=p_lr,
-        weight_decay=p_weight_decay,
-        exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            # "embeddings",
-        ],
-        exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            # "embeddings",
-        ],
-    )
-    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-    #
-
-    token_shape = tf.TensorShape([None, 150])
+    token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
@@ -675,10 +641,7 @@ def fit_triplet_regressor(
         [token_shape, batch_indicies, indicies_shape, count_shape, taxonomy_count]
     )
     model.summary()
-    model.compile(
-        optimizer=optimizer,
-        run_eagerly=False,
-    )
+    model.compile(run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
@@ -693,11 +656,10 @@ def fit_triplet_regressor(
         #     start_from_epoch=p_early_stop_warmup,
         # ),
         model_saver,
-        lr_scheduler,
     ]
     model.fit(
-        training_dataset,
-        validation_data=val_dataset,
+        train_gen,
+        validation_data=val_gen,
         callbacks=[*core_callbacks],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,

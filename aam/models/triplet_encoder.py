@@ -3,104 +3,214 @@ from __future__ import annotations
 from typing import Union
 
 import tensorflow as tf
+import tensorflow_addons as tfa
+
+from aam.callbacks import LAMBLRScheduler
 
 # from aam.data_handlers.generator_dataset import batch_embeddings
-from aam.losses import PairwiseLoss, categorical_triplet_loss
+from aam.losses import _pairwise_distances, categorical_triplet_loss
 from aam.models.unifrac_encoder import UnifracEncoder
-from aam.models.utils import sort_using_counts
+from aam.models.utils import cos_decay_with_warmup, sort_using_counts
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
 
 
+def _ff_block(output_dim, use_bias=True, dropout_rate=None):
+    block = [
+        tf.keras.layers.Dense(
+            output_dim,
+            use_bias=use_bias,
+            kernel_initializer=tf.keras.initializers.HeUniform(),
+        ),
+        tf.keras.layers.LayerNormalization(dtype=tf.float32),
+        tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
+        tf.keras.layers.Dropout(dropout_rate),
+    ]
+    return block
+
+
+@tf.keras.saving.register_keras_serializable(package="AutoEncoder")
+class AutoEncoder(tf.keras.Model):
+    def __init__(self, dropout_rate, **kwargs):
+        super(AutoEncoder, self).__init__(**kwargs)
+        self.dropout_rate = dropout_rate
+
+    def build(self, input_shape):
+        if self.built:
+            print("AutoEncoder is already built")
+            return
+
+        asv_embeddings, taxonomy_counts = input_shape
+
+        self.asv_encoder = tf.keras.Sequential(
+            _ff_block(1024, dropout_rate=self.dropout_rate)
+        )
+        self.taxonomy_encoder = tf.keras.Sequential(
+            _ff_block(1024, dropout_rate=self.dropout_rate)
+        )
+        self.encoder = tf.keras.Sequential(
+            _ff_block(512, dropout_rate=self.dropout_rate)
+            + _ff_block(512, dropout_rate=self.dropout_rate)
+        )
+
+        self.intermediate_ff = tf.keras.layers.Dense(512, use_bias=True)
+        self.encoder_out = tf.keras.layers.Dense(512, use_bias=True)
+
+        super(AutoEncoder, self).build(input_shape)
+
+    def call(
+        self,
+        inputs,
+        training: bool = False,
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        training = training and self.trainable
+
+        asv_embeddings, taxonomy_counts = inputs
+
+        asv_embeddings = self.asv_encoder(asv_embeddings, training=training)
+        taxonomy_embeddings = self.taxonomy_encoder(taxonomy_counts, training=training)
+
+        intermediate_embeddings = self.encoder(asv_embeddings + taxonomy_embeddings)
+        intermediate_embeddings = self.intermediate_ff(intermediate_embeddings)
+        encoder_output = self.encoder_out(intermediate_embeddings)
+
+        print("Triplet AutoEncoder exit...")
+        return encoder_output, intermediate_embeddings
+
+    def get_config(self):
+        config = super(AutoEncoder, self).get_config()
+        config.update({"dropout_rate": self.dropout_rate})
+        return config
+
+
 @tf.keras.saving.register_keras_serializable(package="TripletEncoder")
 class TripletEncoder(tf.keras.Model):
-    def __init__(
-        self,
-        asv_encoder=None,
-        dropout_rate: float = 0.0,
-        **kwargs,
-    ):
+    def __init__(self, dropout_rate: float = 0.3, **kwargs):
         super(TripletEncoder, self).__init__(**kwargs)
         self.dropout_rate = dropout_rate
 
-        if asv_encoder is None:
-            raise Exception("UnifracDeniser is missing ASVEncoder")
-        self.asv_encoder = asv_encoder
-        self.asv_encoder.trainable = False
-
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+
+        self.asv_loss = _pairwise_distances
+        self.asv_rec_tracker = tf.keras.metrics.Mean(name="asv_rec_loss")
+        self.tax_rec_tracker = tf.keras.metrics.Mean(name="tax_rec_loss")
+
         self.triplet_loss = categorical_triplet_loss
-        self.triplet_tracker = tf.keras.metrics.Mean(name="triplet_loss")
-        self.ortho_tracker = tf.keras.metrics.Mean(name="triplet_loss")
+        self.ortho_tracker = tf.keras.metrics.Mean(name="ortho_loss")
+        self.discriminator_loss = tf.keras.losses.CategoricalCrossentropy(
+            reduction="none"
+        )
+        self.discriminator_tracker = tf.keras.metrics.Mean(name="discriminator_loss")
+        self.num_groups = 64
 
-    # def build(self, input_shape):
-    #     if self.built:
-    #         print("TripletEncoder is already built")
-    #         return
+        self.encoder = AutoEncoder(dropout_rate=self.dropout_rate, name="auto_encoder")
+        self.discriminator = tf.keras.Sequential(
+            _ff_block(256, dropout_rate=self.dropout_rate)
+            + _ff_block(256, dropout_rate=self.dropout_rate)
+            + [
+                tf.keras.layers.Dense(
+                    64,
+                    use_bias=True,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                    activation="softmax",
+                )
+            ]
+        )
 
-    #     def _ff_block(output_dim, use_bias=True, dropout_rate=None):
-    #         block = [
-    #             tf.keras.layers.LayerNormalization(dtype=tf.float32),
-    #             tf.keras.layers.Dense(
-    #                 output_dim,
-    #                 use_bias=use_bias,
-    #                 kernel_initializer=tf.keras.initializers.HeUniform(),
-    #             ),
-    #             tf.keras.layers.LayerNormalization(dtype=tf.float32),
-    #             tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
-    #         ]
-    #         if dropout_rate:
-    #             block.append(tf.keras.layers.Dropout(dropout_rate))
-    #         return block
+        self.ae_opt = tf.keras.optimizers.AdamW(
+            cos_decay_with_warmup(0.0003, 0, 1000000),
+            weight_decay=1e-5,
+        )
+        self.discriminator_opt = tf.keras.optimizers.AdamW(
+            cos_decay_with_warmup(0.0003, 0, 1000000),
+            weight_decay=1e-5,
+        )
 
-    #     self.sample_embedding_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
-    #     self.tax_count_ff = tf.keras.Sequential(_ff_block(32, dropout_rate=0.5))
-    #     self.out_ff = tf.keras.layers.Dense(
-    #         32, kernel_initializer=tf.keras.initializers.HeUniform(), dtype=tf.float32
-    #     )
-    #     self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
-
-    #     super(TripletEncoder, self).build(input_shape)
     def build(self, input_shape):
         if self.built:
             print("TripletEncoder is already built")
             return
 
-        def _ff_block(output_dim, use_bias=True, dropout_rate=None):
-            block = [
-                tf.keras.layers.Dense(
-                    output_dim,
-                    use_bias=use_bias,
-                    kernel_initializer=tf.keras.initializers.HeUniform(),
-                ),
-                tf.keras.layers.LayerNormalization(dtype=tf.float32),
-                tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
-                tf.keras.layers.Dropout(dropout_rate),
-            ]
-            return block
+        asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = (
+            input_shape
+        )
+        self.encoder.build([asv_embeddings, taxonomy_counts])
+        self.discriminator.build([None, 512])
 
-        self.sample_embedding_ff = tf.keras.Sequential(_ff_block(128, dropout_rate=0.0))
-        self.tax_count_ff = tf.keras.Sequential(_ff_block(128, dropout_rate=0.0))
-        self.out_ff = tf.keras.layers.Dense(32, use_bias=True)
-        self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
+        self.decoder = tf.keras.Sequential(
+            _ff_block(1024, dropout_rate=self.dropout_rate)
+            + _ff_block(1024, dropout_rate=self.dropout_rate)
+        )
+        self.decoder.build([None, 512])
+
+        self.asv_output = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(
+                    asv_embeddings[-1],
+                    use_bias=True,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                )
+            ],
+        )
+        self.asv_output.build([None, 1024])
+
+        self.taxonomy_output = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(
+                    taxonomy_counts[-1],
+                    use_bias=True,
+                    kernel_initializer=tf.keras.initializers.HeUniform(),
+                )
+            ],
+        )
+        self.taxonomy_output.build([None, 1024])
 
         super(TripletEncoder, self).build(input_shape)
 
     def _compute_loss(
         self,
         y,
+        inputs,
         outputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        triplet_embeddings = outputs
+        y, sample_weights = y
 
         y = tf.squeeze(y, axis=-1)
+        asv_embeddings, taxonomy_counts = inputs
+        asv_output, tax_output = outputs
+
+        # asv reconstruction
+        asv_loss = tf.sqrt(
+            tf.reduce_sum(tf.square(asv_embeddings - asv_output), axis=-1)
+        )
+        asv_loss = tf.reduce_mean(asv_loss * sample_weights)
+
+        # taxonomy reconstruction
+        tax_loss = tf.abs(tax_output - taxonomy_counts)
+        tax_loss = tf.reduce_mean(tax_loss, axis=-1)
+        tax_loss = tf.reduce_mean(tax_loss * sample_weights)
+
+        loss = asv_loss + tax_loss
+        return loss, asv_loss, tax_loss
+
+    def _compute_discriminator_loss(self, y, outputs):
+        y, sample_weights = y
+
+        y = tf.reshape(y, shape=[-1])
+        intermediate_embeddings, y_pred = outputs
+
+        # orthogonal penalty
         groups, _ = tf.unique(y)
         num_groups = tf.shape(groups)[0]
-        triplet_loss, ortho_loss = self.triplet_loss(triplet_embeddings, num_groups)
-        triplet_loss = tf.reduce_mean(triplet_loss)
-        ortho_loss = tf.reduce_mean(ortho_loss)
-        loss = triplet_loss + ortho_loss
-        return loss, triplet_loss, ortho_loss
+        _, ortho_loss = self.triplet_loss(intermediate_embeddings, num_groups)
+        ortho_loss = tf.reduce_mean(ortho_loss * sample_weights)
+
+        y = tf.one_hot(y, depth=64)
+        discrim_loss = self.discriminator_loss(y, y_pred)
+        discrim_loss = tf.reduce_mean(discrim_loss * sample_weights)
+
+        loss = discrim_loss + ortho_loss
+        return loss, discrim_loss, ortho_loss
 
     def predict_step(
         self,
@@ -110,8 +220,23 @@ class TripletEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        triplet_embeddings = self.call(inputs, training=False)
-        return triplet_embeddings, y
+        encoder_output, intermediate_embeddings = self.call(inputs, training=False)
+        return encoder_output, y
+
+    def _process_input(self, inputs):
+        asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = inputs
+
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+        asv_embeddings = self.sample_embeddings(
+            asv_embeddings, batch_indices, asv_counts, asv_indices
+        )
+
+        taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
+        total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
+        taxonomy_counts = taxonomy_counts / total_counts
+        return asv_embeddings, taxonomy_counts
 
     def train_step(
         self,
@@ -121,25 +246,40 @@ class TripletEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
+        inputs = self._process_input(inputs)
 
         with tf.GradientTape() as tape:
-            outputs = self(inputs, training=True)
-            loss, triplet_loss, ortho_loss = self._compute_loss(y, outputs)
-            if self.compute_dtype == "float16":
-                loss = self.optimizer.get_scaled_loss(loss)
+            _, intermediate_embeddings = self(inputs, training=True)
+            outputs = self.discriminator(intermediate_embeddings, training=True)
+            loss, disc_loss, ortho_loss = self._compute_discriminator_loss(
+                y, (intermediate_embeddings, outputs)
+            )
         gradients = tape.gradient(loss, self.trainable_variables)
-        if self.compute_dtype == "float16":
-            gradients = self.optimizer.get_unscaled_gradients(gradients)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.discriminator_opt.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(loss)
-        self.triplet_tracker.update_state(triplet_loss)
+        with tf.GradientTape() as tape:
+            encoder_output, _ = self(inputs, training=True)
+            decoded_emddings = self.decoder(encoder_output, training=True)
+            asv_output = self.asv_output(decoded_emddings, training=True)
+            tax_output = self.taxonomy_output(decoded_emddings, training=True)
+            ae_loss, asv_loss, tax_loss = self._compute_loss(
+                y, inputs, (asv_output, tax_output)
+            )
+        gradients = tape.gradient(ae_loss, self.trainable_variables)
+        self.ae_opt.apply_gradients(zip(gradients, self.trainable_variables))
+
+        self.loss_tracker.update_state(ae_loss + loss)
         self.ortho_tracker.update_state(ortho_loss)
+        self.asv_rec_tracker.update_state(asv_loss)
+        self.tax_rec_tracker.update_state(tax_loss)
+        self.discriminator_tracker.update_state(disc_loss)
         return {
             "loss": self.loss_tracker.result(),
-            "triplet_loss": self.triplet_tracker.result(),
             "ortho_loss": self.ortho_tracker.result(),
-            "learning_rate": self.optimizer.learning_rate,
+            "asv_loss": self.asv_rec_tracker.result(),
+            "tax_loss": self.tax_rec_tracker.result(),
+            "discrim_loss": self.discriminator_tracker.result(),
+            "learning_rate": self.ae_opt.learning_rate,
         }
 
     def test_step(
@@ -150,18 +290,36 @@ class TripletEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
+        inputs = self._process_input(inputs)
 
-        outputs = self(inputs, training=False)
-        loss, triplet_loss, ortho_loss = self._compute_loss(y, outputs)
+        encoder_output, intermediate_embeddings = self(inputs, training=False)
 
-        self.loss_tracker.update_state(loss)
-        self.triplet_tracker.update_state(triplet_loss)
+        # decoder
+        decoded_embeddings = self.decoder(encoder_output, training=False)
+        asv_output = self.asv_output(decoded_embeddings, training=False)
+        tax_output = self.taxonomy_output(decoded_embeddings, training=False)
+        ae_loss, asv_loss, tax_loss = self._compute_loss(
+            y, inputs, (asv_output, tax_output)
+        )
+
+        # discriminator
+        outputs = self.discriminator(intermediate_embeddings, training=False)
+        loss, disc_loss, ortho_loss = self._compute_discriminator_loss(
+            y, (intermediate_embeddings, outputs)
+        )
+
+        self.loss_tracker.update_state(ae_loss + loss)
         self.ortho_tracker.update_state(ortho_loss)
+        self.asv_rec_tracker.update_state(asv_loss)
+        self.tax_rec_tracker.update_state(tax_loss)
+        self.discriminator_tracker.update_state(disc_loss)
         return {
             "loss": self.loss_tracker.result(),
-            "triplet_loss": self.triplet_tracker.result(),
             "ortho_loss": self.ortho_tracker.result(),
-            "learning_rate": self.optimizer.learning_rate,
+            "asv_loss": self.asv_rec_tracker.result(),
+            "tax_loss": self.tax_rec_tracker.result(),
+            "discrim_loss": self.discriminator_tracker.result(),
+            "learning_rate": self.ae_opt.learning_rate,
         }
 
     def batch_embeddings(self, asv_embeddings, batch_indicies, counts, asv_indices):
@@ -192,69 +350,36 @@ class TripletEncoder(tf.keras.Model):
         )
         return sample_embeddings
 
-    # def call(
-    #     self,
-    #     inputs,
-    #     training: bool = False,
-    # ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-    #     training = training and self.trainable
-
-    #     inputs, taxonomy_counts = inputs[:4], inputs[4]
-    #     tokens, batch_indices, asv_indices, counts = inputs
-    #     tokens = tf.cast(tokens, dtype=tf.int32)
-    #     batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-    #     asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-
-    #     asv_embeddings = self.asv_encoder.asv_embeddings(tokens)
-    #     sample_embeddings = self.sample_embeddings(
-    #         asv_embeddings, batch_indices, counts, asv_indices
-    #     )
-
-    #     sample_embeddings = self.sample_embedding_ff(
-    #         sample_embeddings, training=training
-    #     )
-
-    #     # compute relative abundance
-    #     taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-    #     total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-    #     taxonomy_counts = taxonomy_counts / total_counts
-    #     taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
-
-    #     sample_embeddings = (sample_embeddings + taxonomy_counts) / 2.0
-    #     output = self.out_ff(sample_embeddings)
-    #     print("Triplet encoder exit...")
-    #     return self.output_activation(output)
     def call(
-        self,
-        inputs,
-        training: bool = False,
+        self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
-        inputs, taxonomy_counts = inputs[:4], inputs[4]
-        tokens, batch_indices, asv_indices, counts = inputs
-        tokens = tf.cast(tokens, dtype=tf.int32)
-        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+        if len(inputs) > 2:
+            asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = (
+                inputs
+            )
 
-        asv_embeddings = self.asv_encoder.asv_embeddings(tokens)
-        sample_embeddings = self.sample_embeddings(
-            asv_embeddings, batch_indices, counts, asv_indices
+            batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+            asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+            asv_embeddings = self.sample_embeddings(
+                asv_embeddings, batch_indices, asv_counts, asv_indices
+            )
+
+            # compute relative abundance
+            taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
+            total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
+            taxonomy_counts = taxonomy_counts / total_counts
+        else:
+            asv_embeddings, taxonomy_counts = inputs
+
+        encoder_output, intermediate_embeddings = self.encoder(
+            [asv_embeddings, taxonomy_counts], training=training
         )
-        sample_embeddings = self.sample_embedding_ff(
-            sample_embeddings, training=training
-        )
 
-        # compute relative abundance
-        taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-        total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-        taxonomy_counts = taxonomy_counts / total_counts
-        taxonomy_embeddings = self.tax_count_ff(taxonomy_counts, training=training)
-
-        output_embedding = sample_embeddings + taxonomy_embeddings
-        # output_embedding = self.out_ff(output_embedding)
         print("Triplet encoder exit...")
-        return self.output_activation(self.out_ff(output_embedding))
+        return encoder_output, intermediate_embeddings
 
     def get_config(self):
         config = super(TripletEncoder, self).get_config()
@@ -262,7 +387,6 @@ class TripletEncoder(tf.keras.Model):
             {
                 "dropout_rate": self.dropout_rate,
                 "build_input_shape": self.get_build_config(),
-                "asv_encoder": tf.keras.saving.serialize_keras_object(self.asv_encoder),
             }
         )
         return config
@@ -270,9 +394,6 @@ class TripletEncoder(tf.keras.Model):
     @classmethod
     def from_config(cls, config):
         print("Reconstructing ASVEncoder...")
-        asv_encoder = tf.keras.saving.deserialize_keras_object(config["asv_encoder"])
-        asv_encoder.trainable = False
-        config["asv_encoder"] = asv_encoder
 
         print("Constructing UnifracDenoser from config")
         input_shape = None
