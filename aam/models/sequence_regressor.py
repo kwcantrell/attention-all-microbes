@@ -257,34 +257,18 @@ class SequenceRegressor(tf.keras.Model):
         tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor],
     ]:
         training = training and self.trainable
-        if len(inputs) == 5:
-            inputs, taxonomy_counts = inputs[:4], inputs[4]
-            # asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
-            # mask = tf.cast(counts > 0, dtype=self.compute_dtype)
-            # asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
+        if len(inputs) == 4:
+            asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
+            mask = tf.cast(counts > 0, dtype=self.compute_dtype)
+            asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
-            # sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-            #     mask, axis=1
-            # )
-            if self.base_model is not None:
-                _, sample_embeddings = self.base_model(inputs, training=False)
-            else:
-                asv_embeddings, counts = inputs
-                mask = tf.cast(counts > 0, dtype=tf.float32)
-                sample_embeddings = tf.reduce_sum(
-                    asv_embeddings, axis=1
-                ) / tf.reduce_sum(mask, axis=1)
+            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+                mask, axis=1
+            )
             sample_embeddings = self.sample_embedding_ff(
                 sample_embeddings, training=training
             )
 
-            # compute relative abundance
-            taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-            total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-            taxonomy_counts = taxonomy_counts / total_counts
-            taxonomy_counts = self.tax_count_ff(taxonomy_counts, training=training)
-
-            sample_embeddings = (sample_embeddings + taxonomy_counts) / 2.0
             output = self.out_ff(sample_embeddings)
             return self.output_activation(sample_embeddings), self.output_activation(
                 output
