@@ -127,10 +127,6 @@ class SequenceRegressor(tf.keras.Model):
         self.sample_embedding_ff = tf.keras.Sequential(
             _ff_block(32, dropout_rate=0.5, init_input=True)
         )
-        if self.base_model is not None:
-            self.tax_count_ff = tf.keras.Sequential(
-                _ff_block(32, dropout_rate=0.5, init_input=False)
-            )
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
         )
