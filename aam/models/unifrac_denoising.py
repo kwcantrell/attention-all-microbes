@@ -182,12 +182,9 @@ class UnifracDenoiser(tf.keras.Model):
             tuple[tuple[tf.Tensor, tf.Tensor], tuple[tf.Tensor, tf.Tensor]],
         ],
     ):
-        inputs, y = data
-        unifrac_embeddings, denoise_unifrac_embeddings = self.call(
-            inputs, training=False
-        )
-        return denoise_unifrac_embeddings, y
-        # return self.asv_embeddings(inputs), y
+        tokens = data
+        embeddings = self.asv_encoder.asv_embeddings(tokens)
+        return embeddings
 
     def train_step(
         self,
