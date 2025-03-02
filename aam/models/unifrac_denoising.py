@@ -183,7 +183,7 @@ class UnifracDenoiser(tf.keras.Model):
         ],
     ):
         tokens = data
-        embeddings = self.asv_encoder.asv_embeddings(tokens)
+        embeddings = self.extract_asv_embeddings(tokens)
         return embeddings
 
     def train_step(
