@@ -276,7 +276,10 @@ class SequenceRegressor(tf.keras.Model):
             if self.base_model is not None:
                 asv_embeddings, counts = self.base_model.asv_embeddings(inputs)
             else:
-                asv_embeddings, counts = self.batch_embeddings(inputs)
+                tokens, batch_indices, asv_indices, counts = inputs
+                asv_embeddings, counts = self.batch_embeddings(
+                    tokens, batch_indices, counts, asv_indices
+                )
             mask = tf.cast(counts > 0, dtype=self.compute_dtype)
             asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
 
