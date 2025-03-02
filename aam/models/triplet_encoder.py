@@ -248,14 +248,14 @@ class TripletEncoder(tf.keras.Model):
         inputs, y = data
         inputs = self._process_input(inputs)
 
-        with tf.GradientTape() as tape:
-            _, intermediate_embeddings = self(inputs, training=True)
-            outputs = self.discriminator(intermediate_embeddings, training=True)
-            loss, disc_loss, ortho_loss = self._compute_discriminator_loss(
-                y, (intermediate_embeddings, outputs)
-            )
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.discriminator_opt.apply_gradients(zip(gradients, self.trainable_variables))
+        # with tf.GradientTape() as tape:
+        #     _, intermediate_embeddings = self(inputs, training=True)
+        #     outputs = self.discriminator(intermediate_embeddings, training=True)
+        #     loss, disc_loss, ortho_loss = self._compute_discriminator_loss(
+        #         y, (intermediate_embeddings, outputs)
+        #     )
+        # gradients = tape.gradient(loss, self.trainable_variables)
+        # self.discriminator_opt.apply_gradients(zip(gradients, self.trainable_variables))
 
         with tf.GradientTape() as tape:
             encoder_output, _ = self(inputs, training=True)
@@ -268,17 +268,17 @@ class TripletEncoder(tf.keras.Model):
         gradients = tape.gradient(ae_loss, self.trainable_variables)
         self.ae_opt.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(ae_loss + loss)
-        self.ortho_tracker.update_state(ortho_loss)
+        # self.loss_tracker.update_state(ae_loss + loss)
+        # self.ortho_tracker.update_state(ortho_loss)
         self.asv_rec_tracker.update_state(asv_loss)
         self.tax_rec_tracker.update_state(tax_loss)
-        self.discriminator_tracker.update_state(disc_loss)
+        # self.discriminator_tracker.update_state(disc_loss)
         return {
-            "loss": self.loss_tracker.result(),
-            "ortho_loss": self.ortho_tracker.result(),
+            # "loss": self.loss_tracker.result(),
+            # "ortho_loss": self.ortho_tracker.result(),
             "asv_loss": self.asv_rec_tracker.result(),
             "tax_loss": self.tax_rec_tracker.result(),
-            "discrim_loss": self.discriminator_tracker.result(),
+            # "discrim_loss": self.discriminator_tracker.result(),
             "learning_rate": self.ae_opt.learning_rate,
         }
 
