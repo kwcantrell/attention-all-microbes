@@ -22,7 +22,8 @@ from aam.utils import create_random_mask, float_mask
 class SequenceRegressor(tf.keras.Model):
     def __init__(
         self,
-        token_limit: int,
+        hidden_dim: int,
+        num_hidden_layers: int = 2,
         base_output_dim: Optional[int] = None,
         shift: float = 0.0,
         scale: float = 1.0,
@@ -53,7 +54,8 @@ class SequenceRegressor(tf.keras.Model):
         **kwargs,
     ):
         super(SequenceRegressor, self).__init__(**kwargs)
-        self.token_limit = token_limit
+        self.hidden_dim = hidden_dim
+        self.num_hidden_layers = num_hidden_layers
         self.base_output_dim = base_output_dim
         self.shift = shift
         self.scale = scale
@@ -107,30 +109,23 @@ class SequenceRegressor(tf.keras.Model):
             if self.base_model is not None:
                 self.base_model.trainable = False
 
-        def _ff_block(output_dim, use_bias=True, dropout_rate=None, init_input=True):
+        def _ff_block(output_dim, use_bias=True):
             block = [
                 tf.keras.layers.Dense(
                     output_dim,
                     use_bias=use_bias,
-                    kernel_initializer=tf.keras.initializers.HeUniform(),
                 ),
                 tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
             ]
-            if init_input:
-                block = [tf.keras.layers.BatchNormalization(dtype=tf.float32)] + block
-
-            if dropout_rate:
-                block.append(tf.keras.layers.Dropout(dropout_rate))
             return block
 
-        self.sample_embedding_ff = tf.keras.Sequential(
-            _ff_block(32, dropout_rate=0.0, init_input=True)
-        )
-        self.out_ff = tf.keras.layers.Dense(
-            self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
-        )
-        self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
+        self.ff = []
+        self.dropout_layers = []
+        for _ in range(self.num_hidden_layers):
+            self.ff.append(_ff_block(self.hidden_dim))
+            self.dropout_layers.append(tf.keras.layers.Dropout(self.dropout_rate))
+        self.out_ff = tf.keras.layers.Dense(self.out_dim)
         super(SequenceRegressor, self).build(input_shape)
 
     def _compute_loss(
@@ -286,38 +281,29 @@ class SequenceRegressor(tf.keras.Model):
                 )
             mask = tf.cast(counts > 0, dtype=self.compute_dtype)
             asv_embeddings = tf.cast(asv_embeddings, dtype=self.compute_dtype) * mask
-
-            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-                mask, axis=1
-            )
-            sample_embeddings = self.sample_embedding_ff(
-                sample_embeddings, training=training
-            )
-
-            output = self.out_ff(sample_embeddings)
-            return self.output_activation(sample_embeddings), self.output_activation(
-                output
-            )
         else:
             asv_embeddings, counts = inputs
             mask = tf.cast(counts > 0, dtype=tf.float32)
-            sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
-                mask, axis=1
-            )
-            sample_embeddings = self.sample_embedding_ff(
+
+        sample_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
+            mask, axis=1
+        )
+
+        for i in range(self.num_hidden_layers):
+            sample_embeddings = self.ff[i](sample_embeddings, training=training)
+            sample_embeddings = self.dropout_layers[i](
                 sample_embeddings, training=training
             )
 
-            output = self.out_ff(sample_embeddings)
-            return self.output_activation(sample_embeddings), self.output_activation(
-                output
-            )
+        output = self.out_ff(sample_embeddings)
+        return sample_embeddings, output
 
     def get_config(self):
         config = super(SequenceRegressor, self).get_config()
         config.update(
             {
-                "token_limit": self.token_limit,
+                "hidden_dim": self.hidden_dim,
+                "num_hidden_layers": self.num_hidden_layers,
                 "base_output_dim": self.base_output_dim,
                 "shift": self.shift,
                 "scale": self.scale,
