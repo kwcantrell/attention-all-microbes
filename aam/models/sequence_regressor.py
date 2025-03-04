@@ -117,9 +117,11 @@ class SequenceRegressor(tf.keras.Model):
                 tf.keras.layers.LayerNormalization(dtype=tf.float32),
                 tf.keras.layers.Lambda(lambda x: tf.keras.activations.gelu(x)),
             ]
+            if init_input:
+                block = [tf.keras.layers.BatchNormalization(dtype=tf.float32)] + block
 
-            # if dropout_rate:
-            #     block.append(tf.keras.layers.Dropout(dropout_rate))
+            if dropout_rate:
+                block.append(tf.keras.layers.Dropout(dropout_rate))
             return block
 
         self.sample_embedding_ff = tf.keras.Sequential(
