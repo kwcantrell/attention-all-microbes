@@ -123,7 +123,7 @@ class SequenceRegressor(tf.keras.Model):
         self.ff = []
         self.dropout_layers = []
         for _ in range(self.num_hidden_layers):
-            self.ff.append(_ff_block(self.hidden_dim))
+            self.ff.append(tf.keras.Sequential(_ff_block(self.hidden_dim)))
             self.dropout_layers.append(tf.keras.layers.Dropout(self.dropout_rate))
         self.out_ff = tf.keras.layers.Dense(self.out_dim)
         super(SequenceRegressor, self).build(input_shape)
