@@ -186,7 +186,9 @@ class SequenceRegressor(tf.keras.Model):
             y_pred = y_pred * self.scale + self.shift
         else:
             y_true = tf.cast(y_true, dtype=tf.int32)
-            y_pred = tf.argmax(tf.keras.activations.softmax(y_pred), axis=-1)
+            y_pred = tf.argmax(
+                tf.keras.activations.softmax(tf.cast(y_pred, dtype=tf.float64)), axis=-1
+            )
         return y_pred, y_true
 
     def train_step(
