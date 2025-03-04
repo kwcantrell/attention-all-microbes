@@ -11,6 +11,6 @@ def fit():
     Params.test_func = test_func
     
     test()
-    
+
 if __name__ == "__main__":
     fit()

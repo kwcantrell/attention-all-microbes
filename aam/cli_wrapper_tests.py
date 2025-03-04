@@ -1,7 +1,7 @@
 import functools
 import os
 
-def test_fit_asv_encoder(func):
+def validate_fit_asv_encoder(func):
     @functools.wraps(func)
     def wrapper(**kwargs):
 
@@ -25,7 +25,7 @@ def test_fit_asv_encoder(func):
             print(f"Unexpected Error: {e}")
     return wrapper
 
-def test_fit_denoised_unifrac_regressor(func):
+def validate_fit_denoised_unifrac_regressor(func):
     # runner= CliRunner()
     @functools.wraps(func)
     def wrapper(**kwargs):
@@ -55,7 +55,7 @@ def test_fit_denoised_unifrac_regressor(func):
             print(f"Unexpected Error: {e}")
     return wrapper
 
-def test_fit_taxonomy_regressor(func):
+def validate_fit_taxonomy_regressor(func):
     # runner= CliRunner()
     @functools.wraps(func)
     def wrapper(**kwargs):
@@ -87,7 +87,7 @@ def test_fit_taxonomy_regressor(func):
             print(f"Unexpected Error: {e}")
     return wrapper
 
-def test_fit_sample_regressor(func):
+def validate_fit_sample_regressor(func):
     @functools.wraps(func)
     def wrapper(**kwargs):
 
@@ -110,7 +110,7 @@ def test_fit_sample_regressor(func):
             print(f"Unexpected Error: {e}")
     return wrapper
 
-def test_predict_sample_regressor(func):
+def validate_predict_sample_regressor(func):
     @functools.wraps(func)
     def wrapper(**kwargs):
 
@@ -123,8 +123,8 @@ def test_predict_sample_regressor(func):
             assert os.path.exists(kwargs["m_metadata_file"]), f"File {kwargs['m_metadata_file']} does not exist"
             assert kwargs["m_metadata_column"] is not None, "Error: m_metadata_column is missing or None."
             assert kwargs["output_dir"] is not None, "Error: m_metadata_file is missing or None."
-            if os.path.exists(kwargs["output_dir"]):
-                raise ValueError(f"Error: Output directory {kwargs['output_dir']} already exists.")
+            # if os.path.exists(kwargs["output_dir"]):
+            #     raise ValueError(f"Error: Output directory {kwargs['output_dir']} already exists.")
         
             print("All Tests Passed")
             return func(**kwargs)
@@ -135,7 +135,7 @@ def test_predict_sample_regressor(func):
             print(f"Unexpected Error: {e}")
     return wrapper
 
-def test_gotu_infer(func):
+def validate_gotu_infer(func):
     @functools.wraps(func)
     def wrapper(**kwargs):
 
@@ -153,8 +153,8 @@ def test_gotu_infer(func):
             assert kwargs["m_metadata_column"] is not None, "Error: m_metadata_column is missing or None."
             assert kwargs["output_dir"] is not None, "Error: m_metadata_file is missing or None."
             # assert os.path.exists(kwargs["output_dir"]), f"File {kwargs['output_dir']} does not exist"
-            if os.path.exists(kwargs["output_dir"]):
-                raise ValueError(f"Error: Output directory {kwargs['output_dir']} already exists.")
+            # if os.path.exists(kwargs["output_dir"]):
+            #     raise ValueError(f"Error: Output directory {kwargs['output_dir']} already exists.")
         
             print("All Tests Passed")
             return func(**kwargs)

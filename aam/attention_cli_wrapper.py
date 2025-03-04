@@ -20,12 +20,12 @@ from attention_wrappers import (
 )
 
 from cli_wrapper_tests import (
-    test_fit_asv_encoder,
-    test_fit_denoised_unifrac_regressor,
-    test_fit_taxonomy_regressor,
-    test_fit_sample_regressor,
-    test_predict_sample_regressor,
-    test_gotu_infer
+    validate_fit_asv_encoder,
+    validate_fit_denoised_unifrac_regressor,
+    validate_fit_taxonomy_regressor,
+    validate_fit_sample_regressor,
+    validate_predict_sample_regressor,
+    validate_gotu_infer
 )
 
 from biom import load_table
@@ -249,7 +249,7 @@ def save_common_params_fitunitax(m_metadata_column,
 @click.option("--p-include-bert-loss", default=True, required=False, type=bool)
 @click.option("--p-use-linear-bias", default=False, type=bool)
 @inject_common_params
-@test_fit_asv_encoder
+@validate_fit_asv_encoder
 @fit_asv_encoder_decorator
 def fit_asv_encoder(model, **kwargs):
     print("Model has been saved to", kwargs["output_dir"])
@@ -316,7 +316,7 @@ def fit_asv_encoder(model, **kwargs):
 @click.option("--p-nuc-encoder", default=None)
 @click.option("--p-use-linear-bias", default=False, type=bool)
 @inject_common_params
-@test_fit_denoised_unifrac_regressor
+@validate_fit_denoised_unifrac_regressor
 @fit_denoised_unifrac_regressor_decorator
 def fit_denoised_unifrac_regressor(**kwargs):
     
@@ -377,7 +377,7 @@ def fit_denoised_unifrac_regressor(**kwargs):
 @click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
 @click.option("--p-accumulation-steps", default=1, required=False, type=int)
 @inject_common_params
-@test_fit_taxonomy_regressor
+@validate_fit_taxonomy_regressor
 @fit_taxonomy_regressor_decorator
 def fit_taxonomy_regressor(**kwargs):
     print("Model has been saved to", kwargs["output_dir"])
@@ -466,7 +466,7 @@ def fit_taxonomy_regressor(**kwargs):
 @click.option("--p-train-nuc-encoder", default=True, type=bool)
 @click.option("--p-include-count-encoder", default=True, type=bool)
 @inject_common_params
-@test_fit_sample_regressor
+@validate_fit_sample_regressor
 @fit_sample_regressor_decorator
 def fit_sample_regressor(**kwargs):
     print("Model has been saved to", kwargs["output_dir"])
@@ -507,7 +507,7 @@ def fit_sample_regressor(**kwargs):
 )
 @click.option("--output-dir", required=False, type=click.Path(exists=False))
 @inject_common_params  
-@test_predict_sample_regressor
+@validate_predict_sample_regressor
 @predict_sample_regressor_decorator
 def predict_sample_regressor(**kwargs):
     print("Predictions have been saved to", kwargs["output_dir"])
@@ -601,7 +601,7 @@ def predict_sample_regressor(**kwargs):
 @click.option("--p-scale-loss", default=False, type=bool)
 @click.option("--p-normalize-outputs", default=False, type=bool)
 @inject_common_params
-@test_gotu_infer
+@validate_gotu_infer
 @fit_gotu_decorator
 def fit_gotu(**kwargs):
 
