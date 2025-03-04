@@ -1160,3 +1160,156 @@ def fit_gotu_decorator(func):
         model.save(model_save_path, save_format="keras")
         return func(model, **kwargs)
     return wrapper
+
+
+def gotu_infer_decorator(func):
+    def wrapper(**kwargs):
+        i_asv_table: str = kwargs["i_asv_table"]
+        i_gotu_table: str = kwargs["i_gotu_table"]
+        m_metadata_file: str = kwargs["m_metadata_file"]
+        m_metadata_column: str = kwargs["m_metadata_column"]
+        p_missing_samples: str = kwargs["p_missing_samples"]
+        p_epochs: int = kwargs["p_epochs"]
+        p_batch_size: int = kwargs["p_batch_size"]
+        p_asv_limit: int = kwargs["p_asv_limit"]
+        i_gotu_tree_index: float = kwargs["i_gotu_tree_index"]
+        p_tree: str = kwargs["p_tree"]
+        i_gotu_model_path: bool = kwargs["i_gotu_model_path"]
+        p_max_bp: int = kwargs["p_max_bp"]
+        output_dir: str = kwargs["output_dir"]
+        p_is_categorical: bool = kwargs["p_is_categorical"]
+        p_gotu_rarefy_depth: int = kwargs["p_gotu_rarefy_depth"]
+        p_asv_rarefy_depth: int = kwargs["p_asv_rarefy_depth"]
+        p_accumulation_steps: int = kwargs["p_accumulation_steps"]
+
+        from aam.data_handlers.gotu_generator import GOTUGenerator, get_dataset
+        from aam.models.utils import sort_using_counts
+
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        asv_table = load_table(i_asv_table)
+        gotu_table = load_table(i_gotu_table)
+        df_all = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+            [m_metadata_column]
+        ]
+        asv_ids, asv_table, df = validate_metadata(asv_table, df_all, p_missing_samples)
+        gotu_ids, gotu_table, df = validate_metadata(gotu_table, df_all, p_missing_samples)
+
+        common_kwargs = {
+            "metadata_column": m_metadata_column,
+            "max_token_per_sample": p_asv_limit,
+            "rarefy_depth": p_gotu_rarefy_depth,
+            "asv_rarefy_depth": p_asv_rarefy_depth,
+            "batch_size": p_batch_size,
+            "is_16S": False,
+            "is_categorical": p_is_categorical,
+            "max_bp": p_max_bp,
+            "epochs": p_epochs,
+            "tree_path": p_tree,
+            "metadata": df_all,
+            "gotu_tree_index": i_gotu_tree_index,
+        }
+
+        def data_generator(
+            asv_table, gotu_table, df, shuffle, shift, scale, epochs, gen_new_tables
+        ):
+            return GOTUGenerator(
+                gotu_table=gotu_table,
+                asv_table=asv_table,
+                shuffle=shuffle,
+                shift=shift,
+                scale=scale,
+                gen_new_tables=gen_new_tables,
+                **common_kwargs,
+            )
+
+        data_gen = data_generator(asv_table, gotu_table, df_all, True, 0, 1, p_epochs, True)
+        data = get_dataset(data_gen)
+        gotu_count = len(data_gen.gotu_tree_index) + 3
+
+        gotu_model = None
+        if i_gotu_model_path is not None:
+            gotu_model = tf.keras.models.load_model(i_gotu_model_path, compile=False)
+            gotu_model.accumulation_steps = p_accumulation_steps
+        else:
+            raise Exception("YOU HAVE FAILED, COME BACK WITH A TRAINED MODEL")
+
+        gotu_model.compile(
+            run_eagerly=False,
+        )
+        gotu_model.summary()
+        batch_size = data_gen.batch_size
+        gotu_tokens = tf.ones(shape=(batch_size, 1), dtype=tf.int32)
+        gotu_counts = tf.ones(shape=(batch_size, 1, 1), dtype=tf.int32)
+
+        for x in data.take(1):
+            (
+                asv_tokens,
+                asv_batch_indices,
+                asv_indicies,
+                asv_counts,
+                true_gotu_tokens,
+                true_gotu_counts,
+            ) = x
+            asv_embeddings, asv_counts = gotu_model.base_model.extract_asv_embeddings(
+                (asv_tokens, asv_batch_indices, asv_indicies, asv_counts),
+                batch_embeddings=True,
+                sort_counts=True,
+            )
+            asv_mask = tf.cast(asv_counts > 0, dtype=gotu_model.compute_dtype)
+            true_gotu_tokens = tf.expand_dims(true_gotu_tokens, axis=-1)
+            true_gotu_counts = tf.expand_dims(true_gotu_counts, axis=-1)
+            true_gotu_tokens, true_gotu_counts = sort_using_counts(
+                true_gotu_tokens, true_gotu_counts
+            )
+            true_gotu_tokens = tf.squeeze(true_gotu_tokens, axis=-1)
+
+            predicted_token, gotu_token = gotu_model(x)
+
+            print(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist())
+            print(true_gotu_tokens[0].numpy().tolist())
+            print(
+                "Intersection",
+                set(
+                    tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()
+                ).intersection(true_gotu_tokens[0].numpy().tolist()),
+            )
+
+            print(
+                "Union",
+                set(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()).union(
+                    true_gotu_tokens[0].numpy().tolist()
+                ),
+            )
+            print(
+                "Intersection Size",
+                len(
+                    set(
+                        tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()
+                    ).intersection(true_gotu_tokens[0].numpy().tolist())
+                ),
+            )
+            print(
+                "Union Size",
+                len(
+                    set(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()).union(
+                        true_gotu_tokens[0].numpy().tolist()
+                    )
+                ),
+            )
+            print(
+                "Union Size",
+                len(
+                    set(
+                        tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()
+                    ).intersection(true_gotu_tokens[0].numpy().tolist())
+                )
+                / len(
+                    set(tf.math.argmax(predicted_token, axis=-1)[0].numpy().tolist()).union(
+                        true_gotu_tokens[0].numpy().tolist()
+                    )
+                ),
+            )
+        return func
+    return wrapper
