@@ -125,7 +125,7 @@ class SequenceRegressor(tf.keras.Model):
             return block
 
         self.sample_embedding_ff = tf.keras.Sequential(
-            _ff_block(32, dropout_rate=0.5, init_input=True)
+            _ff_block(32, dropout_rate=0.0, init_input=True)
         )
         self.out_ff = tf.keras.layers.Dense(
             self.out_dim, kernel_initializer=tf.keras.initializers.HeUniform()
@@ -142,6 +142,8 @@ class SequenceRegressor(tf.keras.Model):
         ],
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
         sample_embeddings, y_pred = model_outputs
+        if isinstance(y_true, (list, tuple)):
+            y_true, sample_weights = y_true
         y_true = tf.reshape(tf.cast(y_true, tf.float32), shape=[-1, 1])
         y_pred = tf.reshape(tf.cast(y_pred, tf.float32), shape=[-1, 1])
 
