@@ -169,7 +169,7 @@ class SequenceRegressorV2(tf.keras.Model):
 
         self.dropout_layers = []
         filters = 1
-        ff_layers = [tf.keras.layers.Input([input_shape[-1], 1])]
+        ff_layers = [tf.keras.layers.Input([(input_shape[0])[-1], 1])]
         for _ in range(self.num_hidden_layers):
             ff_layers += [
                 tf.keras.Sequential(ConvolutionBlock(filters, 5, pool=False))
