@@ -13,7 +13,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self.kernel_size = kernel_size
         self.pool = pool
 
-    def build(self):
+    def build(self, input_shape):
         self.conv_inner = tf.keras.layers.Conv1D(
             filters=self.filters,
             kernel_size=self.kernel_size,
