@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 from aam.models.utils import sort_using_counts
 import tensorflow as tf
 
@@ -147,7 +147,7 @@ class SequenceRegressorV2(tf.keras.Model):
     def build(self, input_shape):
         if self.built:
             return
-        embeddings, batch_indices, asv_indices, counts = input
+        embeddings, batch_indices, asv_indices, counts = input_shape
         self.encoder = AutoEncoder(name="auto_encoder")
         self.encoder.build([[None, embeddings[-1]], [None, self.rarefy_depth]])
 
