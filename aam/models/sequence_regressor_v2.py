@@ -140,9 +140,8 @@ class AutoEncoder(tf.keras.Model):
 
 @tf.keras.saving.register_keras_serializable(package="SequenceRegressorV2")
 class SequenceRegressorV2(tf.keras.Model):
-    def __init__(self, hidden_dim: int, rarefy_depth, **kwargs):
+    def __init__(self, rarefy_depth, **kwargs):
         super(SequenceRegressorV2, self).__init__(**kwargs)
-        self.hidden_dim = hidden_dim
         self.rarefy_depth = rarefy_depth
 
     def build(self, input_shape):
@@ -220,7 +219,6 @@ class SequenceRegressorV2(tf.keras.Model):
         config = super(SequenceRegressorV2, self).get_config()
         config.update(
             {
-                "hidden_dim": self.hidden_dim,
                 "build_input_shape": self.get_build_config(),
                 "rarefy_depth": self.rarefy_depth,
             }
