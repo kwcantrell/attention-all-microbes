@@ -168,6 +168,7 @@ class SequenceRegressorV2(tf.keras.Model):
         emb_dim = tf.shape(asv_embeddings)[-1]
         batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+        counts = tf.cast(counts, dtype=tf.int32)
 
         if asv_indices is not None:
             asv_embeddings = tf.gather(asv_embeddings, asv_indices)
@@ -204,7 +205,8 @@ class SequenceRegressorV2(tf.keras.Model):
         asv_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
             mask, axis=1
         )
-        counts = tf.ensure_shape([None, None, 1])
+        counts = tf.ensure_shape(counts, [None, None, 1])
+        counts = tf.cast(counts, dtype=tf.float32)
         counts = tf.pad(
             counts, paddings=[[0, 0], [0, self.rarefy_depth - seq_dim], [0, 0]]
         )
