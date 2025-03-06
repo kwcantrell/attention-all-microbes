@@ -147,7 +147,7 @@ class SequenceRegressorV2(tf.keras.Model):
         self.encoder = AutoEncoder(name="auto_encoder")
         self.encoder.build([[None, embeddings[-1]], [None, self.rarefy_depth]])
 
-        emb_dim = tf.shape(embeddings)[-1]
+        emb_dim = embeddings[-1]
         filters = 32
         kernel_size = 3
         enc = emb_dim // (2**5)
