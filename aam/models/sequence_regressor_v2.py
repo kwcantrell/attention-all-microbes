@@ -172,10 +172,10 @@ class SequenceRegressorV2(tf.keras.Model):
         ff_layers = [tf.keras.layers.Input([(input_shape[0])[-1], 1])]
         for _ in range(self.num_hidden_layers):
             ff_layers += [
-                tf.keras.Sequential(ConvolutionBlock(filters, 5, pool=False))
-                + tf.keras.Sequential(ConvolutionBlock(filters, 5, pool=False))
-                + tf.keras.Sequential(ConvolutionBlock(filters, 5, pool=False))
-                + tf.keras.Sequential(ConvolutionBlock(filters, 5, pool=True))
+                ConvolutionBlock(filters, 5, pool=False),
+                ConvolutionBlock(filters, 5, pool=False),
+                ConvolutionBlock(filters, 5, pool=False),
+                ConvolutionBlock(filters, 5, pool=True),
             ]
             filters *= 2
         self.ff = tf.keras.Sequential(ff_layers + [tf.keras.layers.Flatten()])
