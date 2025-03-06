@@ -147,9 +147,11 @@ class SequenceRegressorV2(tf.keras.Model):
         self.encoder = AutoEncoder(name="auto_encoder")
         self.encoder.build([[None, embeddings[-1]], [None, self.rarefy_depth]])
 
+        emb_dim = tf.shape(embeddings)[-1]
         filters = 32
         kernel_size = 3
-        classifier_layers = [tf.keras.layers.Input([8, 32])]
+        enc = emb_dim // (2**5)
+        classifier_layers = [tf.keras.layers.Input([enc, 32])]
         for _ in range(12):
             classifier_layers += [ConvolutionBlock(filters, kernel_size, pool=False)]
         self.classifier = tf.keras.Sequential(
