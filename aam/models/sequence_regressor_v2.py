@@ -181,6 +181,7 @@ class SequenceRegressorV2(tf.keras.Model):
             ]
             filters *= 2
         self.ff = tf.keras.Sequential(ff_layers + [tf.keras.layers.Flatten()])
+        self.ff.build([(input_shape[0])[-1], 1])
         self.out_ff = tf.keras.layers.Dense(self.out_dim)
         super(SequenceRegressorV2, self).build(input_shape)
 
