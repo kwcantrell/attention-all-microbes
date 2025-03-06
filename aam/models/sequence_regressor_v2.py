@@ -69,9 +69,8 @@ class ConvolutionBlock(tf.keras.layers.Layer):
 
 @tf.keras.saving.register_keras_serializable(package="AutoEncoder")
 class AutoEncoder(tf.keras.Model):
-    def __init__(self, dropout_rate, **kwargs):
+    def __init__(self, **kwargs):
         super(AutoEncoder, self).__init__(**kwargs)
-        self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
         if self.built:
@@ -134,7 +133,6 @@ class AutoEncoder(tf.keras.Model):
 
     def get_config(self):
         config = super(AutoEncoder, self).get_config()
-        config.update({"dropout_rate": self.dropout_rate})
         return config
 
 
