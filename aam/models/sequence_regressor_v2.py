@@ -111,9 +111,7 @@ class AutoEncoder(tf.keras.Model):
                 ConvolutionBlock(filters, kernel_size, pool=True),
             ]
             filters *= 2
-        self.encoder = tf.keras.Sequential(
-            encoder_conv_layers, tf.keras.layers.Flatten()
-        )
+        self.encoder = tf.keras.Sequential(encoder_conv_layers)
         super(AutoEncoder, self).build(input_shape)
 
     def call(
@@ -157,9 +155,9 @@ class SequenceRegressorV2(tf.keras.Model):
         self.classifier = tf.keras.Sequential(
             classifier_layers
             + [
-                tf.keras.layers.Dense(1, use_bias=True)
-                + tf.keras.layers.Flatten()
-                + tf.keras.layers.Dense(1, use_bias=True)
+                tf.keras.layers.Dense(1, use_bias=True),
+                tf.keras.layers.Flatten(),
+                tf.keras.layers.Dense(1, use_bias=True),
             ]
         )
         super(SequenceRegressorV2, self).build(input_shape)
