@@ -25,6 +25,8 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self.filters = filters
         self.kernel_size = kernel_size
         self.pool = pool
+
+    def build(self, input_shape):
         self.conv_inner = tf.keras.layers.Conv1D(
             filters=self.filters,
             kernel_size=self.kernel_size,
@@ -142,23 +144,11 @@ class SequenceRegressorV2(tf.keras.Model):
         self.use_residual_connections = use_residual_connections
         self.include_count_encoder = include_count_encoder
         self.use_linear_bias = use_linear_bias
-        self.loss_tracker = tf.keras.metrics.Mean()
 
         # layers used in model
-        self.combined_base = False
         self.base_model = base_model
         if self.base_model is not None:
             self.base_model.trainable = False
-        self.embedding_loss = PairwiseLoss(use_mean_pairs=False)
-        self.embedding_tracker = tf.keras.metrics.Mean()
-
-        self.target_tracker = tf.keras.metrics.Mean()
-        if not self.classifier:
-            self.metric_tracker = tf.keras.metrics.MeanAbsoluteError()
-            self.metric_string = "mae"
-        else:
-            self.metric_tracker = tf.keras.metrics.SparseCategoricalAccuracy()
-            self.metric_string = "accuracy"
 
     def build(self, input_shape):
         if self.built:
