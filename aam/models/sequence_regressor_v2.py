@@ -208,7 +208,9 @@ class SequenceRegressorV2(tf.keras.Model):
             mask, axis=1
         )
         counts = tf.ensure_shape(counts, [None, None, 1])
-        counts = tf.cast(counts, dtype=tf.float32)
+        counts = tf.cast(counts, dtype=tf.float32) / tf.cast(
+            self.rarefy_depth, dtype=tf.float32
+        )
         counts = tf.pad(
             counts, paddings=[[0, 0], [0, self.rarefy_depth - seq_dim], [0, 0]]
         )
