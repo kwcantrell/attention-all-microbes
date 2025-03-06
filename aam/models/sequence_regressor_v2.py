@@ -18,6 +18,7 @@ from aam.optimizers.loss_scaler import LossScaler
 from aam.utils import create_random_mask, float_mask
 
 
+@tf.keras.saving.register_keras_serializable(package="ConvolutionBlock")
 class ConvolutionBlock(tf.keras.layers.Layer):
     def __init__(self, filters, kernel_size, pool=False, **kwargs):
         super(ConvolutionBlock, self).__init__(**kwargs)
@@ -74,6 +75,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                 "pool": self.pool,
             }
         )
+        return config
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceRegressorV2")
