@@ -204,8 +204,9 @@ class SequenceRegressorV2(tf.keras.Model):
         asv_embeddings = tf.reduce_sum(asv_embeddings, axis=1) / tf.reduce_sum(
             mask, axis=1
         )
+        counts = tf.ensure_shape([None, None, 1])
         counts = tf.pad(
-            counts, paddings=[[0, 0], [self.rarefy_depth - seq_dim], [0, 0]]
+            counts, paddings=[[0, 0], [0, self.rarefy_depth - seq_dim], [0, 0]]
         )
         encoder_output = self.encoder([asv_embeddings, counts])
         output = self.classifier(encoder_output)
