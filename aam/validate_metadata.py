@@ -134,12 +134,12 @@ def validate_gotu_fit_and_infer(func):
     def wrapper(**kwargs):
 
         try:
-            assert kwargs["i_asv_table"] is not None, "Error: i_table is missing or None."
+            assert kwargs["i_asv_table"] is not None, "Error: i_asv_table is missing or None."
             assert os.path.exists(kwargs["i_asv_table"]), f"File {kwargs['i_asv_table']} does not exist"
             assert kwargs["i_gotu_table"] is not None, "Error: i_gotu_table is missing or None."
             assert os.path.exists(kwargs["i_gotu_table"]), f"File {kwargs['i_gotu_table']} does not exist"
-            assert kwargs["i_gotu_free_index"] is not None, "Error: i_gotu_free_index is missing or None."
-            assert os.path.exists(kwargs["i_gotu_free_index"]), f"File {kwargs['i_gotu_free_index']} does not exist"
+            assert kwargs["i_gotu_tree_index"] is not None, "Error: i_gotu_tree_index is missing or None."
+            assert os.path.exists(kwargs["i_gotu_tree_index"]), f"File {kwargs['i_gotu_tree_index']} does not exist"
 
 
             assert kwargs["m_metadata_file"] is not None, "Error: m_metadata_file is missing or None."

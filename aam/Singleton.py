@@ -19,10 +19,10 @@ class BaseSingleton:
 class Regressor_Singleton(BaseSingleton):
 
     params = {
-        "i_table": "./commands.txt",
-        "output_dir": "./output",
-        "m_metadata_column": "example_column",
-        "m_metadata_file": "./commands.txt",
+        "i_table": "./commands.txt", # What should I change this to? for a user perspective.
+        "output_dir": "./output", # req
+        "m_metadata_column": "example_column", # req
+        "m_metadata_file": "./commands.txt", #req
         "p_missing_samples":"error",
         "p_patience": 10,
         "p_epochs": 1000,
@@ -57,7 +57,7 @@ class Fit_Singleton(BaseSingleton):
         "p_decay_steps": 1000,
         "p_lr": 1e-4,
         "p_epochs": 1000,
-        "output_dir": "./output",
+        "output_dir": "./output", # req
         "p_intermediate_activation": "gelu",
         "p_attention_heads": 4,
         "p_weight_decay": 0.004,
