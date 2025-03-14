@@ -88,7 +88,13 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         self.sequence_embeddings = sequence_embeddings
         self.sequence_labels = sequence_labels
         if self.sequence_embeddings is not None:
-            self.sequence_embeddings = np.load(self.sequence_embeddings)
+            sequence_embeddings = np.load(self.sequence_embeddings)
+            emb_mean = np.mean(sequence_embeddings, axis=0)
+            emb_std = np.std(sequence_embeddings, axis=0)
+            self.sequence_embeddings = (sequence_embeddings - emb_mean) / (
+                emb_std + 1e-8
+            )
+
             self.sequence_labels = np.load(self.sequence_labels, allow_pickle=True)
             self.sequence_labels = self.sequence_labels.astype(np.str_)
             self.sequence_labels = np.char.encode(
@@ -126,7 +132,7 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
             print("taxonomy info", self.num_tax_values)
 
         print("rarefy table...")
-        self.rarefied_table: Table = self.table.subsample(rarefy_depth)
+        self.rarefied_table: Table = self.table.subsample(rarefy_depth, seed=42)
 
         self.size = self.rarefied_table.shape[1]
         self.steps_per_epoch = self.size // self.batch_size

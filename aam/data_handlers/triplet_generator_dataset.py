@@ -58,6 +58,9 @@ class TripletGenerator(tf.keras.utils.Sequence):
         steps_per_epoch=100,
         max_groups=5,
         seed=None,
+        drop_remainder=True,
+        batch_size=128,
+        upsample=True,
     ):
         if isinstance(table, str):
             table = load_table(table)
@@ -77,7 +80,13 @@ class TripletGenerator(tf.keras.utils.Sequence):
         self.sequence_embeddings = sequence_embeddings
         self.sequence_labels = sequence_labels
         if self.sequence_embeddings is not None:
-            self.sequence_embeddings = np.load(self.sequence_embeddings)
+            sequence_embeddings = np.load(self.sequence_embeddings)
+            emb_mean = np.mean(sequence_embeddings, axis=0)
+            emb_std = np.std(sequence_embeddings, axis=0)
+            self.sequence_embeddings = (sequence_embeddings - emb_mean) / (
+                emb_std + 1e-8
+            )
+
             self.sequence_labels = np.load(self.sequence_labels, allow_pickle=True)
             self.sequence_labels = self.sequence_labels.astype(np.str_)
             self.sequence_labels = np.char.encode(
@@ -115,43 +124,67 @@ class TripletGenerator(tf.keras.utils.Sequence):
             print("taxonomy info", self.num_tax_values)
 
         print("rarefy table...")
-        self.rarefied_table: Table = self.table.subsample(rarefy_depth)
+        self.rarefied_table: Table = self.table.subsample(rarefy_depth, seed=42)
         self.size = self.rarefied_table.shape[1]
-        self.groups = self.metadata.unique()
+        self.groups = self.metadata[self.metadata_column].unique()
         self.num_groups = len(self.groups)
         self.samples_per_group = samples_per_group
-        self.groups_per_step = min(self.max_groups, self.num_groups)
-        self.batch_size = self.groups_per_step * self.samples_per_group
-        self.samples_per_minibatch = self.batch_size
-        self.steps_per_epoch = steps_per_epoch
+        self.groups_per_step = self.num_groups  # min(self.max_groups, self.num_groups)
 
         le = preprocessing.LabelEncoder()
-        groups = self.metadata.loc[self._rarefied_table.ids()]
+        self._metadata = self.metadata.loc[self._rarefied_table.ids()]
+        groups = self.metadata[self.metadata_column]
         y_data = le.fit_transform(groups)
         self.y_data = pd.Series(y_data, groups.index)
         self.on_epoch_end()
+
+        self.upsample = upsample
+        if self.upsample:
+            self.batch_size = self.groups_per_step * self.samples_per_group
+            self.samples_per_minibatch = self.batch_size
+            self.steps_per_epoch = steps_per_epoch
+        else:
+            self.drop_remainder = drop_remainder
+            self.batch_size = batch_size
+            self.steps_per_epoch = self.size // self.batch_size
+            self.sample_ids = self._rarefied_table.ids()
+            if (
+                not self.drop_remainder
+                and self.steps_per_epoch * self.batch_size < self.size
+            ):
+                self.steps_per_epoch += 1
 
     def __len__(self):
         return self.steps_per_epoch
 
     def __getitem__(self, idx):
-        batch_sample_ids = []
-        metadata = self.metadata.loc[self.rarefied_table.ids()]
-        groups = metadata.unique()
-        counts = np.repeat(
-            metadata.value_counts().to_numpy()[:, np.newaxis],
-            repeats=self.samples_per_group,
-            axis=1,
-        )
-        totals = counts.sum(axis=0)
-        weights = counts / totals[np.newaxis, :]
-        weights = weights.reshape((-1))
-        for group in groups:
-            ids = metadata[metadata == group].index.to_numpy()
-            batch_sample_ids.append(
-                np.random.choice(ids, self.samples_per_group, replace=True)
+        if self.upsample:
+            batch_sample_ids = []
+            metadata = self.metadata.loc[self.y_data.index, self.metadata_column]
+            groups = metadata.unique()
+            counts = np.repeat(
+                metadata.value_counts().to_numpy()[:, np.newaxis],
+                repeats=self.samples_per_group,
+                axis=1,
             )
-        return self._batch_data(np.hstack(batch_sample_ids), weights)
+            totals = counts.sum(axis=0)
+            weights = counts / totals[np.newaxis, :]
+            weights = weights.reshape((-1))
+            for group in groups:
+                ids = metadata[metadata == group].index.to_numpy()
+                batch_sample_ids.append(
+                    np.random.choice(ids, self.samples_per_group, replace=True)
+                )
+                # ids = group[
+                #     idx * self.samples_per_group : (idx + 1) * self.samples_per_group
+                # ]
+                # if len(ids) == self.samples_per_group:
+                #     batch_sample_ids.append(ids)
+            return self._batch_data(np.hstack(batch_sample_ids), weights)
+        else:
+            start = idx * self.batch_size
+            end = start + self.batch_size
+            return self._batch_data(self.sample_ids[start:end], 1.0)
 
     def _batch_data(self, batch_sample_ids, weights):
         num_unique_asvs, sparse_indices, obs_indices, counts, taxon_counts = (
@@ -225,6 +258,9 @@ class TripletGenerator(tf.keras.utils.Sequence):
         if self.encoder_target is None:
             if self.taxonomy is None:
                 return (tokens, sparse_indices, obs_indices, counts), y_true
+            y_age = self.metadata.loc[
+                self.metadata.index.isin(batch_sample_ids), "host_age_normalized_years"
+            ]
 
             return (
                 tokens,
@@ -232,7 +268,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
                 obs_indices,
                 counts,
                 taxon_counts,
-            ), (y_true, weights)
+            ), (y_true, y_age.to_numpy()[:, np.newaxis] / 100.0)
 
         encoder_output = self._encoder_output(batch_sample_ids)
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
@@ -246,8 +282,15 @@ class TripletGenerator(tf.keras.utils.Sequence):
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
             self.epochs_since_last_table = 0
 
+        # self.group_ids = []
+        # for group, group_df in self.metadata.groupby(self.metadata_column):
+        #     self.group_ids.append(list(group_df.index))
+        # if self.shuffle:
+        #     for group in self.group_ids:
+        #         np.random.shuffle(group)
+
         if self.shuffle:
-            np.random.shuffle(self.sample_indices)
+            np.random.shuffle(self.sample_ids)
 
         self.epochs_since_last_table += 1
 
@@ -344,40 +387,40 @@ class TripletGenerator(tf.keras.utils.Sequence):
         samp_ids = np.intersect1d(self.table.ids(axis="sample"), metadata.index)
         self.table.filter(samp_ids, axis="sample", inplace=True)
         self.table.remove_empty()
-        metadata = metadata.loc[self.table.ids(), self.metadata_column]
+        metadata = metadata.loc[self.table.ids()]
         print(f"aligned table shape: {self.table.shape}")
         print(f"aligned metadata shape: {metadata.shape}")
         self._metadata = metadata.reindex(self.table.ids())
         print("done preprocessing metadata")
 
 
-def get_dataset(gen: TripletGenerator):
-    enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
-    enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
-    gen.stop = lambda: enqueuer.stop(0.1)
+# def get_dataset(gen: TripletGenerator):
+#     enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
+#     enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
+#     gen.stop = lambda: enqueuer.stop(0.1)
 
-    batch_dim = gen.samples_per_minibatch
-    if not gen.return_sample_ids:
-        y_type = tf.TensorSpec(shape=(batch_dim, 1), dtype=tf.string)
-    else:
-        y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
+#     batch_dim = gen.samples_per_minibatch
+#     if not gen.return_sample_ids:
+#         y_type = tf.TensorSpec(shape=(batch_dim, 1), dtype=tf.string)
+#     else:
+#         y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
 
-    dataset = tf.data.Dataset.from_generator(
-        enqueuer.get,
-        output_signature=(
-            (
-                tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
-                tf.TensorSpec(shape=[None], dtype=tf.int32),
-                tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
-                tf.TensorSpec(
-                    shape=[gen.batch_size, gen.num_tax_values], dtype=tf.float32
-                ),
-            ),
-            y_type,
-        ),
-    )
-    return dataset
+#     dataset = tf.data.Dataset.from_generator(
+#         enqueuer.get,
+#         output_signature=(
+#             (
+#                 tf.TensorSpec(shape=[None, 150], dtype=tf.int32),
+#                 tf.TensorSpec(shape=[None, 2], dtype=tf.int32),
+#                 tf.TensorSpec(shape=[None], dtype=tf.int32),
+#                 tf.TensorSpec(shape=[None, 1], dtype=tf.int32),
+#                 tf.TensorSpec(
+#                     shape=[gen.batch_size, gen.num_tax_values], dtype=tf.float32
+#                 ),
+#             ),
+#             y_type,
+#         ),
+#     )
+#     return dataset
 
 
 if __name__ == "__main__":
@@ -400,8 +443,11 @@ if __name__ == "__main__":
         gen_new_tables=True,
         samples_per_group=2,
         max_groups=10,
+        shuffle=True,
     )
-    x, y = ug[0]
+    x, y1 = ug[0]
+    # x, y2 = ug[ug.steps_per_epoch + 1]
+    print(y1)
     # print(x, y, y.shape)
     # # x, y = ug[0]
     # # print(y)

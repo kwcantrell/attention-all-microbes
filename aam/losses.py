@@ -73,21 +73,25 @@ def _pairwise_cosine_distance(
 
 
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
-    emb_dim = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float32)
+    sample_embeddings = tf.cast(sample_embeddings, dtype=tf.float64)
+    emb_dim = tf.cast(tf.shape(sample_embeddings)[-1], dtype=tf.float64)
     sample_norm = tf.norm(sample_embeddings, axis=-1, keepdims=True)
     sample_embeddings = tf.divide(sample_embeddings, sample_norm)
-    non_matching_pairs_mask = tf.cast(non_matching_pairs_mask, dtype=tf.float32)
-    N = tf.reduce_sum(non_matching_pairs_mask, axis=-1)
+    non_matching_pairs_mask = tf.cast(non_matching_pairs_mask, dtype=tf.float64)
+    N = tf.reduce_sum(non_matching_pairs_mask)
+    N = tf.maximum(tf.cast(1.0, dtype=tf.float64), N)
     sample_inner_prod = tf.matmul(
         sample_embeddings, sample_embeddings, transpose_b=True
     )
-    sample_inner_prod = sample_inner_prod * non_matching_pairs_mask
+    sample_inner_prod = tf.abs(sample_inner_prod * non_matching_pairs_mask)
 
-    # return tf.reduce_mean(tf.reduce_max(sample_inner_prod, axis=-1))
-    m1 = tf.reduce_sum(sample_inner_prod, axis=-1) / N
-    m2 = tf.reduce_sum(tf.square(sample_inner_prod), axis=-1) / N
-    ortho_loss = m1 * m1 + tf.maximum(0.0, m2 - 1 / emb_dim)
-    return ortho_loss
+    # return tf.reduce_sum(sample_inner_prod, axis=-1) / N
+    m1 = tf.reduce_sum(sample_inner_prod) / N
+    m2 = tf.reduce_sum(tf.square(sample_inner_prod)) / N
+    ortho_loss = m1 * m1 + tf.maximum(
+        tf.cast(0.0, dtype=tf.float64), m2 - tf.cast(1.0, dtype=tf.float64) / emb_dim
+    )
+    return tf.cast(ortho_loss, dtype=tf.float32)
 
 
 class PairwiseLoss(tf.keras.losses.Loss):

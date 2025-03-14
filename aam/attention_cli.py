@@ -494,9 +494,9 @@ def fit_denoised_unifrac_regressor(
 )
 @click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
-@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-lr", default=1e-3, show_default=True, type=float)
 @click.option("--p-warmup-steps", default=0, show_default=True, type=int)
-@click.option("--p-decay-steps", default=1000000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=100000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True)
 @click.option("--p-add-token", default=False, required=False, type=bool)
@@ -555,19 +555,19 @@ def fit_triplet_regressor(
     p_nuc_encoder: Union[None, tf.keras.Model],
     p_use_linear_bias: bool,
 ):
+    import tensorflow_addons as tfa
     from biom import load_table
     from sklearn.model_selection import StratifiedKFold
 
-    from aam.data_handlers.triplet_generator_dataset import (
-        TripletGenerator,
-        get_dataset,
-    )
+    from aam.callbacks import LAMBLRScheduler
+    from aam.data_handlers.triplet_generator_dataset import TripletGenerator
     from aam.models.triplet_encoder import TripletEncoder
+    from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]
+        [m_metadata_column, "host_age_normalized_years"]
     ]
     df = df.loc[df.index.isin(table.ids())]
     print(table.shape)
@@ -597,6 +597,8 @@ def fit_triplet_regressor(
         "max_groups": 10,
         "sequence_embeddings": "/home/kalen/removing-study-id/sg-train-asv-embeddings.npy",
         "sequence_labels": "/home/kalen/removing-study-id/sg-train-asv-labels.npy",
+        "batch_size": 128,
+        "drop_remainder": False,
     }
     train_gen = TripletGenerator(
         table=train_table,
@@ -604,6 +606,7 @@ def fit_triplet_regressor(
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
         steps_per_epoch=100,
+        upsample=False,
         **common_kwargs,
     )
 
@@ -613,6 +616,7 @@ def fit_triplet_regressor(
         gen_new_tables=False,
         epochs=1,
         steps_per_epoch=10,
+        upsample=False,
         **common_kwargs,
     )
 
@@ -641,7 +645,35 @@ def fit_triplet_regressor(
         [token_shape, batch_indicies, indicies_shape, count_shape, taxonomy_count]
     )
     model.summary()
-    model.compile(run_eagerly=False)
+    lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    )
+
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
+        beta_1=0.5,
+        beta_2=0.9,
+        weight_decay=p_weight_decay,
+        exclude_from_weight_decay=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "batch_norm",
+            "BatchNorm",
+            # "embeddings",
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "batch_norm",
+            "BatchNorm",
+            # "embeddings",
+        ],
+    )
+    model.compile(optimizer=optimizer, run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
@@ -655,6 +687,7 @@ def fit_triplet_regressor(
         #     patience=p_patience,
         #     start_from_epoch=p_early_stop_warmup,
         # ),
+        lr_scheduler,
         model_saver,
     ]
     model.fit(
