@@ -44,21 +44,15 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         if self.pool:
             self.conv_outer = tf.keras.layers.Conv1D(
                 filters=self.filters * 2,
-                kernel_size=self.kernel_size,
-                strides=1,
+                kernel_size=2,
+                strides=2,
                 padding="same",
             )
-            self.pool = tf.keras.layers.MaxPool1D(pool_size=2)
-            self.res_pool = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Conv1D(
-                        filters=self.filters * 2,
-                        kernel_size=1,
-                        strides=1,
-                        padding="same",
-                    ),
-                    tf.keras.layers.MaxPool1D(pool_size=2),
-                ]
+            self.res_pool = tf.keras.layers.Conv1D(
+                filters=self.filters * 2,
+                kernel_size=2,
+                strides=2,
+                padding="same",
             )
         else:
             self.conv_outer = tf.keras.layers.Conv1D(
@@ -85,7 +79,6 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         output = self.conv_outer(output)
         output = self.activation(output)
         if self.pool:
-            output = self.pool(output)
             inputs = self.res_pool(inputs)
 
         # residual connection
@@ -117,7 +110,7 @@ class UpscaleBlock(tf.keras.layers.Layer):
 
         self.conv_outer = tf.keras.layers.Conv1D(
             filters=self.filters // 2,
-            kernel_size=self.kernel_size,
+            kernel_size=1,
             strides=1,
             padding="same",
         )
@@ -360,9 +353,10 @@ class TripletEncoder(tf.keras.Model):
 
         return (
             tf.reduce_mean(noise_size),
-            tf.reduce_mean(batch_loss),
+            tf.reduce_mean(batch_loss) * 0.01,
             tf.reduce_mean(res_loss),
             tf.reduce_mean(age_loss),
+            tf.reduce_mean(mae),
         )
 
     def predict_step(
@@ -409,7 +403,7 @@ class TripletEncoder(tf.keras.Model):
                 regressor,
             ) = self(inputs, training=True)
             ae_loss = self._reconstruction_loss(encoder_input, decoder_output)
-            noise_loss, batch_loss, res_loss, age_loss = (
+            noise_loss, batch_loss, res_loss, age_loss, mae = (
                 self._compute_discriminator_loss(
                     y, batch_noise, batch_probs, res_probs, regressor
                 )
@@ -423,7 +417,7 @@ class TripletEncoder(tf.keras.Model):
         self.batch_noise_Tracker.update_state(noise_loss)
         self.batch_class_tracker.update_state(batch_loss)
         self.res_class_tracker.update_state(res_loss)
-        self.age_tracker.update_state(age_loss)
+        self.age_tracker.update_state(mae)
         return {
             "loss": self.loss_tracker.result(),
             "ae_loss": self.asv_rec_tracker.result(),
@@ -451,8 +445,10 @@ class TripletEncoder(tf.keras.Model):
             regressor,
         ) = self(inputs, training=False)
         ae_loss = self._reconstruction_loss(encoder_input, decoder_output)
-        noise_loss, batch_loss, res_loss, age_loss = self._compute_discriminator_loss(
-            y, batch_noise, batch_probs, res_probs, regressor
+        noise_loss, batch_loss, res_loss, age_loss, mae = (
+            self._compute_discriminator_loss(
+                y, batch_noise, batch_probs, res_probs, regressor
+            )
         )
         loss = ae_loss + noise_loss + batch_loss + res_loss + age_loss
 
@@ -461,7 +457,7 @@ class TripletEncoder(tf.keras.Model):
         self.batch_noise_Tracker.update_state(noise_loss)
         self.batch_class_tracker.update_state(batch_loss)
         self.res_class_tracker.update_state(res_loss)
-        self.age_tracker.update_state(age_loss)
+        self.age_tracker.update_state(mae)
         return {
             "loss": self.loss_tracker.result(),
             "ae_loss": self.asv_rec_tracker.result(),
