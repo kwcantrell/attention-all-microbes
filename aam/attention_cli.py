@@ -567,7 +567,7 @@ def fit_triplet_regressor(
     # start pre processing dataset
     table = load_table(i_table)
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column, "host_age_normalized_years"]
+        [m_metadata_column]  # , "host_age_normalized_years"]
     ]
     df = df.loc[df.index.isin(table.ids())]
     print(table.shape)
@@ -589,15 +589,15 @@ def fit_triplet_regressor(
     common_kwargs = {
         "metadata_column": m_metadata_column,
         "rarefy_depth": 10000,
-        "samples_per_group": 10,
+        "samples_per_group": 50,
         "is_16S": True,
         "tree_path": i_tree,
         "metadata": df,
         "taxonomy": taxonomy,
         "max_groups": 10,
-        "sequence_embeddings": "/home/kalen/removing-study-id/sg-train-asv-embeddings.npy",
-        "sequence_labels": "/home/kalen/removing-study-id/sg-train-asv-labels.npy",
-        "batch_size": 128,
+        "sequence_embeddings": "/home/kalen/remove-prime-effect/embeddings.npy",
+        "sequence_labels": "/home/kalen/remove-prime-effect/asvs.npy",
+        "batch_size": p_batch_size,
         "drop_remainder": False,
     }
     train_gen = TripletGenerator(
@@ -606,7 +606,7 @@ def fit_triplet_regressor(
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
         steps_per_epoch=100,
-        upsample=False,
+        upsample=True,
         **common_kwargs,
     )
 

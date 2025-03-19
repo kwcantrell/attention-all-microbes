@@ -258,9 +258,9 @@ class TripletGenerator(tf.keras.utils.Sequence):
         if self.encoder_target is None:
             if self.taxonomy is None:
                 return (tokens, sparse_indices, obs_indices, counts), y_true
-            y_age = self.metadata.loc[
-                self.metadata.index.isin(batch_sample_ids), "host_age_normalized_years"
-            ]
+            # y_age = self.metadata.loc[
+            #     self.metadata.index.isin(batch_sample_ids), "host_age_normalized_years"
+            # ]
 
             return (
                 tokens,
@@ -268,7 +268,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
                 obs_indices,
                 counts,
                 taxon_counts,
-            ), (y_true, y_age.to_numpy()[:, np.newaxis] / 100.0)
+            ), y_true  # (y_true, y_age.to_numpy()[:, np.newaxis] / 100.0)
 
         encoder_output = self._encoder_output(batch_sample_ids)
         return (tokens, sparse_indices, obs_indices, counts), (y_true, encoder_output)
