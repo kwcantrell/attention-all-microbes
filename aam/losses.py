@@ -96,7 +96,7 @@ def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
 
 class PairwiseLoss(tf.keras.losses.Loss):
     def __init__(
-        self, loss_type="mse", use_mean_pairs=True, reduction="none", **kwargs
+        self, loss_type="mse", use_mean_pairs=False, reduction="none", **kwargs
     ):
         super().__init__(reduction=reduction, **kwargs)
         self.loss_type = loss_type

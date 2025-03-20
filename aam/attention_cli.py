@@ -59,9 +59,6 @@ GLOBAL_CONFIGURATIONS = {}
 @cli.command()
 @click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option(
-    "--m-taxonomy", default=None, required=False, type=click.Path(exists=True)
-)
-@click.option(
     "--p-sequence-batch-size", default=128, show_default=True, required=False, type=int
 )
 @click.option(
@@ -88,7 +85,6 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-use-linear-bias", default=True, type=bool)
 def fit_asv_encoder(
     i_tree: str,
-    m_taxonomy: str,
     p_sequence_batch_size: int,
     p_pairwise_batch_size: int,
     p_epochs: int,
@@ -126,7 +122,6 @@ def fit_asv_encoder(
     }
     train_gen = ASVGenerator(
         tree=i_tree,
-        taxonomy=m_taxonomy,
         shuffle=True,
         **common_kwargs,
     )

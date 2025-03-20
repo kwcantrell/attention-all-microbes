@@ -21,9 +21,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         normalize_outputs: bool = False,
         use_residual_connections: bool = False,
         regularize_embeddings=False,
-        asv_encoder=None,
         use_linear_bias=False,
-        num_tax_level_tokens=None,
         **kwargs,
     ):
         super(NucleotideEncoderV5, self).__init__(**kwargs)
@@ -66,18 +64,6 @@ class NucleotideEncoderV5(tf.keras.Model):
             kernel_initializer=tf.keras.initializers.HeUniform(),
             dtype=tf.float32,
         )
-        self.num_tax_level_tokens = num_tax_level_tokens
-        self.tax_ff = []
-        if self.num_tax_level_tokens is not None:
-            self.tax_trackers = [
-                tf.keras.metrics.Mean() for _ in self.num_tax_level_tokens
-            ]
-            self.tax_losses = [
-                tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-                for _ in self.num_tax_level_tokens
-            ]
-            for num_tokens in self.num_tax_level_tokens:
-                self.tax_ff.append(tf.keras.Sequential(_ff_block(num_tokens)))
 
     def build(self, input_shape):
         if self.built:
@@ -93,39 +79,21 @@ class NucleotideEncoderV5(tf.keras.Model):
 
     def predict_step(self, data):
         inputs, asv_ids = data
-        if not self.num_tax_level_tokens:
-            return self(inputs, training=False), asv_ids
-        embeddings, _ = self(inputs, training=False)
-        return embeddings, asv_ids
+        return self(inputs, training=False), asv_ids
 
     def _compute_loss(self, y_true, embeddings):
         loss = 0.0
-        if isinstance(y_true, (tuple, list)):
-            print("computing tax loss????")
-            y_true, tax_tokens = y_true
-            embeddings, tax_preds = embeddings
-            tax_losses = [
-                0.0
-                for tax_loss, tax_token, tax_pred in zip(
-                    self.tax_losses, tax_tokens, tax_preds
-                )
-            ]
-            for tax_loss in tax_losses:
-                loss += tax_loss
-        else:
-            tax_losses = None
-
         num_pairs = tf.shape(y_true)[-1]
         embeddings = embeddings[:num_pairs]
         asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
         loss += asv_loss
-        return (loss, asv_loss, tax_losses)
+        return loss, asv_loss
 
     def train_step(self, data):
         inputs, y_true = data
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
-            loss, asv_loss, tax_losses = self._compute_loss(y_true, embeddings)
+            loss, asv_loss = self._compute_loss(y_true, embeddings)
             if self.include_bert_loss:
                 nuc_loss = tf.reduce_sum(self.losses)
             else:
@@ -149,21 +117,13 @@ class NucleotideEncoderV5(tf.keras.Model):
             "asv_loss": self.asv_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
-        if tax_losses is not None:
-            for tax_tracker, tax_loss in zip(self.tax_trackers, tax_losses):
-                tax_tracker.update_state(tax_loss)
-            tax_trackers = {
-                f"tax_level {i}": tax_tracker.result()
-                for i, tax_tracker in enumerate(self.tax_trackers)
-            }
-            output_trackers.update(tax_trackers)
         return output_trackers
 
     def test_step(self, data):
         inputs, y_true = data
 
         embeddings = self(inputs, training=False)
-        loss, asv_loss, tax_losses = self._compute_loss(y_true, embeddings)
+        loss, asv_loss = self._compute_loss(y_true, embeddings)
         if self.include_bert_loss:
             nuc_loss = tf.reduce_sum(self.losses)
         else:
@@ -178,14 +138,6 @@ class NucleotideEncoderV5(tf.keras.Model):
             "asv_loss": self.asv_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
-        if tax_losses is not None:
-            for tax_tracker, tax_loss in zip(self.tax_trackers, tax_losses):
-                tax_tracker.update_state(tax_loss)
-            tax_trackers = {
-                f"tax_level {i}": tax_tracker.result()
-                for i, tax_tracker in enumerate(self.tax_trackers)
-            }
-            output_trackers.update(tax_trackers)
         return output_trackers
 
     def call(
@@ -203,14 +155,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         asv_embeddings = tf.reduce_mean(embeddings, axis=1)
         embeddings = self.asv_ff_block(asv_embeddings, training=training)
 
-        if self.num_tax_level_tokens is None:
-            return self.output_activation(embeddings)
-
-        tax_preds = [
-            self.output_activation(tax_ff(embeddings), training=training)
-            for tax_ff in self.tax_ff
-        ]
-        return self.output_activation(embeddings), tax_preds
+        return self.output_activation(embeddings)
 
     def asv_embeddings(self, tokens):
         embeddings = self.asv_encoder(
@@ -238,7 +183,6 @@ class NucleotideEncoderV5(tf.keras.Model):
                 "build_input_shape": self.get_build_config(),
                 "regularize_embeddings": self.regularize_embeddings,
                 "use_linear_bias": self.use_linear_bias,
-                "num_tax_level_tokens": self.num_tax_level_tokens,
             }
         )
         return config
