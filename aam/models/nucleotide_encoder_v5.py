@@ -95,7 +95,7 @@ class NucleotideEncoderV5(tf.keras.Model):
             embeddings = self(inputs, training=True)
             loss, asv_loss = self._compute_loss(y_true, embeddings)
             if self.include_bert_loss:
-                nuc_loss = tf.reduce_sum(self.losses)
+                nuc_loss = tf.reduce_sum(self.losses) * 0.1
             else:
                 nuc_loss = 0.0
             loss += nuc_loss
@@ -125,7 +125,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         embeddings = self(inputs, training=False)
         loss, asv_loss = self._compute_loss(y_true, embeddings)
         if self.include_bert_loss:
-            nuc_loss = tf.reduce_sum(self.losses)
+            nuc_loss = tf.reduce_sum(self.losses) * 0.1
         else:
             nuc_loss = 0.0
         loss += nuc_loss
