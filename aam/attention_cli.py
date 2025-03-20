@@ -148,7 +148,6 @@ def fit_asv_encoder(
             normalize_outputs=p_normalize_outputs,
             use_residual_connections=p_use_residual_connections,
             use_linear_bias=p_use_linear_bias,
-            num_tax_level_tokens=train_gen.num_tokens,
         )
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
