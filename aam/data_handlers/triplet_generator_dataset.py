@@ -35,6 +35,7 @@ class TripletGenerator(tf.keras.utils.Sequence):
 
     def __init__(
         self,
+        num_groups=None,
         table: Union[str, Table] = None,
         taxonomy: Optional[Union[str, pd.DataFrame]] = None,
         metadata: Optional[Union[str, pd.DataFrame]] = None,
@@ -126,16 +127,9 @@ class TripletGenerator(tf.keras.utils.Sequence):
         print("rarefy table...")
         self.rarefied_table: Table = self.table.subsample(rarefy_depth, seed=42)
         self.size = self.rarefied_table.shape[1]
-        self.groups = self.metadata[self.metadata_column].unique()
-        self.num_groups = len(self.groups)
+        self.num_groups = num_groups
         self.samples_per_group = samples_per_group
         self.groups_per_step = self.num_groups  # min(self.max_groups, self.num_groups)
-
-        le = preprocessing.LabelEncoder()
-        self._metadata = self.metadata.loc[self._rarefied_table.ids()]
-        groups = self.metadata[self.metadata_column]
-        y_data = le.fit_transform(groups)
-        self.y_data = pd.Series(y_data, groups.index)
         self.on_epoch_end()
 
         self.upsample = upsample
@@ -147,7 +141,6 @@ class TripletGenerator(tf.keras.utils.Sequence):
             self.drop_remainder = drop_remainder
             self.batch_size = batch_size
             self.steps_per_epoch = self.size // self.batch_size
-            self.sample_ids = self._rarefied_table.ids()
             if (
                 not self.drop_remainder
                 and self.steps_per_epoch * self.batch_size < self.size
@@ -250,8 +243,9 @@ class TripletGenerator(tf.keras.utils.Sequence):
                 return_indices=True,
             )
             tokens = self.sequence_embeddings[sequence_labels_idx]
-        y_true = self.y_data.loc[batch_sample_ids].to_numpy()[:, np.newaxis]
-
+        y_true = self.metadata.loc[batch_sample_ids, self.metadata_column].to_numpy()[
+            :, np.newaxis
+        ]
         if self.return_sample_ids:
             return (tokens, sparse_indices, obs_indices, counts), batch_sample_ids
 
@@ -434,18 +428,21 @@ if __name__ == "__main__":
     # taxonomy = taxonomy.loc[taxonomy["Taxon"].str.len() > 3]
 
     ug = TripletGenerator(
-        table="/home/kalen/removing-study-id/agp-unique-samples.biom",
-        metadata="/home/kalen/removing-study-id/sg-train.tsv",
-        metadata_column="sequence_group",
+        num_groups=71,
+        table="/home/kalen/removing-study-id/healthy-us-table.biom",
+        metadata="/home/kalen/removing-study-id/healthy-us-metadata-train.tsv",
+        metadata_column="numeric_sequence_group",
         taxonomy=taxonomy,
-        sequence_embeddings="/home/kalen/removing-study-id/sg-train-asv-embeddings.npy",
-        sequence_labels="/home/kalen/removing-study-id/sg-train-asv-labels.npy",
+        sequence_embeddings="/home/kalen/removing-study-id/healthy-us-sequence-embeddings.npy",
+        sequence_labels="/home/kalen/removing-study-id/healthy-us-sequence-labels.npy",
         gen_new_tables=True,
         samples_per_group=2,
         max_groups=10,
         shuffle=True,
+        upsample=False,
+        batch_size=8,
     )
-    x, y1 = ug[0]
+    x, y1 = ug[1]
     # x, y2 = ug[ug.steps_per_epoch + 1]
     print(y1)
     # print(x, y, y.shape)

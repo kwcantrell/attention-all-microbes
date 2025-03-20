@@ -457,8 +457,8 @@ def fit_denoised_unifrac_regressor(
 
 @cli.command()
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
-@click.option("--i-tree", required=False, type=click.Path(exists=True))
-@click.option("--m-taxonomy", required=True, type=click.Path(exists=True))
+@click.option("--i-sequence-embeddings", required=True, type=click.Path(exists=True))
+@click.option("--i-sequence-labels", required=True, type=click.Path(exists=True))
 @click.option(
     "--m-metadata-file",
     required=True,
@@ -471,106 +471,44 @@ def fit_denoised_unifrac_regressor(
     type=str,
     help="Numeric metadata column to use as prediction target.",
 )
-@click.option(
-    "--p-missing-samples",
-    default="error",
-    type=click.Choice(["error", "ignore"], case_sensitive=False),
-    help=MISSING_SAMP_DESC,
-)
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
-@click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-asv-dropout", default=0.0, show_default=True, type=float)
-@click.option("--p-patience", default=10, show_default=True, type=int)
-@click.option("--p-early-stop-warmup", default=50, show_default=True, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, required=False, type=int)
 @click.option("--i-model", default=None, required=False, type=str)
-@click.option("--i-unifrac-model", default=None, required=False, type=str)
-@click.option("--p-embedding-dim", default=128, type=int)
-@click.option("--p-attention-heads", default=4, type=int)
-@click.option("--p-attention-layers", default=4, type=int)
-@click.option("--p-intermediate-size", default=1024, type=int)
-@click.option(
-    "--p-intermediate-activation", default="relu", show_default=True, type=str
-)
-@click.option("--p-asv-limit", default=1024, show_default=True, type=int)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-3, show_default=True, type=float)
 @click.option("--p-warmup-steps", default=0, show_default=True, type=int)
 @click.option("--p-decay-steps", default=100000, show_default=True, type=int)
-@click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True)
-@click.option("--p-add-token", default=False, required=False, type=bool)
-@click.option("--p-gotu", default=False, required=False, type=bool)
-@click.option("--p-is-categorical", default=False, required=False, type=bool)
 @click.option("--p-rarefy-depth", default=5000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.00, show_default=True, type=float)
-@click.option("--p-accumulation-steps", default=1, required=False, type=int)
-@click.option("--p-unifrac-metric", default="unifrac", required=False, type=str)
-@click.option("--p-loss-type", default="mse", required=False, type=str)
-@click.option("--p-normalize-outputs", default=True, type=bool)
-@click.option("--p-use-residual-connections", default=True, type=bool)
-@click.option("--p-use-residual-pool", default=None, type=bool)
-@click.option("--p-train-nuc-encoder", default=True, type=bool)
-@click.option("--p-nuc-encoder", default=None)
-@click.option("--p-use-linear-bias", default=False, type=bool)
 def fit_triplet_regressor(
     i_table: str,
-    i_tree: str,
-    m_taxonomy: str,
+    i_sequence_embeddings,
+    i_sequence_labels,
     m_metadata_file: str,
     m_metadata_column: str,
-    p_missing_samples: bool,
     p_batch_size: int,
     p_epochs: int,
-    p_dropout: float,
-    p_asv_dropout: float,
-    p_patience: int,
-    p_early_stop_warmup: int,
     i_model: Union[None, str],
-    i_unifrac_model: Union[None, str],
-    p_embedding_dim: int,
-    p_attention_heads: int,
-    p_attention_layers: int,
-    p_intermediate_size: int,
-    p_intermediate_activation: str,
-    p_asv_limit: int,
     p_gen_new_table: bool,
     p_lr: float,
     p_warmup_steps: int,
     p_decay_steps: int,
-    p_max_bp: int,
     output_dir: str,
-    p_add_token: bool,
-    p_gotu: bool,
-    p_is_categorical: bool,
     p_rarefy_depth: int,
     p_weight_decay: float,
-    p_accumulation_steps,
-    p_unifrac_metric: str,
-    p_loss_type: str,
-    p_normalize_outputs,
-    p_use_residual_connections: bool,
-    p_use_residual_pool: bool,
-    p_train_nuc_encoder: bool,
-    p_nuc_encoder: Union[None, tf.keras.Model],
-    p_use_linear_bias: bool,
 ):
     import tensorflow_addons as tfa
-    from biom import load_table
     from sklearn.model_selection import StratifiedKFold
 
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers.triplet_generator_dataset import TripletGenerator
-    from aam.models.triplet_encoder import TripletEncoder
+    from aam.data_handlers.triplet_generator_dataset_v2 import TripletGeneratorV2
+    from aam.models.triplet_encoder_v2 import TripletEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
-    table = load_table(i_table)
-    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
-        [m_metadata_column]  # , "host_age_normalized_years"]
-    ]
-    df = df.loc[df.index.isin(table.ids())]
-    print(table.shape)
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})
+    num_groups = len(df[m_metadata_column].unique())
     print(df.shape)
 
     kfolds = StratifiedKFold(shuffle=True, random_state=42)
@@ -578,45 +516,32 @@ def fit_triplet_regressor(
         df[m_metadata_column], df[m_metadata_column]
     ):
         train_df = df.iloc[train_indices]
-        train_table = table.filter(set(train_df.index), inplace=False)
 
         val_df = df.iloc[val_indices]
-        val_table = table.filter(set(val_df.index), inplace=False)
         break
 
-    taxonomy = pd.read_csv(m_taxonomy, sep="\t", index_col=0)
-
     common_kwargs = {
+        "table": i_table,
         "metadata_column": m_metadata_column,
-        "rarefy_depth": 10000,
-        "samples_per_group": 50,
-        "is_16S": True,
-        "tree_path": i_tree,
-        "metadata": df,
-        "taxonomy": taxonomy,
-        "max_groups": 10,
-        "sequence_embeddings": "/home/kalen/remove-prime-effect/embeddings.npy",
-        "sequence_labels": "/home/kalen/remove-prime-effect/asvs.npy",
+        "rarefy_depth": p_rarefy_depth,
+        "sequence_embeddings": i_sequence_embeddings,
+        "sequence_labels": i_sequence_labels,
         "batch_size": p_batch_size,
         "drop_remainder": False,
     }
-    train_gen = TripletGenerator(
-        table=train_table,
+    train_gen = TripletGeneratorV2(
+        metadata=train_df,
         shuffle=True,
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
-        steps_per_epoch=100,
-        upsample=True,
         **common_kwargs,
     )
 
-    val_gen = TripletGenerator(
-        table=val_table,
+    val_gen = TripletGeneratorV2(
+        metadata=val_df,
         shuffle=False,
         gen_new_tables=False,
         epochs=1,
-        steps_per_epoch=10,
-        upsample=False,
         **common_kwargs,
     )
 
@@ -627,23 +552,17 @@ def fit_triplet_regressor(
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    output_dim = p_embedding_dim
-    if p_unifrac_metric == "faith_pd":
-        output_dim = 1
-
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = TripletEncoder()
+        model = TripletEncoderV2(num_groups)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
-    taxonomy_count = tf.TensorShape([None, train_gen.num_tax_values])
-    model.build(
-        [token_shape, batch_indicies, indicies_shape, count_shape, taxonomy_count]
-    )
+    dense_count = tf.TensorShape([None, train_gen.num_asvs])
+    model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
     model.summary()
     lr_scheduler = LAMBLRScheduler(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
@@ -651,8 +570,8 @@ def fit_triplet_regressor(
 
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
-        beta_1=0.5,
-        beta_2=0.9,
+        # beta_1=0.5,
+        # beta_2=0.9,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
             "bias",

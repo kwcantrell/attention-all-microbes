@@ -27,23 +27,18 @@ def _proj(u, v):
     return proj
 
 
-class ConvolutionBlock(tf.keras.layers.Layer):
+class ConvolutionBlockV2(tf.keras.layers.Layer):
     def __init__(self, filters, kernel_size, pool=False, **kwargs):
-        super(ConvolutionBlock, self).__init__(**kwargs)
+        super(ConvolutionBlockV2, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
         self.pool = pool
 
-        self.conv_inner = tf.keras.Sequential(
-            [
-                tf.keras.layers.Conv1D(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    strides=1,
-                    padding="same",
-                ),
-                tf.keras.layers.Activation("gelu"),
-            ]
+        self.conv_inner = tf.keras.layers.Conv1D(
+            filters=self.filters,
+            kernel_size=self.kernel_size,
+            strides=1,
+            padding="same",
         )
 
         if self.pool:
@@ -74,24 +69,26 @@ class ConvolutionBlock(tf.keras.layers.Layer):
             trainable=True,
             dtype=tf.float32,
         )
+        self.activation = tf.keras.layers.Activation("gelu")
 
     def call(self, inputs, training=False):
         # first block
         output = self.conv_inner(inputs)
+        output = self.activation(output)
 
-        # if self.pool:
-        #     output = inputs + self._rezero * output
-        #     output = self.conv_outer(output)
-        #     return self.norm(output)
+        # second block
+        output = self.conv_outer(output)
+        # output = self.activation(output)
+
+        # residual step
         if self.pool:
             inputs = self.res_pool(inputs)
-
-        output = self.conv_outer(output)
         output = inputs + self._rezero * output
+
         return output
 
     def get_config(self):
-        config = super(ConvolutionBlock, self).get_config()
+        config = super(ConvolutionBlockV2, self).get_config()
         config.update(
             {
                 "filters": self.filters,
@@ -101,22 +98,17 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         )
 
 
-class UpscaleBlock(tf.keras.layers.Layer):
+class UpscaleBlockV2(tf.keras.layers.Layer):
     def __init__(self, filters, kernel_size, **kwargs):
-        super(UpscaleBlock, self).__init__(**kwargs)
+        super(UpscaleBlockV2, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
 
-        self.conv_inner = tf.keras.Sequential(
-            [
-                tf.keras.layers.Conv1D(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    strides=1,
-                    padding="same",
-                ),
-                tf.keras.layers.Activation("gelu"),
-            ]
+        self.conv_inner = tf.keras.layers.Conv1D(
+            filters=self.filters,
+            kernel_size=self.kernel_size,
+            strides=1,
+            padding="same",
         )
 
         self.conv_outer = tf.keras.layers.Conv1D(
@@ -143,71 +135,61 @@ class UpscaleBlock(tf.keras.layers.Layer):
             trainable=True,
             dtype=tf.float32,
         )
-        self.norm = tf.keras.layers.BatchNormalization()
+        self.activation = tf.keras.layers.Activation("gelu")
 
     def call(self, inputs, training=False):
         # first block
         output = self.conv_inner(inputs)
-
-        # # second block
-        # output = self.conv_outer(output)
-        # return self.norm(output)
+        output = self.activation(output)
 
         # second block
         output = self.conv_outer(output)
         output = self.scaler(output)
+        # output = self.activation(output)
 
-        # residual connection
+        # residual residual step
         inputs = self.res_scale(inputs)
-        return inputs + self._rezero * output
+        output = inputs + self._rezero * output
+        return output
 
     def get_config(self):
-        config = super(UpscaleBlock, self).get_config()
+        config = super(UpscaleBlockV2, self).get_config()
         config.update({"filters": self.filters, "kernel_size": self.kernel_size})
 
 
-@tf.keras.saving.register_keras_serializable(package="AutoEncoder")
-class AutoEncoder(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="ASVEncoder")
+class ASVEncoder(tf.keras.Model):
     def __init__(self, **kwargs):
-        super(AutoEncoder, self).__init__(**kwargs)
+        super(ASVEncoder, self).__init__(**kwargs)
 
     def build(self, input_shape):
         if self.built:
-            print("AutoEncoder is already built")
+            print("ASVEncoder is already built")
             return
 
-        asv_embeddings, taxonomy_counts = input_shape
-        tax_size = taxonomy_counts[-1]
+        asv_embeddings, dense_counts = input_shape
+        tax_size = dense_counts[-1]
         emb_dim = asv_embeddings[-1]
         filters = 1
         kernel_size = 3
-        taxonomy_conv_layers = [tf.keras.layers.Input([tax_size, 1])]
+        conv_layers = [tf.keras.layers.Input([tax_size, 1])]
         num_layers = int(math.log(emb_dim) / math.log(2))
-        # num_layers = int(math.log(tax_size) / math.log(2))
-        print("number of taxonomy layers:", num_layers)
+        print("number of dense count layers:", num_layers)
         for _ in range(num_layers):
-            taxonomy_conv_layers += [
-                ConvolutionBlock(filters, kernel_size, pool=False),
-                ConvolutionBlock(filters, kernel_size, pool=True),
+            conv_layers += [
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                ConvolutionBlockV2(filters, kernel_size, pool=True),
             ]
             filters *= 2
-        self.taxonomy_encoder = tf.keras.Sequential(
-            taxonomy_conv_layers
-            # + [
-            #     tf.keras.layers.Dense(units=1, activation="gelu"),
-            #     tf.keras.layers.Flatten(),
-            #     tf.keras.layers.Dense(units=512),
-            # ]
-        )
-        self.taxonomy_encoder_ff = tf.keras.layers.Dense(emb_dim)
+        self.dense_count_encoder = tf.keras.Sequential(conv_layers)
+        self.dense_count_ff = tf.keras.layers.Dense(emb_dim)
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
             trainable=True,
             dtype=tf.float32,
         )
-        self._norm = tf.keras.layers.BatchNormalization()
-        super(AutoEncoder, self).build(input_shape)
+        super(ASVEncoder, self).build(input_shape)
 
     def call(
         self,
@@ -216,20 +198,19 @@ class AutoEncoder(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
-        asv_embeddings, taxonomy_counts = inputs
-        taxonomy_embeddings = self.taxonomy_encoder(taxonomy_counts, training=training)
-        taxonomy_embeddings = tf.reduce_mean(taxonomy_embeddings, axis=1)
-        taxonomy_embeddings = self.taxonomy_encoder_ff(taxonomy_embeddings)
+        asv_embeddings, dense_counts = inputs
+        count_embeddings = self.dense_count_encoder(dense_counts, training=training)
+        count_embeddings = tf.reduce_mean(count_embeddings, axis=1)
+        count_embeddings = self.dense_count_ff(count_embeddings)
 
-        encoder_input = asv_embeddings + self._rezero * taxonomy_embeddings
-        # return self._norm(encoder_input)
+        encoder_input = asv_embeddings + self._rezero * count_embeddings
         return encoder_input
 
 
-@tf.keras.saving.register_keras_serializable(package="TripletEncoder")
-class TripletEncoder(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="TripletEncoderV2")
+class TripletEncoderV2(tf.keras.Model):
     def __init__(self, num_groups, **kwargs):
-        super(TripletEncoder, self).__init__(**kwargs)
+        super(TripletEncoderV2, self).__init__(**kwargs)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         self.asv_loss = _pairwise_distances
@@ -248,118 +229,71 @@ class TripletEncoder(tf.keras.Model):
 
     def build(self, input_shape):
         if self.built:
-            print("TripletEncoder is already built")
+            print("TripletEncoderV2 is already built")
             return
 
-        asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = (
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
             input_shape
         )
-        self.encoder = AutoEncoder(name="auto_encoder")
-        self.encoder.build([asv_embeddings, taxonomy_counts])
+        self.asv_encoder = ASVEncoder(name="asv_encoder")
+        self.asv_encoder.build([asv_embeddings, dense_counts])
 
-        emb_dim = asv_embeddings[-1]
         filters = 1
         kernel_size = 3
-        self.encoder_conv_layers = []
-        self.num_layers = 6
-        for _ in range(self.num_layers):
-            self.encoder_conv_layers += [
-                tf.keras.Sequential(
-                    [
-                        tf.keras.layers.Input([emb_dim, filters]),
-                        ConvolutionBlock(filters, kernel_size, pool=False),
-                        ConvolutionBlock(filters, kernel_size, pool=False),
-                        ConvolutionBlock(filters, kernel_size, pool=False),
-                        ConvolutionBlock(filters, kernel_size, pool=True),
-                    ]
-                )
+        emb_dim = asv_embeddings[-1]
+        self.num_encoder_filters = 64
+        self.num_encoder_layers = int(math.log2(self.num_encoder_filters))
+        self.encoder_out_dim = emb_dim // self.num_encoder_filters
+        encoder_layers = [tf.keras.layers.Input([emb_dim, filters])]
+        print("number of encoder layers...", self.num_encoder_layers)
+        print("number of encoder filters...", self.num_encoder_filters)
+        for _ in range(self.num_encoder_layers):
+            encoder_layers += [
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                ConvolutionBlockV2(filters, kernel_size, pool=True),
             ]
             filters *= 2
             emb_dim = emb_dim // 2
+        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
+        encoder_output_shape = [self.encoder_out_dim, self.num_encoder_filters]
 
-        filters = 64
-        kernel_size = 3
-        discriminator_in_layers = [tf.keras.layers.Input([8, 64])]
-        for _ in range(12):
-            discriminator_in_layers += [
-                ConvolutionBlock(filters, kernel_size, pool=False)
-            ]
-        self.discriminator_in = tf.keras.Sequential(discriminator_in_layers)
-
-        self.batch_classifier = tf.keras.layers.Dense(
-            self.num_groups, use_bias=True, activation="softmax"
-        )
-        # self.regressor = tf.keras.layers.Dense(1)
-
-        # self.decoder_layers = []
-        # self.decoder_rezeros = []
-        # out_dim = 64
-        # self.i = 0
-        # while out_dim < 512:
-        #     self.decoder_layers.append(
-        #         tf.keras.Sequential(
-        #             [
-        #                 tf.keras.layers.Dense(
-        #                     out_dim, use_bias=True, activation="gelu"
-        #                 ),
-        #                 tf.keras.layers.Dense(out_dim, use_bias=True),
-        #             ]
-        #         )
-        #     )
-        #     self.decoder_rezeros.append(
-        #         self.add_weight(
-        #             name=f"rezero_alpha_{self.i}",
-        #             initializer=tf.keras.initializers.Zeros(),
-        #             trainable=True,
-        #             dtype=tf.float32,
-        #         )
-        #     )
-        #     out_dim *= 2
-        #     self.i += 1
-        # self.decoder_output = tf.keras.Sequential(
-        #     [
-        #         tf.keras.layers.Dense(512, use_bias=True, activation="gelu"),
-        #         tf.keras.layers.Dense(512, use_bias=True),
-        #     ]
-        # )
-        # self.decoder = tf.keras.Sequential(
-        #     decoder_layers + [tf.keras.layers.Dense(512)]
-        # )
-
-        # filters = 512
-        # kernel_size = 1
-        # discriminator_out_layers = [tf.keras.layers.Input([1, 512])]
-        # for _ in range(3):
-        #     discriminator_out_layers += [
-        #         ConvolutionBlock(filters, kernel_size, pool=False),
-        #         ConvolutionBlock(filters, kernel_size, pool=False),
-        #         ConvolutionBlock(filters, kernel_size, pool=False),
-        #         UpscaleBlock(filters, kernel_size),
-        #     ]
-        #     filters /= 2
-        #     if kernel_size == 1:
-        #         kernel_size += 1
-        # self.discriminator_out = tf.keras.Sequential(discriminator_out_layers)
-
-        filters = 64
-        kernel_size = 3
-        decoder_conv_layers = [
-            tf.keras.layers.Input([8, 64]),
+        filters = self.num_encoder_filters
+        decoder_layers = [
+            tf.keras.layers.Input(encoder_output_shape),
         ]
-        for _ in range(self.num_layers):
-            decoder_conv_layers += [
-                ConvolutionBlock(filters, kernel_size, pool=False),
-                ConvolutionBlock(filters, kernel_size, pool=False),
-                ConvolutionBlock(filters, kernel_size, pool=False),
-                UpscaleBlock(filters, kernel_size),
+        for _ in range(self.num_encoder_layers):
+            decoder_layers += [
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                ConvolutionBlockV2(filters, kernel_size, pool=False),
+                UpscaleBlockV2(filters, kernel_size),
             ]
             filters /= 2
         self.decoder = tf.keras.Sequential(
-            decoder_conv_layers
-            + [tf.keras.layers.Flatten(), tf.keras.layers.Dense(512)]
+            decoder_layers + [tf.keras.layers.Flatten(), tf.keras.layers.Dense(512)],
+            name="decoder",
         )
 
-        super(TripletEncoder, self).build(input_shape)
+        filters = self.num_encoder_filters
+        discriminator_layers = [tf.keras.layers.Input(encoder_output_shape)]
+        for _ in range(12):
+            discriminator_layers += [
+                ConvolutionBlockV2(filters, kernel_size, pool=False)
+            ]
+        self.discriminator = tf.keras.Sequential(
+            discriminator_layers, name="discriminator"
+        )
+
+        self.batch_classifier = tf.keras.layers.Dense(
+            self.num_groups,
+            use_bias=True,
+            activation="softmax",
+            name="batch_classifier",
+        )
+
+        super(TripletEncoderV2, self).build(input_shape)
 
     def _reconstruction_loss(self, encoder_input, decodeer_output):
         square_difference = tf.reduce_sum(
@@ -392,14 +326,14 @@ class TripletEncoder(tf.keras.Model):
         uniform = tf.ones_like(res_probs) * (
             1.0 / tf.cast(self.num_groups, dtype=tf.float32)
         )
-        p = res_probs
-        q = uniform
+        p = uniform
+        q = res_probs
         log_pq = tf.math.log(p) - tf.math.log(q)
         kl = tf.reduce_sum(p * log_pq, axis=-1)
 
         return (
             tf.reduce_mean(noise_size),
-            tf.reduce_mean(batch_loss),
+            tf.reduce_mean(batch_loss) * 0.1,
             tf.reduce_mean(kl),
             # tf.reduce_mean(age_loss) * 10.0,
             # tf.reduce_mean(mae),
@@ -414,21 +348,6 @@ class TripletEncoder(tf.keras.Model):
     ):
         inputs, y = data
         return self._encode(inputs), y
-
-    def _process_input(self, inputs):
-        asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = inputs
-
-        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-
-        asv_embeddings = self.sample_embeddings(
-            asv_embeddings, batch_indices, asv_counts, asv_indices
-        )
-
-        taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-        total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-        taxonomy_counts = taxonomy_counts / total_counts
-        return asv_embeddings, taxonomy_counts
 
     def train_step(
         self,
@@ -557,96 +476,47 @@ class TripletEncoder(tf.keras.Model):
     def call(
         self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        training = training and self.trainable
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
 
-        if len(inputs) > 2:
-            asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = (
-                inputs
-            )
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
 
-            batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-            asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-
-            asv_embeddings = self.sample_embeddings(
-                asv_embeddings, batch_indices, asv_counts, asv_indices
-            )
-
-            # compute relative abundance
-            taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-            total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-            taxonomy_counts = taxonomy_counts / total_counts
-        else:
-            asv_embeddings, taxonomy_counts = inputs
-
-        encoder_input = self.encoder([asv_embeddings, taxonomy_counts])
-        encoder_output = encoder_input
-        # encoder_residuals = []
-        for i in range(self.num_layers - 1):
-            encoder_output = self.encoder_conv_layers[i](
-                encoder_output, training=training
-            )
-            # encoder_residuals.append(tf.reduce_mean(encoder_output, axis=-1))
-        encoder_output = self.encoder_conv_layers[-1](encoder_output, training=training)
-        discriminator_out = self.discriminator_in(encoder_output)
-        decoder_output = self.decoder(encoder_output - discriminator_out)
-
-        batch_noise = tf.reduce_mean(discriminator_out, axis=1)
-        encoder_embeddings = tf.reduce_mean(encoder_output)
-        encoder_residual = encoder_embeddings - batch_noise
-        # decoder_output = encode_embedding
-        # for i in range(self.i):
-        #     decoder_output = encoder_residuals[-1 * (i + 1)] + self.decoder_rezeros[
-        #         i
-        #     ] * self.decoder_layers[i](decoder_output)
-        # decoder_output = self.decoder_output(decoder_output)
-        batch_probs = self.batch_classifier(batch_noise)
-        res_probs = self.batch_classifier(encoder_residual)
-        # regressor = self.regressor(encode_embedding)
-
-        print("Triplet encoder exit...")
-        return (
-            batch_noise,
-            batch_probs,
-            res_probs,
-            encoder_input,
-            decoder_output,
-            # regressor,
+        asv_embeddings = self.sample_embeddings(
+            asv_embeddings, batch_indices, asv_counts, asv_indices
         )
 
-    def _encode(self, inputs):
-        if len(inputs) > 2:
-            asv_embeddings, batch_indices, asv_indices, asv_counts, taxonomy_counts = (
-                inputs
-            )
+        encoder_input = self.asv_encoder([asv_embeddings, dense_counts])
+        encoder_output = self.encoder(encoder_input)
+        discriminator_out = self.discriminator(encoder_output)
+        encoder_residual = encoder_output - discriminator_out
+        decoder_output = self.decoder(encoder_residual)
 
-            batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-            asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-
-            asv_embeddings = self.sample_embeddings(
-                asv_embeddings, batch_indices, asv_counts, asv_indices
-            )
-
-            # compute relative abundance
-            taxonomy_counts = tf.cast(taxonomy_counts, dtype=tf.float32)
-            total_counts = tf.reduce_sum(taxonomy_counts, axis=1, keepdims=True)
-            taxonomy_counts = taxonomy_counts / total_counts
-        else:
-            asv_embeddings, taxonomy_counts = inputs
-
-        encoder_input = self.encoder([asv_embeddings, taxonomy_counts])
-        encoder_output = encoder_input
-        # encoder_residuals = []
-        for i in range(self.num_layers - 1):
-            encoder_output = self.encoder_conv_layers[i](encoder_output, training=False)
-            # encoder_residuals.append(tf.reduce_mean(encoder_output, axis=-1))
-        encoder_output = self.encoder_conv_layers[-1](encoder_output, training=False)
-        discriminator_out = self.discriminator_in(encoder_output)
         batch_noise = tf.reduce_mean(discriminator_out, axis=1)
-        encoder_embeddings = tf.reduce_mean(encoder_output)
-        return encoder_embeddings - batch_noise
+        encoder_residual = tf.reduce_mean(encoder_residual, axis=1)
+        batch_probs = self.batch_classifier(batch_noise)
+        res_probs = self.batch_classifier(encoder_residual)
+
+        print("Triplet encoder exit...")
+        return (batch_noise, batch_probs, res_probs, encoder_input, decoder_output)
+
+    def _encode(self, inputs):
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
+
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+        asv_embeddings = self.sample_embeddings(
+            asv_embeddings, batch_indices, asv_counts, asv_indices
+        )
+
+        encoder_input = self.asv_encoder([asv_embeddings, dense_counts])
+        encoder_output = self.encoder(encoder_input)
+        discriminator_out = self.discriminator(encoder_output)
+        encoder_residual = encoder_output - discriminator_out
+        return tf.reduce_mean(encoder_residual, axis=1)
 
     def get_config(self):
-        config = super(TripletEncoder, self).get_config()
+        config = super(TripletEncoderV2, self).get_config()
         config.update(
             {
                 "num_groups": self.num_groups,

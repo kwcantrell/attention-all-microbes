@@ -71,6 +71,7 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         return_sample_ids=False,
         tree_path=None,
         seed=None,
+        drop_remainder=True,
     ):
         if isinstance(table, str):
             table = load_table(table)
@@ -135,7 +136,14 @@ class GeneratorDatasetV2(tf.keras.utils.Sequence):
         self.rarefied_table: Table = self.table.subsample(rarefy_depth, seed=42)
 
         self.size = self.rarefied_table.shape[1]
+
+        self.drop_remainder = drop_remainder
         self.steps_per_epoch = self.size // self.batch_size
+        if (
+            not self.drop_remainder
+            and self.steps_per_epoch * self.batch_size < self.size
+        ):
+            self.steps_per_epoch += 1
 
         self.y_data = self.metadata.loc[self._rarefied_table.ids()]
         self.on_epoch_end()
