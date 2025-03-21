@@ -25,7 +25,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         **kwargs,
     ):
         super(NucleotideEncoderV5, self).__init__(**kwargs)
-        print("Constructing V4 model")
+        print("Constructing V5 model")
         self.embedding_dim = embedding_dim
         self.max_bp = max_bp
         self.dropout_rate = dropout_rate
@@ -85,7 +85,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         loss = 0.0
         num_pairs = tf.shape(y_true)[-1]
         embeddings = embeddings[:num_pairs]
-        asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
+        asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings)) * 10.0
         loss += asv_loss
         return loss, asv_loss
 

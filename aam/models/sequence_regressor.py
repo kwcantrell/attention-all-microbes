@@ -1,21 +1,11 @@
 from __future__ import annotations
 
-import json
-from math import log
 from typing import Optional, Union
 
 import tensorflow as tf
-import tensorflow_models as tfm
 
 from aam.losses import PairwiseLoss, _pairwise_distances
-from aam.models.multihead_attention_pooling import MultiHeadAttentionPooling
-from aam.models.transformers import TransformerEncoder
 from aam.models.unifrac_denoising import UnifracDenoiser
-from aam.models.unifrac_encoder import UnifracEncoder
-from aam.models.utils import sort_using_counts, to_batch
-from aam.optimizers.gradient_accumulator import GradientAccumulator
-from aam.optimizers.loss_scaler import LossScaler
-from aam.utils import create_random_mask, float_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="SequenceRegressor")

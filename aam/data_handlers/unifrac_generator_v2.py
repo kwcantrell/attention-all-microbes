@@ -8,7 +8,22 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 from bp import parse_newick, to_skbio_treenode
-from sklearn import preprocessing
+from unifrac import ssu_inmem
+
+
+def weighted_normalized(table, phylogeny, *args):
+    variance_adjusted = False
+    bypass_tips = False
+    n_substeps = 1
+    return ssu_inmem(
+        table,
+        phylogeny,
+        "weighted_normalized",
+        variance_adjusted,
+        1.0,
+        bypass_tips,
+        n_substeps,
+    )
 
 
 def add_lock(func):
@@ -29,10 +44,11 @@ def add_lock(func):
     return wrapper
 
 
-class TripletGeneratorV2(tf.keras.utils.Sequence):
+class UnifracGeneratorV2(tf.keras.utils.Sequence):
     def __init__(
         self,
         table: Union[str, Table] = None,
+        tree_path: str = None,
         metadata: Optional[Union[str, pd.DataFrame]] = None,
         metadata_column: Optional[str] = None,
         sequence_embeddings: Optional[str] = None,
@@ -51,6 +67,8 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
             table = load_table(table)
 
         self.table: Table = table
+        self.tree = to_skbio_treenode(parse_newick(open(tree_path).read()))
+
         print("original table shape:", self.table.shape)
         self.asv_ids = self.table.ids(axis="observation")
         self.num_asvs = len(self.table.ids(axis="observation"))
@@ -156,9 +174,7 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
             return_indices=True,
         )
         tokens = self.sequence_embeddings[sequence_labels_idx]
-        y_true = self.metadata.loc[batch_sample_ids, self.metadata_column].to_numpy()[
-            :, np.newaxis
-        ]
+        y_true = self.distances.filter(batch_sample_ids).data
 
         if self.return_sample_ids:
             return (
@@ -197,6 +213,10 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
 
     @rarefied_table.setter
     def rarefied_table(self, rarefied_table: Table):
+        print("computing weighted unifrac distances...")
+        self.distances = weighted_normalized(rarefied_table, self.tree)
+
+        print("finishing processing rarefied table...")
         self._metadata = self._metadata.loc[rarefied_table.ids()]
         self.sample_ids = rarefied_table.ids()
         self.sample_indices = np.arange(len(self.sample_ids))
@@ -244,8 +264,9 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
 
 
 if __name__ == "__main__":
-    ug = TripletGeneratorV2(
+    ug = UnifracGeneratorV2(
         table="/home/kalen/removing-study-id/healthy-us-sorted-table.biom",
+        tree_path="/home/kalen/removing-study-id/agp-filtered.nwk",
         metadata="/home/kalen/removing-study-id/healthy-us-metadata-train.tsv",
         metadata_column="numeric_sequence_group",
         sequence_embeddings="/home/kalen/removing-study-id/healthy-us-sequence-embeddings.npy",
@@ -253,7 +274,7 @@ if __name__ == "__main__":
         gen_new_tables=True,
         shuffle=True,
         batch_size=8,
-        return_sample_ids=True,
+        return_sample_ids=False,
         drop_remainder=False,
     )
     x, y = ug[0]

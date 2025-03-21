@@ -7,8 +7,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
-from bp import parse_newick, to_skbio_treenode
-from sklearn import preprocessing
 
 
 def add_lock(func):
@@ -29,7 +27,7 @@ def add_lock(func):
     return wrapper
 
 
-class TripletGeneratorV2(tf.keras.utils.Sequence):
+class RegressorGenerator(tf.keras.utils.Sequence):
     def __init__(
         self,
         table: Union[str, Table] = None,
@@ -46,17 +44,26 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
         seed=None,
         drop_remainder=True,
         batch_size=128,
+        shift=None,
+        scale=None,
     ):
         if isinstance(table, str):
             table = load_table(table)
 
         self.table: Table = table
+
         print("original table shape:", self.table.shape)
         self.asv_ids = self.table.ids(axis="observation")
         self.num_asvs = len(self.table.ids(axis="observation"))
 
         self.metadata_column: str = metadata_column
         self.metadata: pd.Series = metadata
+        if shift is None:
+            self.shift = np.mean(self.metadata[self.metadata_column])
+            self.scale = np.std(self.metadata[self.metadata_column])
+        else:
+            self.shift = shift
+            self.scale = scale
         self.rarefy_depth: int = rarefy_depth
         self.return_sample_ids: bool = return_sample_ids
 
@@ -105,9 +112,9 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         start = idx * self.batch_size
         end = start + self.batch_size
-        return self._batch_data(self.sample_ids[start:end], 1.0)
+        return self._batch_data(self.sample_ids[start:end])
 
-    def _batch_data(self, batch_sample_ids, weights):
+    def _batch_data(self, batch_sample_ids):
         (
             num_unique_asvs,
             sparse_indices,
@@ -156,9 +163,11 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
             return_indices=True,
         )
         tokens = self.sequence_embeddings[sequence_labels_idx]
-        y_true = self.metadata.loc[batch_sample_ids, self.metadata_column].to_numpy()[
-            :, np.newaxis
-        ]
+        y_true = (
+            self.metadata.loc[batch_sample_ids, self.metadata_column]
+            .to_numpy()
+            .reshape((-1, 1))
+        )
 
         if self.return_sample_ids:
             return (
@@ -175,7 +184,7 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
             obs_indices,
             counts,
             asv_counts,
-        ), y_true
+        ), (y_true - self.shift) / self.scale
 
     def on_epoch_end(self):
         if (
@@ -197,6 +206,9 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
 
     @rarefied_table.setter
     def rarefied_table(self, rarefied_table: Table):
+        print("computing weighted unifrac distances...")
+
+        print("finishing processing rarefied table...")
         self._metadata = self._metadata.loc[rarefied_table.ids()]
         self.sample_ids = rarefied_table.ids()
         self.sample_indices = np.arange(len(self.sample_ids))
@@ -244,16 +256,16 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
 
 
 if __name__ == "__main__":
-    ug = TripletGeneratorV2(
+    ug = RegressorGenerator(
         table="/home/kalen/removing-study-id/healthy-us-sorted-table.biom",
         metadata="/home/kalen/removing-study-id/healthy-us-metadata-train.tsv",
-        metadata_column="numeric_sequence_group",
+        metadata_column="host_age_normalized_years",
         sequence_embeddings="/home/kalen/removing-study-id/healthy-us-sequence-embeddings.npy",
         sequence_labels="/home/kalen/removing-study-id/healthy-us-sequence-labels.npy",
         gen_new_tables=True,
         shuffle=True,
         batch_size=8,
-        return_sample_ids=True,
+        return_sample_ids=False,
         drop_remainder=False,
     )
     x, y = ug[0]

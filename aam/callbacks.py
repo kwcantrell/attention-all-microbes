@@ -76,16 +76,18 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
         self.steps = steps
         self.output_dir = output_dir
         self.report_back = report_back
-        self.best_metric = None
         self.monitor = monitor
+        self.epochs_left = 5
 
     def on_epoch_end(self, epoch, logs=None):
-        # metric = logs[self.monitor]
-        # if self.best_metric is None or self.best_metric > metric:
-        if epoch % self.report_back == 0:
-            y_pred, y_true = self.model.predict(self.dataset.take(self.steps))
-            _mean_absolute_error(y_pred, y_true, self.output_dir)
-            # self.best_metric = metric
+        if epoch == 0 or self.epochs_left <= 1:
+            y_pred, y_true = self.model.predict(
+                self.dataset, steps=self.dataset.steps_per_epoch
+            )
+            _mean_absolute_error(y_pred, y_true, f"{self.output_dir}-epoch-{epoch}.png")
+            self.epochs_left = 1
+        else:
+            self.epochs_left -= 1
 
 
 class LAMBLRScheduler(tf.keras.callbacks.Callback):
