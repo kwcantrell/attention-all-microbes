@@ -189,7 +189,7 @@ class RegressorGenerator(tf.keras.utils.Sequence):
     def on_epoch_end(self):
         if (
             self.gen_new_tables
-            and self.epochs_since_last_table > self.gen_new_table_frequency
+            and self.epochs_since_last_table >= self.gen_new_table_frequency
         ):
             print("resampling dataset...")
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
@@ -206,8 +206,6 @@ class RegressorGenerator(tf.keras.utils.Sequence):
 
     @rarefied_table.setter
     def rarefied_table(self, rarefied_table: Table):
-        print("computing weighted unifrac distances...")
-
         print("finishing processing rarefied table...")
         self._metadata = self._metadata.loc[rarefied_table.ids()]
         self.sample_ids = rarefied_table.ids()

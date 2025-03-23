@@ -2,7 +2,9 @@ import tensorflow as tf
 
 
 @tf.keras.saving.register_keras_serializable(package="TransformerLearningRateSchedule")
-class TransformerLearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+class TransformerLearningRateSchedule(
+    tf.keras.optimizers.schedules.LearningRateSchedule
+):
     def __init__(self, warmup_steps=100, decay_method="cosine", initial_lr=3e-4):
         super(TransformerLearningRateSchedule, self).__init__()
 
@@ -30,8 +32,12 @@ class TransformerLearningRateSchedule(tf.keras.optimizers.schedules.LearningRate
             )
         elif self.decay_method == "inv_sqrt":
             # Inverse Square Root decay after warmup (used in the original Transformer paper)
-            inv_sqrt_decay = self.initial_lr * tf.math.rsqrt(tf.cast(step - self.warmup_steps + 1, tf.float32))
-            learning_rate = tf.cond(step < self.warmup_steps, lambda: learning_rate, lambda: inv_sqrt_decay)
+            inv_sqrt_decay = self.initial_lr * tf.math.rsqrt(
+                tf.cast(step - self.warmup_steps + 1, tf.float32)
+            )
+            learning_rate = tf.cond(
+                step < self.warmup_steps, lambda: learning_rate, lambda: inv_sqrt_decay
+            )
 
         return learning_rate
 
@@ -86,10 +92,40 @@ def to_batch(tensor, batch_counts):
 
 
 def sort_using_counts(tensor, counts):
-    sorted_indices = tf.argsort(tf.squeeze(counts, axis=-1), axis=1, direction="DESCENDING")
+    sorted_indices = tf.argsort(
+        tf.squeeze(counts, axis=-1), axis=1, direction="DESCENDING"
+    )
     sorted_tensor = tf.gather(tensor, sorted_indices, axis=1, batch_dims=1)
     sorted_counts = tf.gather(counts, sorted_indices, axis=1, batch_dims=1)
     return sorted_tensor, sorted_counts
+
+
+def batch_embeddings(asv_embeddings, batch_indicies, counts, asv_indices):
+    emb_dim = tf.shape(asv_embeddings)[-1]
+    batch_indicies = tf.cast(batch_indicies, dtype=tf.int32)
+    asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+    if asv_indices is not None:
+        asv_embeddings = tf.gather(asv_embeddings, asv_indices)
+    batch_shape = tf.reduce_max(batch_indicies[:, 0]) + 1
+    max_unique = tf.reduce_max(batch_indicies[:, 1]) + 1
+    batch_embeddings = tf.scatter_nd(
+        batch_indicies, asv_embeddings, shape=[batch_shape, max_unique, emb_dim]
+    )
+    counts = tf.scatter_nd(batch_indicies, counts, shape=[batch_shape, max_unique, 1])
+    return batch_embeddings, counts
+
+
+def sample_embeddings(asv_embeddings, batch_indicies, counts, asv_indices):
+    batched_embeddigns, batch_counts = batch_embeddings(
+        asv_embeddings, batch_indicies, counts, asv_indices
+    )
+    asv_mask = tf.cast(batch_counts > 0, dtype=tf.float32)
+    batched_embeddigns = batched_embeddigns * asv_mask
+    sample_embeddings = tf.reduce_sum(batched_embeddigns, axis=1) / tf.reduce_sum(
+        asv_mask, axis=1
+    )
+    return sample_embeddings
 
 
 if __name__ == "__main__":

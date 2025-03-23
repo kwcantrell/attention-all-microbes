@@ -1,3 +1,6 @@
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -23,12 +26,16 @@ def _mean_absolute_error(pred_val, true_val, fname, labels=None):
     diag_yy = p(diag_xx)
     data = {"pred": pred_val, "true": true_val}
     data = pd.DataFrame(data=data)
+
+    fig = plt.figure()
     plot = sns.scatterplot(data, x="true", y="pred")
     plt.plot(xx, yy)
     plt.plot(diag_xx, diag_yy)
     mae = "%.4g" % mae
     plot.set(xlabel="True")
     plot.set(ylabel="Predicted")
+    plt.xlim(18, 65)
+    plt.ylim(18, 65)
     plot.set(title=f"MAE: {mae}")
     plt.savefig(fname)
     plt.close()
@@ -77,15 +84,15 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
         self.output_dir = output_dir
         self.report_back = report_back
         self.monitor = monitor
-        self.epochs_left = 5
+        self.epochs_left = 1
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch == 0 or self.epochs_left <= 1:
+        if self.epochs_left <= 1:
             y_pred, y_true = self.model.predict(
                 self.dataset, steps=self.dataset.steps_per_epoch
             )
             _mean_absolute_error(y_pred, y_true, f"{self.output_dir}-epoch-{epoch}.png")
-            self.epochs_left = 1
+            self.epochs_left = 5
         else:
             self.epochs_left -= 1
 

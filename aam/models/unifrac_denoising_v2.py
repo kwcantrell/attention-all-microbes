@@ -6,7 +6,8 @@ import tensorflow as tf
 
 # from aam.data_handlers.generator_dataset import batch_embeddings
 from aam.losses import PairwiseLoss, triplet_loss
-from aam.models.unifrac_encoder_v2 import UnifracEncoderV2
+
+# from aam.models.unifrac_encoder_v2 import UnifracEncoderV2
 from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler

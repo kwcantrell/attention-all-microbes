@@ -6,7 +6,7 @@ import tensorflow as tf
 
 # from aam.data_handlers.generator_dataset import batch_embeddings
 from aam.losses import PairwiseLoss, triplet_loss
-from aam.models.unifrac_encoder import UnifracEncoder
+from aam.models.unifrac_encoder_v4 import UnifracEncoderV4
 from aam.models.utils import sort_using_counts, to_batch
 from aam.optimizers.gradient_accumulator import GradientAccumulator
 from aam.optimizers.loss_scaler import LossScaler
@@ -82,7 +82,7 @@ class UnifracDenoiser(tf.keras.Model):
             print("UnifracDenoiser is already built")
             return
 
-        self.unifrac_denoiser = UnifracEncoder(
+        self.unifrac_denoiser = UnifracEncoderV4(
             output_dim=self.output_dim,
             token_limit=self.token_limit,
             encoder_type=self.encoder_type,
@@ -106,7 +106,7 @@ class UnifracDenoiser(tf.keras.Model):
             name="unifrac_denoiser",
         )
 
-        self.unifrac_encoder = UnifracEncoder(
+        self.unifrac_encoder = UnifracEncoderV4(
             output_dim=self.output_dim,
             token_limit=self.token_limit,
             encoder_type=self.encoder_type,

@@ -5,11 +5,14 @@ from aam.models.convolution_block import ConvolutionBlock
 
 @tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoder")
 class ASVDenseCountEncoder(tf.keras.Model):
-    def __init__(self, num_filters=16, kernel_size=3, pool_size=2, **kwargs):
+    def __init__(
+        self, num_filters=16, kernel_size=3, pool_size=2, dropout_rate=0.0, **kwargs
+    ):
         super(ASVDenseCountEncoder, self).__init__(**kwargs)
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.pool_size = pool_size
+        self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
         if self.built:
@@ -21,13 +24,31 @@ class ASVDenseCountEncoder(tf.keras.Model):
         dense_size = dense_counts[-1]
         conv_layers = [tf.keras.layers.Input([dense_size, 1])]
         i = 0
-        while dense_size > 512:
+        while dense_size > asv_embeddings[-1]:
             conv_layers += [
-                ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
-                ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
-                ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
                 ConvolutionBlock(
-                    self.num_filters, self.kernel_size, pool_size=self.pool_size
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                    dropout_rate=self.dropout_rate,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                    dropout_rate=self.dropout_rate,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                    dropout_rate=self.dropout_rate,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=self.pool_size,
+                    dropout_rate=self.dropout_rate,
                 ),
             ]
             dense_size /= self.pool_size
@@ -41,6 +62,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
                 tf.keras.layers.Dense(asv_embeddings[-1]),
             ]
         )
+
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -49,29 +71,39 @@ class ASVDenseCountEncoder(tf.keras.Model):
         )
         super(ASVDenseCountEncoder, self).build(input_shape)
 
-    def call(
-        self,
-        inputs,
-        training: bool = False,
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def _normalize_dense_counts(self, dense_counts):
+        # compute relative abundance
+        dense_counts = tf.cast(dense_counts, dtype=tf.float32)
+        total_counts = tf.reduce_sum(dense_counts, axis=-1)
+        depth = tf.reduce_max(total_counts)
+        dense_counts /= depth
+
+        # normalize counts
+        dense_counts = tf.math.log1p(dense_counts)
+        dense_mean = tf.reduce_mean(dense_counts, axis=1, keepdims=True)
+        dense_std = tf.math.reduce_std(dense_counts, axis=1, keepdims=True)
+        return (dense_counts - dense_mean) / dense_std
+
+    def call(self, inputs, training=False):
         training = training and self.trainable
 
         asv_embeddings, dense_counts = inputs
+        dense_counts = self._normalize_dense_counts(dense_counts)
         count_embeddings = self.dense_count_encoder(dense_counts, training=training)
 
         # residual step
-        encoder_input = asv_embeddings + self._rezero * count_embeddings
-        return encoder_input
+        output = asv_embeddings + self._rezero * count_embeddings
+
+        return output
 
     def get_config(self):
-        return (
-            super()
-            .get_config()
-            .update(
-                {
-                    "num_filters": self.num_filters,
-                    "kernel_size": self.kernel_size,
-                    "pool_size": self.pool_size,
-                }
-            )
+        config = super(ASVDenseCountEncoder, self).get_config()
+        config.update(
+            {
+                "num_filters": self.num_filters,
+                "kernel_size": self.kernel_size,
+                "pool_size": self.pool_size,
+                "dropout_rate": self.dropout_rate,
+            }
         )
+        return config

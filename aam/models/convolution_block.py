@@ -2,11 +2,12 @@ import tensorflow as tf
 
 
 class ConvolutionBlock(tf.keras.layers.Layer):
-    def __init__(self, filters, kernel_size, pool_size=0, **kwargs):
+    def __init__(self, filters, kernel_size, pool_size=0, dropout_rate=0.0, **kwargs):
         super(ConvolutionBlock, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
         self.pool_size = pool_size
+        self.dropout_rate = dropout_rate
 
         self.conv_inner = tf.keras.Sequential(
             [
@@ -41,6 +42,9 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                 padding="same",
             )
 
+        if dropout_rate > 0.0:
+            self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
+
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -52,10 +56,14 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         output = self.conv_inner(inputs)
         output = self.conv_outer(output)
 
+        if self.dropout_rate > 0.0:
+            output = self.dropout(output, training=training)
+
         # residual step
         if self.pool_size > 0:
             inputs = self.res_pool(inputs)
         output = inputs + self._rezero * output
+
         return output
 
     def get_config(self):
@@ -65,5 +73,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                 "filters": self.filters,
                 "kernel_size": self.kernel_size,
                 "pool_size": self.pool_size,
+                "dropout_rate": self.dropout_rate,
             }
         )
+        return config

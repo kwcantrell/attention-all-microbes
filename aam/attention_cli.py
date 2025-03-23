@@ -202,6 +202,361 @@ def fit_asv_encoder(
 
 @cli.command()
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option("--i-sequence-embeddings", required=True, type=click.Path(exists=True))
+@click.option("--i-sequence-labels", required=True, type=click.Path(exists=True))
+@click.option("--i-tree", required=True, type=click.Path(exists=True))
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=1e-3, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=0, show_default=True, type=int)
+@click.option("--p-decay-steps", default=50000, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
+@click.option("--p-rarefy-depth", default=1000, required=False, type=int)
+def fit_unifrac_regressor(
+    i_table: str,
+    i_sequence_embeddings,
+    i_sequence_labels,
+    i_tree: str,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_batch_size: int,
+    p_epochs: int,
+    i_model: Union[None, str],
+    p_gen_new_table: bool,
+    p_lr: float,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    output_dir: str,
+    p_weight_decay: float,
+    p_rarefy_depth: int,
+):
+    import tensorflow_addons as tfa
+
+    from aam.callbacks import LAMBLRScheduler
+    from aam.data_handlers.unifrac_generator_v2 import UnifracGeneratorV2
+    from aam.models.unifrac_encoder_v4 import UnifracEncoderV4
+    from aam.models.utils import cos_decay_with_warmup
+
+    # start pre processing dataset
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    num_samples = df.shape[0]
+    indices = np.arange(num_samples, dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(num_samples * 0.8)
+
+    train_indices = indices[:train_size]
+    train_df = df.iloc[train_indices]
+
+    val_indices = indices[train_size:]
+    val_df = df.iloc[val_indices]
+    common_kwargs = {
+        "table": i_table,
+        "tree_path": i_tree,
+        "metadata_column": m_metadata_column,
+        "rarefy_depth": p_rarefy_depth,
+        "sequence_embeddings": i_sequence_embeddings,
+        "sequence_labels": i_sequence_labels,
+        "batch_size": p_batch_size,
+        "drop_remainder": False,
+    }
+
+    train_gen = UnifracGeneratorV2(
+        metadata=train_df,
+        shuffle=True,
+        gen_new_tables=p_gen_new_table,
+        epochs=p_epochs,
+        **common_kwargs,
+    )
+
+    val_gen = UnifracGeneratorV2(
+        metadata=val_df,
+        shuffle=False,
+        gen_new_tables=False,
+        epochs=1,
+        **common_kwargs,
+    )
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    figure_path = os.path.join(output_dir, "figures")
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+
+    if i_model is not None:
+        model = tf.keras.models.load_model(i_model, compile=False)
+    else:
+        model = UnifracEncoderV4()
+
+    token_shape = tf.TensorShape([None, 512])
+    batch_indicies = tf.TensorShape([None, 2])
+    indicies_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+    dense_count = tf.TensorShape([None, train_gen.num_asvs])
+    model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
+    model.summary()
+    lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    )
+
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
+        weight_decay=p_weight_decay,
+        exclude_from_weight_decay=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "batch_norm",
+            "BatchNorm",
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "batch_norm",
+            "BatchNorm",
+        ],
+    )
+    model.compile(optimizer=optimizer, run_eagerly=False)
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+    core_callbacks = [
+        # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+        # tf.keras.callbacks.EarlyStopping(
+        #     "val_encoder_loss",
+        #     patience=p_patience,
+        #     start_from_epoch=p_early_stop_warmup,
+        # ),
+        lr_scheduler,
+        model_saver,
+    ]
+    model.fit(
+        train_gen,
+        validation_data=val_gen,
+        callbacks=[*core_callbacks],
+        epochs=p_epochs,
+        steps_per_epoch=train_gen.steps_per_epoch,
+        validation_steps=val_gen.steps_per_epoch,
+    )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
+
+
+@cli.command()
+@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option("--i-sequence-embeddings", required=True, type=click.Path(exists=True))
+@click.option("--i-sequence-labels", required=True, type=click.Path(exists=True))
+@click.option(
+    "--m-metadata-file",
+    required=True,
+    help="Metadata description",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--m-metadata-column",
+    required=True,
+    type=str,
+    help="Numeric metadata column to use as prediction target.",
+)
+@click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--i-base-model", default=None, required=False, type=str)
+@click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
+@click.option("--p-lr", default=1e-3, show_default=True, type=float)
+@click.option("--p-warmup-steps", default=0, show_default=True, type=int)
+@click.option("--p-decay-steps", default=5000, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
+@click.option("--p-rarefy-depth", default=10000, required=False, type=int)
+def fit_new_regressor(
+    i_table: str,
+    i_sequence_embeddings,
+    i_sequence_labels,
+    m_metadata_file: str,
+    m_metadata_column: str,
+    p_batch_size: int,
+    p_epochs: int,
+    i_model: Union[None, str],
+    i_base_model,
+    p_gen_new_table: bool,
+    p_lr: float,
+    p_warmup_steps: int,
+    p_decay_steps: int,
+    output_dir: str,
+    p_weight_decay: float,
+    p_rarefy_depth: int,
+):
+    import tensorflow_addons as tfa
+
+    from aam.callbacks import LAMBLRScheduler, MeanAbsoluteError
+    from aam.data_handlers.regressor_generator import RegressorGenerator
+    from aam.models.regressor_v2 import RegressorV2
+    from aam.models.utils import cos_decay_with_warmup
+
+    # start pre processing dataset
+    df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
+        [m_metadata_column]
+    ]
+    num_samples = df.shape[0]
+    indices = np.arange(num_samples, dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(num_samples * 0.8)
+
+    train_indices = indices[:train_size]
+    train_df = df.iloc[train_indices]
+
+    val_indices = indices[train_size:]
+    val_df = df.iloc[val_indices]
+    common_kwargs = {
+        "table": i_table,
+        "metadata_column": m_metadata_column,
+        "rarefy_depth": p_rarefy_depth,
+        "sequence_embeddings": i_sequence_embeddings,
+        "sequence_labels": i_sequence_labels,
+        "drop_remainder": False,
+    }
+
+    train_gen = RegressorGenerator(
+        metadata=train_df,
+        shuffle=True,
+        gen_new_tables=p_gen_new_table,
+        gen_new_table_frequency=3,
+        epochs=p_epochs,
+        batch_size=p_batch_size,
+        **common_kwargs,
+    )
+
+    val_gen = RegressorGenerator(
+        metadata=val_df,
+        shuffle=False,
+        gen_new_tables=False,
+        epochs=1,
+        batch_size=p_batch_size,
+        shift=train_gen.shift,
+        scale=train_gen.scale,
+        **common_kwargs,
+    )
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    figure_path = os.path.join(output_dir, "figures")
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+
+    if i_model is not None:
+        model = tf.keras.models.load_model(i_model, compile=False)
+    else:
+        # base_model = tf.keras.models.load_model(i_base_model, compile=False)
+        model = RegressorV2(train_gen.shift, train_gen.scale)
+
+    token_shape = tf.TensorShape([None, 512])
+    batch_indicies = tf.TensorShape([None, 2])
+    indicies_shape = tf.TensorShape([None])
+    count_shape = tf.TensorShape([None, 1])
+    dense_count = tf.TensorShape([None, train_gen.num_asvs])
+    model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
+    model.summary()
+    # lr_scheduler = LAMBLRScheduler(
+    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    # )
+
+    # optimizer = tfa.optimizers.LAMB(
+    #     learning_rate=p_lr,
+    #     weight_decay=p_weight_decay,
+    #     exclude_from_weight_decay=[
+    #         "bias",
+    #         "rezero_alpha",
+    #         "layer_norm",
+    #         "LayerNorm",
+    #         "batch_norm",
+    #         "BatchNorm",
+    #     ],
+    #     exclude_from_layer_adaptation=[
+    #         "bias",
+    #         "rezero_alpha",
+    #         "layer_norm",
+    #         "LayerNorm",
+    #         "batch_norm",
+    #         "BatchNorm",
+    #     ],
+    # )
+    optimizer = tf.keras.optimizers.AdamW(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+        weight_decay=p_weight_decay,
+    )
+    optimizer.exclude_from_weight_decay(
+        var_names=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "embeddings",
+        ]
+    )
+    model.compile(optimizer=optimizer, run_eagerly=False)
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1, monitor="val_loss")
+    core_callbacks = [
+        # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+        # tf.keras.callbacks.EarlyStopping(
+        #     "val_encoder_loss",
+        #     patience=p_patience,
+        #     start_from_epoch=p_early_stop_warmup,
+        # ),
+        # lr_scheduler,
+        model_saver,
+        MeanAbsoluteError(
+            val_gen,
+            val_gen.steps_per_epoch,
+            os.path.join(output_dir, "mae"),
+            report_back=5,
+        ),
+    ]
+    model.fit(
+        train_gen,
+        validation_data=val_gen,
+        callbacks=[*core_callbacks],
+        epochs=p_epochs,
+        steps_per_epoch=train_gen.steps_per_epoch,
+        validation_steps=val_gen.steps_per_epoch,
+    )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
+
+
+@cli.command()
+@click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-tree", required=True, type=click.Path(exists=True))
 @click.option(
     "--m-metadata-file",
@@ -453,6 +808,7 @@ def fit_denoised_unifrac_regressor(
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-sequence-embeddings", required=True, type=click.Path(exists=True))
 @click.option("--i-sequence-labels", required=True, type=click.Path(exists=True))
+@click.option("--i-unifrac-model", required=False, type=click.Path(exists=True))
 @click.option(
     "--m-metadata-file",
     required=True,
@@ -471,14 +827,15 @@ def fit_denoised_unifrac_regressor(
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-3, show_default=True, type=float)
 @click.option("--p-warmup-steps", default=0, show_default=True, type=int)
-@click.option("--p-decay-steps", default=100000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=25000, show_default=True, type=int)
 @click.option("--output-dir", required=True)
-@click.option("--p-rarefy-depth", default=5000, required=False, type=int)
+@click.option("--p-rarefy-depth", default=10000, required=False, type=int)
 @click.option("--p-weight-decay", default=0.00, show_default=True, type=float)
 def fit_triplet_regressor(
     i_table: str,
     i_sequence_embeddings,
     i_sequence_labels,
+    i_unifrac_model,
     m_metadata_file: str,
     m_metadata_column: str,
     p_batch_size: int,
@@ -497,7 +854,7 @@ def fit_triplet_regressor(
 
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.triplet_generator_dataset_v2 import TripletGeneratorV2
-    from aam.models.triplet_encoder_v2 import TripletEncoderV2
+    from aam.models.triplet_encoder_v4 import TripletEncoderV4
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
@@ -520,7 +877,6 @@ def fit_triplet_regressor(
         "rarefy_depth": p_rarefy_depth,
         "sequence_embeddings": i_sequence_embeddings,
         "sequence_labels": i_sequence_labels,
-        "batch_size": p_batch_size,
         "drop_remainder": False,
     }
     train_gen = TripletGeneratorV2(
@@ -528,6 +884,7 @@ def fit_triplet_regressor(
         shuffle=True,
         gen_new_tables=p_gen_new_table,
         epochs=p_epochs,
+        batch_size=p_batch_size,
         **common_kwargs,
     )
 
@@ -536,6 +893,7 @@ def fit_triplet_regressor(
         shuffle=False,
         gen_new_tables=False,
         epochs=1,
+        batch_size=128,
         **common_kwargs,
     )
 
@@ -549,7 +907,8 @@ def fit_triplet_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = TripletEncoderV2(num_groups)
+        unifrac_model = tf.keras.models.load_model(i_unifrac_model, compile=False)
+        model = TripletEncoderV4(num_groups, unifrac_model)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
@@ -564,8 +923,6 @@ def fit_triplet_regressor(
 
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
-        # beta_1=0.5,
-        # beta_2=0.9,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
             "bias",
@@ -586,6 +943,19 @@ def fit_triplet_regressor(
             # "embeddings",
         ],
     )
+    # optimizer = tf.keras.optimizers.AdamW(
+    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    #     weight_decay=p_weight_decay,
+    # )
+    # optimizer.exclude_from_weight_decay(
+    #     var_names=[
+    #         "bias",
+    #         "rezero_alpha",
+    #         "layer_norm",
+    #         "LayerNorm",
+    #         "embeddings",
+    #     ]
+    # )
     model.compile(optimizer=optimizer, run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)

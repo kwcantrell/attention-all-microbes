@@ -4,6 +4,9 @@ from typing import Union
 
 import tensorflow as tf
 
+from aam.models.asv_dense_count_encoder import ASVDenseCountEncoder
+from aam.models.utils import sample_embeddings
+
 
 class DenseBlock(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
@@ -35,13 +38,10 @@ class DenseBlock(tf.keras.layers.Layer):
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV2")
 class RegressorV2(tf.keras.Model):
-    def __init__(self, base_model, shift, scale, num_encoder_layers=6, **kwargs):
+    def __init__(self, shift, scale, num_encoder_layers=1, **kwargs):
         super(RegressorV2, self).__init__(**kwargs)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
-
-        self.base_model = base_model
-        self.base_model.trainable = False
 
         self.num_encoder_layers = num_encoder_layers
         self.shift = shift
@@ -52,13 +52,8 @@ class RegressorV2(tf.keras.Model):
             print("RegressorV2 is already built")
             return
 
-        encoder_layers = []
-        for _ in range(self.num_encoder_layers):
-            encoder_layers += [DenseBlock()]
-        self.encoder = tf.keras.Sequential(
-            encoder_layers + [tf.keras.layers.Dense(1)],
-            name="encoder",
-        )
+        self.asv_dense_encoder = ASVDenseCountEncoder()
+        self.regressor = tf.keras.layers.Dense(1, name="regressor")
         super(RegressorV2, self).build(input_shape)
 
     def predict_step(
@@ -128,11 +123,20 @@ class RegressorV2(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
-    def call(
-        self, inputs, training: bool = False
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        regressor_input = self.base_model(inputs, training=False)
-        output = self.encoder(regressor_input)
+    def call(self, inputs, training=False):
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
+
+        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
+        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
+
+        asv_embeddings = sample_embeddings(
+            asv_embeddings, batch_indices, asv_counts, asv_indices
+        )
+        asv_dense_embeddings = self.asv_dense_encoder(
+            [asv_embeddings, dense_counts], training=training
+        )
+
+        output = self.regressor(asv_dense_embeddings)
         print("RegressorV2 exit...")
         return output
 
@@ -140,7 +144,6 @@ class RegressorV2(tf.keras.Model):
         config = super(RegressorV2, self).get_config()
         config.update(
             {
-                "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
                 "shift": self.shift,
                 "scale": self.scale,
                 "num_encoder_layers": self.num_encoder_layers,
@@ -157,9 +160,6 @@ class RegressorV2(tf.keras.Model):
             build_input_shape = config.pop("build_input_shape")
             input_shape = build_input_shape["input_shape"]
 
-        config["base_model"] = tf.keras.saving.deserialize_keras_object(
-            config["base_model"]
-        )
         model = cls(**config)
         model.build(input_shape)
         return model
