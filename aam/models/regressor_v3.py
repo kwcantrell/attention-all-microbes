@@ -27,7 +27,7 @@ class RegressorV3(tf.keras.Model):
 
         layers = []
         for _ in range(self.num_encoder_layers):
-            layers.append(DenseBlock(512))
+            layers.append(DenseBlock())
         self.regressor = tf.keras.Sequential(
             layers + [tf.keras.layers.Dense(1)], name="regressor"
         )
