@@ -40,6 +40,18 @@ class ASVDenseCountEncoder(tf.keras.Model):
                 ConvolutionBlock(
                     self.num_filters,
                     self.kernel_size,
+                    pool_size=0,
+                    dropout_rate=self.dropout_rate,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                    dropout_rate=self.dropout_rate,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
                     pool_size=self.pool_size,
                     dropout_rate=self.dropout_rate,
                 ),
