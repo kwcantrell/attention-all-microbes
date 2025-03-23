@@ -11,6 +11,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
         kernel_size=3,
         pool_size=2,
         dropout_rate=0.0,
+        max_pool=False,
         **kwargs,
     ):
         super(ASVDenseCountEncoder, self).__init__(**kwargs)
@@ -18,6 +19,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
         self.kernel_size = kernel_size
         self.pool_size = pool_size
         self.dropout_rate = dropout_rate
+        self.max_pool = max_pool
 
     def build(self, input_shape):
         if self.built:
@@ -54,6 +56,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
                     self.kernel_size,
                     pool_size=self.pool_size,
                     dropout_rate=self.dropout_rate,
+                    use_max_pool=self.max_pool,
                 ),
             ]
             dense_size /= self.pool_size
@@ -116,6 +119,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
                 "kernel_size": self.kernel_size,
                 "pool_size": self.pool_size,
                 "dropout_rate": self.dropout_rate,
+                "max_pool": self.max_pool,
             }
         )
         return config

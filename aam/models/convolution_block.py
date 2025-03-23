@@ -32,6 +32,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
 
         if self.pool_size > 0:
             if self.use_max_pool:
+                print("using max pooling")
                 self.conv_outer = tf.keras.layers.MaxPool1D(
                     pool_size=self.pool_size,
                     strides=self.pool_size,
