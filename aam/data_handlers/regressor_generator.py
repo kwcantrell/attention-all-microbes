@@ -8,6 +8,8 @@ import pandas as pd
 import tensorflow as tf
 from biom import Table, load_table
 
+from aam.data_handlers.sequence_embeddings import SequenceEmbeddings
+
 
 def add_lock(func):
     lock = f"_{func.__name__}_lock"
@@ -47,6 +49,9 @@ class RegressorGenerator(tf.keras.utils.Sequence):
         shift=None,
         scale=None,
     ):
+        self.sequence_embeddings = SequenceEmbeddings(
+            sequence_embeddings, sequence_labels
+        )
         if isinstance(table, str):
             table = load_table(table)
 
@@ -59,27 +64,15 @@ class RegressorGenerator(tf.keras.utils.Sequence):
         self.metadata_column: str = metadata_column
         self.metadata: pd.Series = metadata
         if shift is None:
-            # self.shift = np.mean(self.metadata[self.metadata_column])
-            self.shift = np.min(self.metadata[self.metadata_column])
-            # self.scale = np.std(self.metadata[self.metadata_column])
-            self.scale = np.max(self.metadata[self.metadata_column]) - self.shift
+            self.shift = np.mean(self.metadata[self.metadata_column])
+            # self.shift = np.min(self.metadata[self.metadata_column])
+            self.scale = np.std(self.metadata[self.metadata_column])
+            # self.scale = np.max(self.metadata[self.metadata_column]) - self.shift
         else:
             self.shift = shift
             self.scale = scale
         self.rarefy_depth: int = rarefy_depth
         self.return_sample_ids: bool = return_sample_ids
-
-        self.sequence_embeddings = sequence_embeddings
-        self.sequence_labels = sequence_labels
-        sequence_embeddings = np.load(self.sequence_embeddings)
-        emb_mean = np.mean(sequence_embeddings, axis=0)
-        emb_std = np.std(sequence_embeddings, axis=0)
-        self.sequence_embeddings = (sequence_embeddings - emb_mean) / (emb_std + 1e-8)
-
-        self.sequence_labels = np.load(self.sequence_labels, allow_pickle=True)
-        self.sequence_labels = self.sequence_labels.astype(np.str_)
-        self.sequence_labels = np.char.encode(self.sequence_labels, encoding="utf-8")
-        print(self.sequence_labels.dtype)
 
         self.shuffle = shuffle
         self.epochs = epochs
@@ -158,13 +151,7 @@ class RegressorGenerator(tf.keras.utils.Sequence):
 
         # get list of unique observations in batch
         unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
-        asvs, asv_ids_idx, sequence_labels_idx = np.intersect1d(
-            self.asv_ids[unique_obs],
-            self.sequence_labels,
-            assume_unique=True,
-            return_indices=True,
-        )
-        tokens = self.sequence_embeddings[sequence_labels_idx]
+        tokens = self.sequence_embeddings[unique_obs]
         y_true = (
             self.metadata.loc[batch_sample_ids, self.metadata_column]
             .to_numpy()
@@ -213,18 +200,7 @@ class RegressorGenerator(tf.keras.utils.Sequence):
         self.sample_ids = rarefied_table.ids()
         self.sample_indices = np.arange(len(self.sample_ids))
 
-        # add asvs that were dropped from the table during rarefaction
-        kept_asvs = set(rarefied_table.ids(axis="observation"))
-        dropped_asv = set(self.asv_ids).difference(kept_asvs)
-        dropped_table = Table(
-            np.zeros((len(dropped_asv), rarefied_table.shape[1])),
-            list(dropped_asv),
-            self.sample_ids,
-        )
-        rarefied_table = rarefied_table.concat(dropped_table, axis="observation")
-        self._rarefied_table = rarefied_table.sort_order(
-            self.asv_ids, axis="observation"
-        )
+        self._rarefied_table = self.sequence_embeddings.align_table(rarefied_table)
 
         print("creating encoder target...")
 

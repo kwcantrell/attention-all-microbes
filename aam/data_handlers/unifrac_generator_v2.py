@@ -10,6 +10,8 @@ from biom import Table, load_table
 from bp import parse_newick, to_skbio_treenode
 from unifrac import ssu_inmem
 
+from aam.data_handlers.sequence_embeddings import SequenceEmbeddings
+
 
 def weighted_normalized(table, phylogeny, *args):
     variance_adjusted = True
@@ -63,32 +65,25 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         drop_remainder=True,
         batch_size=128,
     ):
+        self.sequence_embeddings = SequenceEmbeddings(
+            sequence_embeddings, sequence_labels
+        )
+
         if isinstance(table, str):
             table = load_table(table)
+        print(table.shape)
+        self.table = self.sequence_embeddings.filter_table(table)
+        print(self.table.shape)
 
-        self.table: Table = table
         self.tree = to_skbio_treenode(parse_newick(open(tree_path).read()))
 
         print("original table shape:", self.table.shape)
-        self.asv_ids = self.table.ids(axis="observation")
         self.num_asvs = len(self.table.ids(axis="observation"))
 
         self.metadata_column: str = metadata_column
         self.metadata: pd.Series = metadata
         self.rarefy_depth: int = rarefy_depth
         self.return_sample_ids: bool = return_sample_ids
-
-        self.sequence_embeddings = sequence_embeddings
-        self.sequence_labels = sequence_labels
-        sequence_embeddings = np.load(self.sequence_embeddings)
-        emb_mean = np.mean(sequence_embeddings, axis=0)
-        emb_std = np.std(sequence_embeddings, axis=0)
-        self.sequence_embeddings = (sequence_embeddings - emb_mean) / (emb_std + 1e-8)
-
-        self.sequence_labels = np.load(self.sequence_labels, allow_pickle=True)
-        self.sequence_labels = self.sequence_labels.astype(np.str_)
-        self.sequence_labels = np.char.encode(self.sequence_labels, encoding="utf-8")
-        print(self.sequence_labels.dtype)
 
         self.shuffle = shuffle
         self.epochs = epochs
@@ -167,13 +162,7 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
 
         # get list of unique observations in batch
         unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
-        asvs, asv_ids_idx, sequence_labels_idx = np.intersect1d(
-            self.asv_ids[unique_obs],
-            self.sequence_labels,
-            assume_unique=True,
-            return_indices=True,
-        )
-        tokens = self.sequence_embeddings[sequence_labels_idx]
+        tokens = self.sequence_embeddings[unique_obs]
         y_true = self.distances.filter(batch_sample_ids).data
 
         if self.return_sample_ids:
@@ -221,18 +210,7 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         self.sample_ids = rarefied_table.ids()
         self.sample_indices = np.arange(len(self.sample_ids))
 
-        # add asvs that were dropped from the table during rarefaction
-        kept_asvs = set(rarefied_table.ids(axis="observation"))
-        dropped_asv = set(self.asv_ids).difference(kept_asvs)
-        dropped_table = Table(
-            np.zeros((len(dropped_asv), rarefied_table.shape[1])),
-            list(dropped_asv),
-            self.sample_ids,
-        )
-        rarefied_table = rarefied_table.concat(dropped_table, axis="observation")
-        self._rarefied_table = rarefied_table.sort_order(
-            self.asv_ids, axis="observation"
-        )
+        self._rarefied_table = self.sequence_embeddings.align_table(rarefied_table)
 
         print("creating encoder target...")
 
