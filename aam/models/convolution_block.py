@@ -2,11 +2,20 @@ import tensorflow as tf
 
 
 class ConvolutionBlock(tf.keras.layers.Layer):
-    def __init__(self, filters, kernel_size, pool_size=0, dropout_rate=0.0, **kwargs):
+    def __init__(
+        self,
+        filters,
+        kernel_size,
+        pool_size=0,
+        use_max_pool=True,
+        dropout_rate=0.0,
+        **kwargs,
+    ):
         super(ConvolutionBlock, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
         self.pool_size = pool_size
+        self.use_max_pool = use_max_pool
         self.dropout_rate = dropout_rate
 
         self.conv_inner = tf.keras.Sequential(
@@ -22,12 +31,19 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         )
 
         if self.pool_size > 0:
-            self.conv_outer = tf.keras.layers.Conv1D(
-                filters=self.filters,
-                kernel_size=self.pool_size,
-                strides=self.pool_size,
-                padding="same",
-            )
+            if self.use_max_pool:
+                self.conv_outer = tf.keras.layers.MaxPool1D(
+                    pool_size=self.pool_size,
+                    strides=self.pool_size,
+                    padding="same",
+                )
+            else:
+                self.conv_outer = tf.keras.layers.Conv1D(
+                    filters=self.filters,
+                    kernel_size=self.pool_size,
+                    strides=self.pool_size,
+                    padding="same",
+                )
             self.res_pool = tf.keras.layers.Conv1D(
                 filters=self.filters,
                 kernel_size=self.pool_size,
@@ -73,6 +89,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                 "filters": self.filters,
                 "kernel_size": self.kernel_size,
                 "pool_size": self.pool_size,
+                "use_max_pool": self.use_max_pool,
                 "dropout_rate": self.dropout_rate,
             }
         )
