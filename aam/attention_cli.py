@@ -415,7 +415,7 @@ def fit_new_regressor(
 
     from aam.callbacks import LAMBLRScheduler, MeanAbsoluteError
     from aam.data_handlers.regressor_generator import RegressorGenerator
-    from aam.models.regressor_v2 import RegressorV2
+    from aam.models.regressor_v3 import RegressorV3
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
@@ -473,8 +473,8 @@ def fit_new_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        # base_model = tf.keras.models.load_model(i_base_model, compile=False)
-        model = RegressorV2(train_gen.shift, train_gen.scale)
+        base_model = tf.keras.models.load_model(i_base_model, compile=False)
+        model = RegressorV3(base_model, train_gen.shift, train_gen.scale)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
