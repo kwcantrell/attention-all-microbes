@@ -6,7 +6,7 @@ from aam.models.convolution_block import ConvolutionBlock
 @tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoder")
 class ASVDenseCountEncoder(tf.keras.Model):
     def __init__(
-        self, num_filters=16, kernel_size=3, pool_size=2, dropout_rate=0.0, **kwargs
+        self, num_filters=16, kernel_size=3, pool_size=2, dropout_rate=0.25, **kwargs
     ):
         super(ASVDenseCountEncoder, self).__init__(**kwargs)
         self.num_filters = num_filters
@@ -63,6 +63,9 @@ class ASVDenseCountEncoder(tf.keras.Model):
             ]
         )
 
+        if self.dropout_rate > 0.0:
+            self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
+
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -90,6 +93,9 @@ class ASVDenseCountEncoder(tf.keras.Model):
         asv_embeddings, dense_counts = inputs
         dense_counts = self._normalize_dense_counts(dense_counts)
         count_embeddings = self.dense_count_encoder(dense_counts, training=training)
+
+        if self.dropout_rate > 0.0:
+            count_embeddings = self.dropout(count_embeddings, training=training)
 
         # residual step
         output = asv_embeddings + self._rezero * count_embeddings

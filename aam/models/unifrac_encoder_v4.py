@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Union
 
 import tensorflow as tf
-from models.utils import sample_embeddings
 
 from aam.losses import PairwiseLoss
 from aam.models.asv_dense_count_encoder import ASVDenseCountEncoder
 from aam.models.regressor_v2 import DenseBlock
+from aam.models.utils import sample_embeddings
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracEncoderV4")

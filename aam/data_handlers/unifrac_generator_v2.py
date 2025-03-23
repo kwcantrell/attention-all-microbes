@@ -12,13 +12,13 @@ from unifrac import ssu_inmem
 
 
 def weighted_normalized(table, phylogeny, *args):
-    variance_adjusted = False
+    variance_adjusted = True
     bypass_tips = False
     n_substeps = 1
     return ssu_inmem(
         table,
         phylogeny,
-        "weighted_normalized",
+        "weighted_unnormalized",
         variance_adjusted,
         1.0,
         bypass_tips,
