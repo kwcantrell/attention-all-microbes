@@ -156,16 +156,16 @@ def fit_asv_encoder(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
+            # "bias",
+            # "rezero_alpha",
+            # "layer_norm",
+            # "LayerNorm",
         ],
         exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
+            # "bias",
+            # "rezero_alpha",
+            # "layer_norm",
+            # "LayerNorm",
         ],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
@@ -321,20 +321,20 @@ def fit_unifrac_regressor(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "batch_norm",
-            "BatchNorm",
+            # "bias",
+            # "rezero_alpha",
+            # "layer_norm",
+            # "LayerNorm",
+            # "batch_norm",
+            # "BatchNorm",
         ],
         exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "batch_norm",
-            "BatchNorm",
+            # "bias",
+            # "rezero_alpha",
+            # "layer_norm",
+            # "LayerNorm",
+            # "batch_norm",
+            # "BatchNorm",
         ],
     )
     model.compile(optimizer=optimizer, run_eagerly=False)
@@ -415,7 +415,7 @@ def fit_new_regressor(
 
     from aam.callbacks import LAMBLRScheduler, MeanAbsoluteError
     from aam.data_handlers.regressor_generator import RegressorGenerator
-    from aam.models.regressor_v3 import RegressorV3
+    from aam.models.regressor_v2 import RegressorV2
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
@@ -473,8 +473,8 @@ def fit_new_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        base_model = tf.keras.models.load_model(i_base_model, compile=False)
-        model = RegressorV3(base_model, train_gen.shift, train_gen.scale)
+        # base_model = tf.keras.models.load_model(i_base_model, compile=False)
+        model = RegressorV2(train_gen.shift, train_gen.scale)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
@@ -483,43 +483,43 @@ def fit_new_regressor(
     dense_count = tf.TensorShape([None, train_gen.num_asvs])
     model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
     model.summary()
-    # lr_scheduler = LAMBLRScheduler(
-    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
-    # )
+    lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    )
 
-    # optimizer = tfa.optimizers.LAMB(
-    #     learning_rate=p_lr,
-    #     weight_decay=p_weight_decay,
-    #     exclude_from_weight_decay=[
-    #         "bias",
-    #         "rezero_alpha",
-    #         "layer_norm",
-    #         "LayerNorm",
-    #         "batch_norm",
-    #         "BatchNorm",
-    #     ],
-    #     exclude_from_layer_adaptation=[
-    #         "bias",
-    #         "rezero_alpha",
-    #         "layer_norm",
-    #         "LayerNorm",
-    #         "batch_norm",
-    #         "BatchNorm",
-    #     ],
-    # )
-    optimizer = tf.keras.optimizers.AdamW(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
         weight_decay=p_weight_decay,
+        exclude_from_weight_decay=[
+            # "bias",
+            # "rezero_alpha",
+            # "layer_norm",
+            # "LayerNorm",
+            # "batch_norm",
+            # "BatchNorm",
+        ],
+        exclude_from_layer_adaptation=[
+            # "bias",
+            # "rezero_alpha",
+            # "layer_norm",
+            # "LayerNorm",
+            # "batch_norm",
+            # "BatchNorm",
+        ],
     )
-    optimizer.exclude_from_weight_decay(
-        var_names=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "embeddings",
-        ]
-    )
+    # optimizer = tf.keras.optimizers.AdamW(
+    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
+    #     weight_decay=p_weight_decay,
+    # )
+    # optimizer.exclude_from_weight_decay(
+    #     var_names=[
+    #         "bias",
+    #         "rezero_alpha",
+    #         "layer_norm",
+    #         "LayerNorm",
+    #         "embeddings",
+    #     ]
+    # )
     model.compile(optimizer=optimizer, run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -534,7 +534,7 @@ def fit_new_regressor(
         #     patience=p_patience,
         #     start_from_epoch=p_early_stop_warmup,
         # ),
-        # lr_scheduler,
+        lr_scheduler,
         model_saver,
         MeanAbsoluteError(
             val_gen,

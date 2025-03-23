@@ -6,7 +6,12 @@ from aam.models.convolution_block import ConvolutionBlock
 @tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoder")
 class ASVDenseCountEncoder(tf.keras.Model):
     def __init__(
-        self, num_filters=16, kernel_size=3, pool_size=2, dropout_rate=0.0, **kwargs
+        self,
+        num_filters=16,
+        kernel_size=3,
+        pool_size=2,
+        dropout_rate=0.0,
+        **kwargs,
     ):
         super(ASVDenseCountEncoder, self).__init__(**kwargs)
         self.num_filters = num_filters
@@ -26,18 +31,6 @@ class ASVDenseCountEncoder(tf.keras.Model):
         i = 0
         while dense_size > asv_embeddings[-1]:
             conv_layers += [
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                    dropout_rate=self.dropout_rate,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                    dropout_rate=self.dropout_rate,
-                ),
                 ConvolutionBlock(
                     self.num_filters,
                     self.kernel_size,
@@ -72,6 +65,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
             trainable=True,
             dtype=tf.float32,
         )
+
         super(ASVDenseCountEncoder, self).build(input_shape)
 
     def _log1p_relative_abundance(self, dense_counts):

@@ -52,7 +52,7 @@ class UnifracEncoderV4(tf.keras.Model):
 
     def _compute_loss(self, y, output_embeddings):
         loss = self.unifrac_loss(y, output_embeddings)
-        return tf.reduce_mean(loss)
+        return tf.reduce_mean(loss) * 10.0
 
     def train_step(
         self,
