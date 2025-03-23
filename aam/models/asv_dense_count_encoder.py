@@ -20,7 +20,6 @@ class ASVDenseCountEncoder(tf.keras.Model):
             return
 
         asv_embeddings, dense_counts = input_shape
-        self.asv_norm = tf.keras.layers.LayerNormalization()
 
         dense_size = dense_counts[-1]
         conv_layers = [tf.keras.layers.Input([dense_size, 1])]
@@ -92,7 +91,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
         asv_embeddings, dense_counts = inputs
         dense_counts = self._log1p_relative_abundance(dense_counts)
 
-        asv_embeddings = self.asv_norm(asv_embeddings)
+        # asv_embeddings = self.asv_norm(asv_embeddings)
         count_embeddings = self.dense_count_encoder(dense_counts, training=training)
 
         if self.dropout_rate > 0.0:

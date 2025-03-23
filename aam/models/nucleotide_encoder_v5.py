@@ -85,7 +85,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         loss = 0.0
         num_pairs = tf.shape(y_true)[-1]
         embeddings = embeddings[:num_pairs]
-        asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings)) * 10.0
+        asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
         loss += asv_loss
         return loss, asv_loss
 
