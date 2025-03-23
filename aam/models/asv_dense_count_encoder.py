@@ -6,7 +6,7 @@ from aam.models.convolution_block import ConvolutionBlock
 @tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoder")
 class ASVDenseCountEncoder(tf.keras.Model):
     def __init__(
-        self, num_filters=16, kernel_size=3, pool_size=2, dropout_rate=0.25, **kwargs
+        self, num_filters=16, kernel_size=3, pool_size=2, dropout_rate=0.0, **kwargs
     ):
         super(ASVDenseCountEncoder, self).__init__(**kwargs)
         self.num_filters = num_filters
@@ -83,9 +83,10 @@ class ASVDenseCountEncoder(tf.keras.Model):
 
         # normalize counts
         dense_counts = tf.math.log1p(dense_counts)
-        dense_mean = tf.reduce_mean(dense_counts, axis=1, keepdims=True)
-        dense_std = tf.math.reduce_std(dense_counts, axis=1, keepdims=True)
-        return (dense_counts - dense_mean) / dense_std
+        # dense_mean = tf.reduce_mean(dense_counts, axis=1, keepdims=True)
+        # dense_std = tf.math.reduce_std(dense_counts, axis=1, keepdims=True)
+        # return (dense_counts - dense_mean) / dense_std
+        return dense_counts
 
     def call(self, inputs, training=False):
         training = training and self.trainable
