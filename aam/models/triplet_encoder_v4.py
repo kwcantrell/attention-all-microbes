@@ -5,6 +5,7 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import _pairwise_distances, global_orthogonal_regulization
+from aam.models.asv_dense_count_encoder import ASVDenseCountEncoder
 from aam.models.convolution_block import ConvolutionBlock
 
 
@@ -92,13 +93,13 @@ class TripletEncoderV4(tf.keras.Model):
             input_shape
         )
 
+        self.asv_encoder = ASVDenseCountEncoder(name="asv_encoder")
+
         # build Encoder
         encoder_layers = [tf.keras.layers.Input([asv_embeddings[-1], 1])]
         emb_dim = asv_embeddings[-1]
         for _ in range(self.compress_factor):
             encoder_layers += [
-                ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
-                ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
                 ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
                 ConvolutionBlock(
                     self.num_filters, self.kernel_size, pool_size=self.pool_size
@@ -266,10 +267,14 @@ class TripletEncoderV4(tf.keras.Model):
     def call(
         self, inputs, return_training_output=False, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        encoder_input = self.unifrac_model(inputs, training=False)
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
+        original_embeddings = self.unifrac_model(inputs, training=False)
+        encoder_input = self.asv_encoder([original_embeddings, dense_counts])
+
         encoder_output = self.encoder(encoder_input)
         batch_noise = self.discriminator(encoder_output)
         encoder_residual = encoder_output - batch_noise
+
         decoder_output = self.decoder(encoder_residual)
         batch_probs = self.batch_classifier(batch_noise)
         res_probs = self.batch_classifier(encoder_residual)
@@ -277,7 +282,14 @@ class TripletEncoderV4(tf.keras.Model):
         print("Triplet encoder exit...")
         if not return_training_output:
             return encoder_residual
-        return (batch_noise, batch_probs, res_probs, encoder_input, decoder_output)
+
+        return (
+            batch_noise,
+            batch_probs,
+            res_probs,
+            original_embeddings,
+            decoder_output,
+        )
 
     def get_config(self):
         config = super(TripletEncoderV4, self).get_config()

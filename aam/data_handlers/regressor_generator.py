@@ -65,9 +65,7 @@ class RegressorGenerator(tf.keras.utils.Sequence):
         self.metadata: pd.Series = metadata
         if shift is None:
             self.shift = np.mean(self.metadata[self.metadata_column])
-            # self.shift = np.min(self.metadata[self.metadata_column])
             self.scale = np.std(self.metadata[self.metadata_column])
-            # self.scale = np.max(self.metadata[self.metadata_column]) - self.shift
         else:
             self.shift = shift
             self.scale = scale
