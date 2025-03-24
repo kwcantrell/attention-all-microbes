@@ -9,12 +9,12 @@ from aam.models.regressor_v2 import DenseBlock
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV3")
 class RegressorV3(tf.keras.Model):
-    def __init__(self, base_model, shift, scale, num_encoder_layers=6, **kwargs):
+    def __init__(self, base_model, shift, scale, num_regressor_layers=6, **kwargs):
         super(RegressorV3, self).__init__(**kwargs)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
 
-        self.num_encoder_layers = num_encoder_layers
+        self.num_regressor_layers = num_regressor_layers
         self.shift = shift
         self.scale = scale
         self.base_model = base_model
@@ -24,8 +24,9 @@ class RegressorV3(tf.keras.Model):
         if self.built:
             print("RegressorV3 is already built")
             return
+        self.base_norm = tf.keras.layers.BatchNormalization(center=False, scale=False)
         layers = []
-        for _ in range(3):
+        for _ in range(self.num_regressor_layers):
             layers.append(DenseBlock(pool=False))
         self.regressor = tf.keras.Sequential(
             layers + [tf.keras.layers.Dense(1)], name="regressor"
@@ -100,6 +101,7 @@ class RegressorV3(tf.keras.Model):
 
     def call(self, inputs, training=False):
         base_embeddings = self.base_model(inputs, training=False)
+        base_embeddings = self.base_norm(base_embeddings, training=training)
 
         output = self.regressor(base_embeddings)
         print("RegressorV3 exit...")
@@ -109,9 +111,10 @@ class RegressorV3(tf.keras.Model):
         config = super(RegressorV3, self).get_config()
         config.update(
             {
+                "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
                 "shift": self.shift,
                 "scale": self.scale,
-                "num_encoder_layers": self.num_encoder_layers,
+                "num_regressor_layers": self.num_regressor_layers,
                 "build_input_shape": self.get_build_config(),
             }
         )
@@ -124,7 +127,9 @@ class RegressorV3(tf.keras.Model):
         if "build_input_shape" in config:
             build_input_shape = config.pop("build_input_shape")
             input_shape = build_input_shape["input_shape"]
-
+        config["base_model"] = tf.keras.saving.deserialize_keras_object(
+            config["base_model"]
+        )
         model = cls(**config)
         model.build(input_shape)
         return model
