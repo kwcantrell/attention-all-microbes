@@ -73,7 +73,7 @@ class RegressorV2(tf.keras.Model):
             print("RegressorV2 is already built")
             return
 
-        self.asv_dense_encoder = ASVDenseCountEncoder()
+        self.asv_dense_encoder = ASVDenseCountEncoder(non_pool_blocks_per_layer=1)
         self.regressor = tf.keras.Sequential(
             [
                 DenseBlock(pool=True),

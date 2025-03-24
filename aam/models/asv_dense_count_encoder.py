@@ -7,6 +7,7 @@ from aam.models.convolution_block import ConvolutionBlock
 class ASVDenseCountEncoder(tf.keras.Model):
     def __init__(
         self,
+        non_pool_blocks_per_layer=3,
         num_filters=16,
         kernel_size=3,
         pool_size=2,
@@ -15,6 +16,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
         **kwargs,
     ):
         super(ASVDenseCountEncoder, self).__init__(**kwargs)
+        self.non_pool_blocks_per_layer = non_pool_blocks_per_layer
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.pool_size = pool_size
@@ -32,32 +34,23 @@ class ASVDenseCountEncoder(tf.keras.Model):
         conv_layers = [tf.keras.layers.Input([dense_size, 1])]
         i = 0
         while dense_size > asv_embeddings[-1]:
+            for _ in range(self.non_pool_blocks_per_layer):
+                conv_layers += [
+                    ConvolutionBlock(
+                        self.num_filters,
+                        self.kernel_size,
+                        pool_size=0,
+                        dropout_rate=self.dropout_rate,
+                    )
+                ]
             conv_layers += [
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                    dropout_rate=self.dropout_rate,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                    dropout_rate=self.dropout_rate,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                    dropout_rate=self.dropout_rate,
-                ),
                 ConvolutionBlock(
                     self.num_filters,
                     self.kernel_size,
                     pool_size=self.pool_size,
                     dropout_rate=self.dropout_rate,
                     use_max_pool=self.max_pool,
-                ),
+                )
             ]
             dense_size /= self.pool_size
             i += 1
@@ -115,6 +108,7 @@ class ASVDenseCountEncoder(tf.keras.Model):
         config = super(ASVDenseCountEncoder, self).get_config()
         config.update(
             {
+                "non_pool_blocks_per_layer": self.non_pool_blocks_per_layer,
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
                 "pool_size": self.pool_size,
