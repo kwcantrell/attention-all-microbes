@@ -79,8 +79,9 @@ class RegressorV2(tf.keras.Model):
                 DenseBlock(pool=True),
                 DenseBlock(pool=True),
                 DenseBlock(pool=True),
-                tf.keras.layers.Dense(1, name="regressor"),
-            ]
+                tf.keras.layers.Dense(1),
+            ],
+            name="regressor",
         )
         super(RegressorV2, self).build(input_shape)
 

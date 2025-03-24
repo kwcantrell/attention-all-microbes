@@ -3,10 +3,16 @@ from biom import Table
 
 
 class SequenceEmbeddings:
-    def __init__(self, embeddings_fp, labels_fp):
+    def __init__(self, embeddings_fp, labels_fp, normalize=False):
         embeddings = np.load(embeddings_fp)
         emb_mean = np.mean(embeddings, axis=0)
-        self.embeddings = embeddings - emb_mean
+
+        if normalize:
+            emb_std = np.std(embeddings, axis=0)
+        else:
+            emb_std = 1
+        self.embeddings = (embeddings - emb_mean) / emb_std
+
         self.labels = labels_fp
 
     def iget(self, indices):

@@ -37,6 +37,7 @@ class RegressorGenerator(tf.keras.utils.Sequence):
         metadata_column: Optional[str] = None,
         sequence_embeddings: Optional[str] = None,
         sequence_labels: Optional[str] = None,
+        normalize_embeddings: bool = False,
         shuffle: bool = False,
         rarefy_depth: int = 1000,
         epochs: int = 1000,
@@ -50,7 +51,7 @@ class RegressorGenerator(tf.keras.utils.Sequence):
         scale=None,
     ):
         self.sequence_embeddings = SequenceEmbeddings(
-            sequence_embeddings, sequence_labels
+            sequence_embeddings, sequence_labels, normalize_embeddings
         )
         if isinstance(table, str):
             table = load_table(table)
