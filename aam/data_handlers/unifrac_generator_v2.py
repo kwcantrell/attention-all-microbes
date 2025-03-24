@@ -64,9 +64,10 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         seed=None,
         drop_remainder=True,
         batch_size=128,
+        normalize_sequence_embeddings=False,
     ):
         self.sequence_embeddings = SequenceEmbeddings(
-            sequence_embeddings, sequence_labels
+            sequence_embeddings, sequence_labels, normalize_sequence_embeddings
         )
 
         if isinstance(table, str):

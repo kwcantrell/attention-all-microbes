@@ -227,6 +227,9 @@ def fit_asv_encoder(
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=1000, required=False, type=int)
+@click.option(
+    "--p-normalize-sequence-embeddings", default=True, required=False, type=bool
+)
 def fit_unifrac_regressor(
     i_table: str,
     i_sequence_embeddings,
@@ -244,6 +247,7 @@ def fit_unifrac_regressor(
     output_dir: str,
     p_weight_decay: float,
     p_rarefy_depth: int,
+    p_normalize_sequence_embeddings: bool,
 ):
     import tensorflow_addons as tfa
 

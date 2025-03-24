@@ -87,6 +87,8 @@ class TripletEncoderV4(tf.keras.Model):
         self.pool_size = pool_size
         self.label_smoothing = 0.1
 
+        self.discriminator_threshold = 0.35
+
     def build(self, input_shape):
         if self.built:
             print("TripletEncoderV4 is already built")
@@ -161,8 +163,11 @@ class TripletEncoderV4(tf.keras.Model):
         super(TripletEncoderV4, self).build(input_shape)
 
     def _reconstruction_loss(self, encoder_input, decoder_output):
-        reconstruction_loss = tf.norm(encoder_input - decoder_output, axis=-1)
-        return tf.reduce_mean(reconstruction_loss) * 0.65
+        reconstruction_loss = tf.reduce_sum(
+            tf.square(encoder_input - decoder_output), axis=-1
+        )
+
+        return tf.reduce_mean(reconstruction_loss)
 
     def _compute_discriminator_loss(
         self,
@@ -183,14 +188,16 @@ class TripletEncoderV4(tf.keras.Model):
         y = tf.one_hot(y, depth=self.num_groups, dtype=tf.float32)
         batch_loss = self.discriminator_loss(y, batch_probs)
 
-        # we want to min KL divergence
-        uniform = tf.ones_like(res_probs) * (
-            1.0 / tf.cast(self.num_groups, dtype=tf.float32)
-        )
-        p = uniform
-        q = res_probs
-        log_pq = tf.math.log(p) - tf.math.log(q)
-        kl = tf.reduce_sum(p * log_pq, axis=-1)
+        # # we want to min KL divergence
+        # uniform = tf.ones_like(res_probs) * (
+        #     1.0 / tf.cast(self.num_groups, dtype=tf.float32)
+        # )
+        # p = uniform
+        # q = res_probs
+        # log_pq = tf.math.log(p) - tf.math.log(q)
+        # kl = tf.reduce_sum(p * log_pq, axis=-1)
+        uniform = tf.ones_like(y) * (1.0 / self.num_groups)
+        kl = self.discriminator_loss(uniform, res_probs)
 
         return (
             tf.reduce_mean(noise_size),
@@ -201,9 +208,11 @@ class TripletEncoderV4(tf.keras.Model):
     def _compute_batch_noise(self, residual, batch_noise):
         output_norm = tf.norm(residual, axis=-1, keepdims=True)
         batch_norn = tf.norm(batch_noise, axis=-1, keepdims=True)
-        mask = tf.cast(batch_norn >= 0.35 * output_norm, dtype=tf.float32)
+        mask = tf.cast(
+            batch_norn >= self.discriminator_threshold * output_norm, dtype=tf.float32
+        )
         loss = tf.reduce_sum(batch_norn * mask)
-        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask)) * 10.0
+        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask))
 
     def predict_step(
         self,
@@ -314,8 +323,6 @@ class TripletEncoderV4(tf.keras.Model):
 
         dense_counts = self._log1p_relative_abundance(dense_counts)
         batch_noise = self.discriminator(dense_counts)
-
-        # batch_noise = self.discriminator(encoder_output)
         encoder_residual = encoder_output - batch_noise
 
         decoder_output = self.decoder(encoder_residual)
