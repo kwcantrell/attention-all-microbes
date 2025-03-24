@@ -440,7 +440,7 @@ def fit_new_regressor(
         "sequence_embeddings": i_sequence_embeddings,
         "sequence_labels": i_sequence_labels,
         "drop_remainder": False,
-        "normalize_embeddings": True,
+        "normalize_embeddings": False,
     }
 
     train_gen = RegressorGenerator(
