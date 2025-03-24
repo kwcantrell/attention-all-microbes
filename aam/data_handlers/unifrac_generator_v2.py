@@ -20,7 +20,7 @@ def weighted_normalized(table, phylogeny, *args):
     return ssu_inmem(
         table,
         phylogeny,
-        "weighted_unnormalized",
+        "weighted_normalized",
         variance_adjusted,
         1.0,
         bypass_tips,

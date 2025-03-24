@@ -228,7 +228,7 @@ def fit_asv_encoder(
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=1000, required=False, type=int)
 @click.option(
-    "--p-normalize-sequence-embeddings", default=True, required=False, type=bool
+    "--p-normalize-sequence-embeddings", default=False, required=False, type=bool
 )
 def fit_unifrac_regressor(
     i_table: str,
@@ -280,6 +280,7 @@ def fit_unifrac_regressor(
         "sequence_labels": i_sequence_labels,
         "batch_size": p_batch_size,
         "drop_remainder": False,
+        "normalize_sequence_embeddings": p_normalize_sequence_embeddings,
     }
 
     train_gen = UnifracGeneratorV2(
