@@ -600,7 +600,7 @@ def fit_new_regressor(
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
 @click.option("--p-lr", default=1e-4, show_default=True, type=float)
 @click.option("--p-warmup-steps", default=10000, show_default=True, type=int)
-@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-decay-steps", default=50000, show_default=True, type=int)
 @click.option("--p-max-bp", default=150, show_default=True, type=int)
 @click.option("--output-dir", required=True)
 @click.option("--p-add-token", default=False, required=False, type=bool)

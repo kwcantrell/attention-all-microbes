@@ -55,7 +55,7 @@ class TripletEncoderV4(tf.keras.Model):
         num_groups,
         unifrac_model,
         num_noise_layers=6,
-        compress_factor=3,
+        compress_factor=2,
         num_filters=8,
         kernel_size=3,
         pool_size=2,
@@ -101,6 +101,7 @@ class TripletEncoderV4(tf.keras.Model):
         encoder_layers = []
         for _ in range(self.compress_factor):
             encoder_layers += [
+                DenseBlock2(),
                 DenseBlock2(pool=-1),
             ]
         self.encoder = tf.keras.Sequential(
@@ -142,6 +143,7 @@ class TripletEncoderV4(tf.keras.Model):
         decoder_layers = []
         for _ in range(self.compress_factor):
             decoder_layers += [
+                DenseBlock2(),
                 DenseBlock2(pool=1),
             ]
         self.decoder = tf.keras.Sequential(
@@ -160,7 +162,7 @@ class TripletEncoderV4(tf.keras.Model):
 
     def _reconstruction_loss(self, encoder_input, decoder_output):
         reconstruction_loss = tf.norm(encoder_input - decoder_output, axis=-1)
-        return tf.reduce_mean(reconstruction_loss) * 0.9
+        return tf.reduce_mean(reconstruction_loss) * 0.65
 
     def _compute_discriminator_loss(
         self,
@@ -179,9 +181,6 @@ class TripletEncoderV4(tf.keras.Model):
         # cross entropy
         y = tf.reshape(y, shape=[-1])
         y = tf.one_hot(y, depth=self.num_groups, dtype=tf.float32)
-        y = y * (1 - self.label_smoothing)
-        y_mask = tf.cast(y > 0, dtype=tf.float32)
-        y = y + (1.0 - y_mask) * self.label_smoothing / self.num_groups
         batch_loss = self.discriminator_loss(y, batch_probs)
 
         # we want to min KL divergence
@@ -202,9 +201,9 @@ class TripletEncoderV4(tf.keras.Model):
     def _compute_batch_noise(self, residual, batch_noise):
         output_norm = tf.norm(residual, axis=-1, keepdims=True)
         batch_norn = tf.norm(batch_noise, axis=-1, keepdims=True)
-        mask = tf.cast(batch_norn >= 0.1 * output_norm, dtype=tf.float32)
+        mask = tf.cast(batch_norn >= 0.35 * output_norm, dtype=tf.float32)
         loss = tf.reduce_sum(batch_norn * mask)
-        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask))
+        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask)) * 10.0
 
     def predict_step(
         self,
