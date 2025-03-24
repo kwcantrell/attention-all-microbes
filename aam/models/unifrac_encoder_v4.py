@@ -12,12 +12,13 @@ from aam.models.utils import sample_embeddings
 
 @tf.keras.saving.register_keras_serializable(package="UnifracEncoderV4")
 class UnifracEncoderV4(tf.keras.Model):
-    def __init__(self, num_encoder_layers=4, **kwargs):
+    def __init__(self, num_encoder_layers=4, non_pool_blocks_per_layer=3, **kwargs):
         super(UnifracEncoderV4, self).__init__(**kwargs)
         self.unifrac_loss = PairwiseLoss()
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         self.num_encoder_layers = num_encoder_layers
+        self.non_pool_blocks_per_layer = non_pool_blocks_per_layer
 
     def build(self, input_shape):
         if self.built:
@@ -27,7 +28,9 @@ class UnifracEncoderV4(tf.keras.Model):
         asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
             input_shape
         )
-        self.asv_encoder = ASVDenseCountEncoder(name="asv_encoder")
+        self.asv_encoder = ASVDenseCountEncoder(
+            non_pool_blocks_per_layer=self.non_pool_blocks_per_layer, name="asv_encoder"
+        )
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
@@ -114,6 +117,7 @@ class UnifracEncoderV4(tf.keras.Model):
         config.update(
             {
                 "num_encoder_layers": self.num_encoder_layers,
+                "non_pool_blocks_per_layer": self.non_pool_blocks_per_layer,
                 "build_input_shape": self.get_build_config(),
             }
         )

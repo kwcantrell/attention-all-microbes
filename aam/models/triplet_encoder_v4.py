@@ -216,7 +216,7 @@ class TripletEncoderV4(tf.keras.Model):
         noise_size = tf.reduce_sum(tf.abs(batch_noise), axis=-1)
 
         # cross entropy
-        batch_loss = self.discriminator_loss(y, batch_probs) * sample_weights
+        batch_loss = self.discriminator_loss(y, batch_probs)
 
         # we want to min KL divergence
         uniform = tf.ones_like(res_probs) * (
@@ -229,7 +229,7 @@ class TripletEncoderV4(tf.keras.Model):
 
         return (
             tf.reduce_mean(noise_size),
-            tf.reduce_mean(batch_loss),
+            tf.reduce_mean(batch_loss) * 0.1,
             tf.reduce_mean(kl),
         )
 

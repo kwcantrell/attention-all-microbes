@@ -304,7 +304,7 @@ def fit_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = UnifracEncoderV4()
+        model = UnifracEncoderV4(non_pool_blocks_per_layer=1)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
