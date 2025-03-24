@@ -384,6 +384,7 @@ def fit_unifrac_regressor(
 )
 @click.option("--p-batch-size", default=8, show_default=True, required=False, type=int)
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
 @click.option("--i-model", default=None, required=False, type=str)
 @click.option("--i-base-model", default=None, required=False, type=str)
 @click.option("--p-gen-new-table", default=True, show_default=True, type=bool)
@@ -401,6 +402,7 @@ def fit_new_regressor(
     m_metadata_column: str,
     p_batch_size: int,
     p_epochs: int,
+    p_dropout,
     i_model: Union[None, str],
     i_base_model,
     p_gen_new_table: bool,
@@ -475,7 +477,9 @@ def fit_new_regressor(
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
         base_model = tf.keras.models.load_model(i_base_model, compile=False)
-        model = RegressorV3(base_model, train_gen.shift, train_gen.scale)
+        model = RegressorV3(
+            base_model, train_gen.shift, train_gen.scale, dropout_rate=p_dropout
+        )
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])

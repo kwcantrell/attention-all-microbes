@@ -196,14 +196,14 @@ class TripletEncoderV4(tf.keras.Model):
 
         return (
             tf.reduce_mean(noise_size),
-            tf.reduce_mean(batch_loss),
-            tf.reduce_mean(kl) * 0.0,
+            tf.reduce_mean(batch_loss) * 0.1,
+            tf.reduce_mean(kl),
         )
 
     def _compute_batch_noise(self, residual, batch_noise):
         output_norm = tf.norm(residual, axis=-1, keepdims=True)
         batch_norn = tf.norm(batch_noise, axis=-1, keepdims=True)
-        mask = tf.cast(batch_norn >= 0.35 * output_norm, dtype=tf.float32)
+        mask = tf.cast(batch_norn >= 0.1 * output_norm, dtype=tf.float32)
         loss = tf.reduce_sum(batch_norn * mask)
         return tf.math.divide_no_nan(loss, tf.reduce_sum(mask))
 

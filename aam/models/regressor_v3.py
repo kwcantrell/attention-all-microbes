@@ -9,7 +9,15 @@ from aam.models.regressor_v2 import DenseBlock
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV3")
 class RegressorV3(tf.keras.Model):
-    def __init__(self, base_model, shift, scale, num_regressor_layers=6, **kwargs):
+    def __init__(
+        self,
+        base_model,
+        shift,
+        scale,
+        num_regressor_layers=6,
+        dropout_rate=0.0,
+        **kwargs,
+    ):
         super(RegressorV3, self).__init__(**kwargs)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
@@ -19,6 +27,7 @@ class RegressorV3(tf.keras.Model):
         self.scale = scale
         self.base_model = base_model
         self.base_model.trainable = False
+        self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
         if self.built:
@@ -27,7 +36,7 @@ class RegressorV3(tf.keras.Model):
         self.base_norm = tf.keras.layers.BatchNormalization(center=False, scale=False)
         layers = []
         for _ in range(self.num_regressor_layers):
-            layers.append(DenseBlock(pool=False))
+            layers.append(DenseBlock(pool=False, dropout_rate=self.dropout_rate))
         self.regressor = tf.keras.Sequential(
             layers + [tf.keras.layers.Dense(1)], name="regressor"
         )
@@ -115,6 +124,7 @@ class RegressorV3(tf.keras.Model):
                 "shift": self.shift,
                 "scale": self.scale,
                 "num_regressor_layers": self.num_regressor_layers,
+                "dropout_rate": self.dropout_rate,
                 "build_input_shape": self.get_build_config(),
             }
         )
