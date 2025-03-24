@@ -6,8 +6,7 @@ class SequenceEmbeddings:
     def __init__(self, embeddings_fp, labels_fp):
         embeddings = np.load(embeddings_fp)
         emb_mean = np.mean(embeddings, axis=0)
-        emb_std = np.std(embeddings, axis=0)
-        self.embeddings = (embeddings - emb_mean) / emb_std
+        self.embeddings = embeddings - emb_mean
         self.labels = labels_fp
 
     def iget(self, indices):

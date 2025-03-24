@@ -7,7 +7,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         filters,
         kernel_size,
         pool_size=0,
-        use_max_pool=True,
+        use_max_pool=False,
         dropout_rate=0.0,
         **kwargs,
     ):
@@ -39,6 +39,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                     padding="same",
                 )
             else:
+                print("not using max pooling")
                 self.conv_outer = tf.keras.layers.Conv1D(
                     filters=self.filters,
                     kernel_size=self.pool_size,

@@ -9,17 +9,26 @@ from aam.models.utils import sample_embeddings
 
 
 class DenseBlock(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, pool=False, **kwargs):
         super(DenseBlock, self).__init__(**kwargs)
+        self.pool = pool
 
     def build(self, input_shape):
         units = input_shape[-1]
-        self.dense_block = tf.keras.Sequential(
-            [
-                tf.keras.layers.Dense(units, activation="gelu"),
-                tf.keras.layers.Dense(units),
-            ]
-        )
+        if self.pool:
+            self.dense_block = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units, activation="gelu"),
+                    tf.keras.layers.Dense(units // 2),
+                ]
+            )
+        else:
+            self.dense_block = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units, activation="gelu"),
+                    tf.keras.layers.Dense(units),
+                ]
+            )
 
         self._rezero = self.add_weight(
             name="rezero_alpha",
@@ -53,7 +62,14 @@ class RegressorV2(tf.keras.Model):
             return
 
         self.asv_dense_encoder = ASVDenseCountEncoder()
-        self.regressor = tf.keras.layers.Dense(1, name="regressor")
+        self.regressor = tf.keras.Sequential(
+            [
+                DenseBlock(pool=True),
+                DenseBlock(pool=True),
+                DenseBlock(pool=True),
+                tf.keras.layers.Dense(1, name="regressor"),
+            ]
+        )
         super(RegressorV2, self).build(input_shape)
 
     def predict_step(

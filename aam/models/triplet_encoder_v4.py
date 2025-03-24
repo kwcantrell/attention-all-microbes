@@ -56,7 +56,7 @@ class TripletEncoderV4(tf.keras.Model):
         unifrac_model,
         num_noise_layers=6,
         compress_factor=3,
-        num_filters=64,
+        num_filters=8,
         kernel_size=3,
         pool_size=2,
         **kwargs,
@@ -92,8 +92,6 @@ class TripletEncoderV4(tf.keras.Model):
         asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
             input_shape
         )
-
-        # self.asv_encoder = ASVDenseCountEncoder(name="asv_encoder")
 
         # # build Encoder
         # encoder_layers = [tf.keras.layers.Input([asv_embeddings[-1], 1])]
@@ -131,25 +129,46 @@ class TripletEncoderV4(tf.keras.Model):
         # )
 
         # build Encoder
+        compression_size = asv_embeddings[-1] // self.compress_factor
+
         encoder_layers = []
-        emb_dim = asv_embeddings[-1]
         for _ in range(self.compress_factor):
             encoder_layers += [
                 DenseBlock2(),
                 DenseBlock2(pool=-1),
             ]
-            emb_dim /= self.pool_size
-        emb_dim = int(emb_dim)
         self.encoder = tf.keras.Sequential(
-            encoder_layers + [tf.keras.layers.Dense(emb_dim)],
+            encoder_layers + [tf.keras.layers.Dense(compression_size)],
             name="encoder",
         )
 
-        discriminator_layers = []
-        for _ in range(self.num_noise_layers):
-            discriminator_layers += [DenseBlock2()]
+        dense_size = dense_counts[-1]
+        discriminator_layers = [tf.keras.layers.Input([dense_size, 1])]
+        i = 0
+        while dense_size > compression_size:
+            discriminator_layers += [
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=self.pool_size,
+                    use_max_pool=False,
+                ),
+            ]
+            dense_size /= self.pool_size
+            i += 1
+        print(f"{i} dense conv layers")
+
         self.discriminator = tf.keras.Sequential(
-            discriminator_layers + [tf.keras.layers.Dense(emb_dim)],
+            discriminator_layers
+            + [
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
+                tf.keras.layers.Dense(compression_size),
+            ],
             name="discriminator",
         )
 
@@ -157,6 +176,7 @@ class TripletEncoderV4(tf.keras.Model):
         decoder_layers = []
         for _ in range(self.compress_factor):
             decoder_layers += [
+                DenseBlock2(),
                 DenseBlock2(pool=1),
             ]
         self.decoder = tf.keras.Sequential(
@@ -287,15 +307,28 @@ class TripletEncoderV4(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
+    def _log1p_relative_abundance(self, dense_counts):
+        # compute relative abundance
+        dense_counts = tf.cast(dense_counts, dtype=tf.float32)
+        total_counts = tf.reduce_sum(dense_counts, axis=-1)
+        depth = tf.reduce_max(total_counts)
+        dense_counts /= depth
+
+        # normalize counts
+        dense_counts = tf.math.log1p(dense_counts)
+        return dense_counts
+
     def call(
         self, inputs, return_training_output=False, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        # asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
         encoder_input = self.unifrac_model(inputs, training=False)
-        # encoder_input = self.asv_encoder([original_embeddings, dense_counts])
-
         encoder_output = self.encoder(encoder_input)
-        batch_noise = self.discriminator(encoder_output)
+
+        dense_counts = self._log1p_relative_abundance(dense_counts)
+        batch_noise = self.discriminator(dense_counts)
+
+        # batch_noise = self.discriminator(encoder_output)
         encoder_residual = encoder_output - batch_noise
 
         decoder_output = self.decoder(encoder_residual)
