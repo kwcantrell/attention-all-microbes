@@ -9,9 +9,10 @@ from aam.models.utils import sample_embeddings
 
 
 class DenseBlock(tf.keras.layers.Layer):
-    def __init__(self, pool=False, **kwargs):
+    def __init__(self, pool=False, dropout_rate=0.0, **kwargs):
         super(DenseBlock, self).__init__(**kwargs)
         self.pool = pool
+        self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
         units = input_shape[-1]
@@ -31,6 +32,9 @@ class DenseBlock(tf.keras.layers.Layer):
                 ]
             )
 
+        if self.dropout_rate > 0.0:
+            self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
+
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -41,6 +45,9 @@ class DenseBlock(tf.keras.layers.Layer):
     def call(self, inputs, training=False):
         output = self.dense_block(inputs)
 
+        if self.dropout_rate > 0.0:
+            output = self.dropout(output, training=training)
+
         # residual step
         if self.pool:
             inputs = self.res_pool(inputs)
@@ -49,11 +56,7 @@ class DenseBlock(tf.keras.layers.Layer):
 
     def get_config(self):
         config = super(ASVDenseCountEncoder, self).get_config()
-        config.update(
-            {
-                "pool": self.pool,
-            }
-        )
+        config.update({"pool": self.pool, "dropout_rate": self.dropout_rate})
         return config
 
 
@@ -76,8 +79,8 @@ class RegressorV2(tf.keras.Model):
         self.asv_dense_encoder = ASVDenseCountEncoder(non_pool_blocks_per_layer=1)
         self.regressor = tf.keras.Sequential(
             [
-                DenseBlock(pool=True),
-                DenseBlock(pool=True),
+                DenseBlock(pool=True, dropout_rate=0.25),
+                DenseBlock(pool=True, dropout_rate=0.25),
                 DenseBlock(pool=True),
                 tf.keras.layers.Dense(1),
             ],
