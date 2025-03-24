@@ -70,7 +70,9 @@ class TripletEncoderV4(tf.keras.Model):
 
         self.triplet_loss = global_orthogonal_regulization
         self.res_class_tracker = tf.keras.metrics.Mean(name="ortho_loss")
-        self.discriminator_loss = tf.keras.losses.CategoricalCrossentropy()
+        self.discriminator_loss = tf.keras.losses.CategoricalCrossentropy(
+            reduction=tf.keras.losses.Reduction.NONE
+        )
         self.batch_mag_tracker = tf.keras.metrics.Mean(name="discriminator_mag")
         self.batch_class_tracker = tf.keras.metrics.Mean(name="discriminator_loss")
         self.age_tracker = tf.keras.metrics.Mean(name="age_loss")
@@ -204,6 +206,8 @@ class TripletEncoderV4(tf.keras.Model):
         batch_probs,
         res_probs,  # , regressor
     ):
+        y, sample_weights = y
+
         # y, age = y
         y = tf.reshape(y, shape=[-1])
         y = tf.one_hot(y, depth=self.num_groups) > 0
@@ -212,7 +216,7 @@ class TripletEncoderV4(tf.keras.Model):
         noise_size = tf.reduce_sum(tf.abs(batch_noise), axis=-1)
 
         # cross entropy
-        batch_loss = self.discriminator_loss(y, batch_probs)
+        batch_loss = self.discriminator_loss(y, batch_probs) * sample_weights
 
         # we want to min KL divergence
         uniform = tf.ones_like(res_probs) * (

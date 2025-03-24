@@ -37,6 +37,7 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
         table: Union[str, Table] = None,
         metadata: Optional[Union[str, pd.DataFrame]] = None,
         metadata_column: Optional[str] = None,
+        group_counts=None,
         sequence_embeddings: Optional[str] = None,
         sequence_labels: Optional[str] = None,
         normalize_embeddings: bool = False,
@@ -63,6 +64,7 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
         self.num_asvs = len(self.table.ids(axis="observation"))
 
         self.metadata_column: str = metadata_column
+        self.group_counts = group_counts
         self.metadata: pd.Series = metadata
         self.rarefy_depth: int = rarefy_depth
         self.return_sample_ids: bool = return_sample_ids
@@ -145,9 +147,7 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
         # get list of unique observations in batch
         unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
         tokens = self.sequence_embeddings[unique_obs]
-        y_true = self.metadata.loc[batch_sample_ids, self.metadata_column].to_numpy()[
-            :, np.newaxis
-        ]
+        y_true = self.metadata.loc[batch_sample_ids, self.metadata_column].to_numpy()
 
         if self.return_sample_ids:
             return (
@@ -164,7 +164,10 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
             obs_indices,
             counts,
             asv_counts,
-        ), y_true
+        ), (
+            y_true[:, np.newaxis],
+            np.array([1 / self.group_counts[g] for g in y_true]),
+        )
 
     def on_epoch_end(self):
         if (
@@ -222,16 +225,23 @@ class TripletGeneratorV2(tf.keras.utils.Sequence):
 
 
 if __name__ == "__main__":
+    df = pd.read_csv(
+        "/home/kalen/removing-study-id/healthy-us-metadata-train.tsv",
+        sep="\t",
+        index_col=0,
+    )
+    group_counts = df["numeric_sequence_group"].value_counts().to_dict()
     ug = TripletGeneratorV2(
         table="/home/kalen/removing-study-id/healthy-us-sorted-table.biom",
         metadata="/home/kalen/removing-study-id/healthy-us-metadata-train.tsv",
         metadata_column="numeric_sequence_group",
+        group_counts=group_counts,
         sequence_embeddings="/home/kalen/removing-study-id/healthy-us-sequence-embeddings.npy",
         sequence_labels="/home/kalen/removing-study-id/healthy-us-sequence-labels.npy",
         gen_new_tables=True,
         shuffle=True,
         batch_size=8,
-        return_sample_ids=True,
+        return_sample_ids=False,
         drop_remainder=False,
     )
     x, y = ug[0]

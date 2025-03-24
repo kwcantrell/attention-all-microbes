@@ -26,8 +26,8 @@ class RegressorV3(tf.keras.Model):
             return
         self.base_norm = tf.keras.layers.BatchNormalization()
         layers = []
-        for _ in range(self.num_encoder_layers):
-            layers.append(DenseBlock())
+        for _ in range(3):
+            layers.append(DenseBlock(pool=True))
         self.regressor = tf.keras.Sequential(
             layers + [tf.keras.layers.Dense(1)], name="regressor"
         )
