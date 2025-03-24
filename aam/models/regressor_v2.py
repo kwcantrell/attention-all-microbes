@@ -78,12 +78,7 @@ class RegressorV2(tf.keras.Model):
 
         self.asv_dense_encoder = ASVDenseCountEncoder(non_pool_blocks_per_layer=1)
         self.regressor = tf.keras.Sequential(
-            [
-                DenseBlock(pool=True, dropout_rate=0.25),
-                DenseBlock(pool=True, dropout_rate=0.25),
-                DenseBlock(pool=True),
-                tf.keras.layers.Dense(1),
-            ],
+            [tf.keras.layers.Dense(1)],
             name="regressor",
         )
         super(RegressorV2, self).build(input_shape)

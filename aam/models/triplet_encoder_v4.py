@@ -129,12 +129,11 @@ class TripletEncoderV4(tf.keras.Model):
         # )
 
         # build Encoder
-        compression_size = asv_embeddings[-1] // self.compress_factor
+        compression_size = asv_embeddings[-1] // (2**self.compress_factor)
 
         encoder_layers = []
         for _ in range(self.compress_factor):
             encoder_layers += [
-                DenseBlock2(),
                 DenseBlock2(pool=-1),
             ]
         self.encoder = tf.keras.Sequential(
@@ -176,7 +175,6 @@ class TripletEncoderV4(tf.keras.Model):
         decoder_layers = []
         for _ in range(self.compress_factor):
             decoder_layers += [
-                DenseBlock2(),
                 DenseBlock2(pool=1),
             ]
         self.decoder = tf.keras.Sequential(
@@ -258,7 +256,7 @@ class TripletEncoderV4(tf.keras.Model):
             noise_loss, batch_loss, res_loss = self._compute_discriminator_loss(
                 y, batch_noise, batch_probs, res_probs
             )
-            loss = ae_loss + batch_loss + res_loss + noise_loss
+            loss = ae_loss + batch_loss + res_loss
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
@@ -291,7 +289,7 @@ class TripletEncoderV4(tf.keras.Model):
         noise_loss, batch_loss, res_loss = self._compute_discriminator_loss(
             y, batch_noise, batch_probs, res_probs
         )
-        loss = ae_loss + batch_loss + res_loss + noise_loss
+        loss = ae_loss + batch_loss + res_loss
 
         self.loss_tracker.update_state(loss)
         self.asv_rec_tracker.update_state(ae_loss)
