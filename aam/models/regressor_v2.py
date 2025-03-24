@@ -22,6 +22,7 @@ class DenseBlock(tf.keras.layers.Layer):
                     tf.keras.layers.Dense(units // 2),
                 ]
             )
+            self.res_pool = tf.keras.layers.Dense(units // 2)
         else:
             self.dense_block = tf.keras.Sequential(
                 [
@@ -41,8 +42,19 @@ class DenseBlock(tf.keras.layers.Layer):
         output = self.dense_block(inputs)
 
         # residual step
+        if self.pool:
+            inputs = self.res_pool(inputs)
         output = inputs + self._rezero * output
         return output
+
+    def get_config(self):
+        config = super(ASVDenseCountEncoder, self).get_config()
+        config.update(
+            {
+                "pool": self.pool,
+            }
+        )
+        return config
 
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV2")
