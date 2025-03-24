@@ -24,7 +24,6 @@ class RegressorV3(tf.keras.Model):
         if self.built:
             print("RegressorV3 is already built")
             return
-        self.base_norm = tf.keras.layers.BatchNormalization()
         layers = []
         for _ in range(3):
             layers.append(DenseBlock(pool=True))
@@ -101,7 +100,6 @@ class RegressorV3(tf.keras.Model):
 
     def call(self, inputs, training=False):
         base_embeddings = self.base_model(inputs, training=False)
-        base_embeddings = self.base_norm(base_embeddings, training=training)
 
         output = self.regressor(base_embeddings)
         print("RegressorV3 exit...")
