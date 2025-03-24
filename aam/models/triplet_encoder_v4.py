@@ -79,6 +79,9 @@ class TripletEncoderV4(tf.keras.Model):
         self.num_groups = num_groups
         self.unifrac_model = unifrac_model
         self.unifrac_model.trainable = False
+        self.unifrac_norm = tf.keras.layers.BatchNormalization(
+            center=False, scale=False
+        )
 
         self.num_noise_layers = num_noise_layers
         self.compress_factor = compress_factor
@@ -94,42 +97,6 @@ class TripletEncoderV4(tf.keras.Model):
         asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
             input_shape
         )
-
-        # # build Encoder
-        # encoder_layers = [tf.keras.layers.Input([asv_embeddings[-1], 1])]
-        # emb_dim = asv_embeddings[-1]
-        # for _ in range(self.compress_factor):
-        #     encoder_layers += [
-        #         ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0),
-        #         ConvolutionBlock(
-        #             self.num_filters, self.kernel_size, pool_size=self.pool_size
-        #         ),
-        #     ]
-        #     emb_dim /= self.pool_size
-        # emb_dim = int(emb_dim)
-        # self.encoder = tf.keras.Sequential(
-        #     encoder_layers
-        #     + [
-        #         tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-        #         tf.keras.layers.Dense(emb_dim),
-        #     ],
-        #     name="encoder",
-        # )
-
-        # discriminator_layers = [tf.keras.layers.Input([emb_dim, 1])]
-        # for _ in range(self.num_noise_layers):
-        #     discriminator_layers += [
-        #         ConvolutionBlock(self.num_filters, self.kernel_size, pool_size=0)
-        #     ]
-        # self.discriminator = tf.keras.Sequential(
-        #     discriminator_layers
-        #     + [
-        #         tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-        #         tf.keras.layers.Dense(emb_dim),
-        #     ],
-        #     name="discriminator",
-        # )
-
         # build Encoder
         compression_size = asv_embeddings[-1] // (2**self.compress_factor)
 
@@ -229,8 +196,8 @@ class TripletEncoderV4(tf.keras.Model):
 
         return (
             tf.reduce_mean(noise_size),
-            tf.reduce_mean(batch_loss) * 0.01,
-            tf.reduce_mean(kl),
+            tf.reduce_mean(batch_loss),
+            tf.reduce_mean(kl) * 0.0,
         )
 
     def _compute_batch_noise(self, residual, batch_noise):
@@ -238,7 +205,7 @@ class TripletEncoderV4(tf.keras.Model):
         batch_norn = tf.norm(batch_noise, axis=-1, keepdims=True)
         mask = tf.cast(batch_norn >= 0.35 * output_norm, dtype=tf.float32)
         loss = tf.reduce_sum(batch_norn * mask)
-        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask)) * 10.0
+        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask))
 
     def predict_step(
         self,
@@ -344,6 +311,8 @@ class TripletEncoderV4(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
         encoder_input = self.unifrac_model(inputs, training=False)
+        encoder_input = self.unifrac_norm(encoder_input, training=training)
+
         encoder_output = self.encoder(encoder_input)
 
         dense_counts = self._log1p_relative_abundance(dense_counts)
