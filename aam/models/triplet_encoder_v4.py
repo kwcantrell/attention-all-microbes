@@ -79,15 +79,13 @@ class TripletEncoderV4(tf.keras.Model):
         self.num_groups = num_groups
         self.unifrac_model = unifrac_model
         self.unifrac_model.trainable = False
-        self.unifrac_norm = tf.keras.layers.BatchNormalization(
-            center=False, scale=False
-        )
 
         self.num_noise_layers = num_noise_layers
         self.compress_factor = compress_factor
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.pool_size = pool_size
+        self.label_smoothing = 0.1
 
     def build(self, input_shape):
         if self.built:
@@ -161,10 +159,8 @@ class TripletEncoderV4(tf.keras.Model):
         super(TripletEncoderV4, self).build(input_shape)
 
     def _reconstruction_loss(self, encoder_input, decoder_output):
-        square_difference = tf.reduce_sum(
-            tf.square(encoder_input - decoder_output), axis=-1
-        )
-        return tf.reduce_mean(square_difference)
+        reconstruction_loss = tf.norm(encoder_input - decoder_output, axis=-1)
+        return tf.reduce_mean(reconstruction_loss) * 0.9
 
     def _compute_discriminator_loss(
         self,
@@ -176,13 +172,16 @@ class TripletEncoderV4(tf.keras.Model):
         y, sample_weights = y
 
         # y, age = y
-        y = tf.reshape(y, shape=[-1])
-        y = tf.one_hot(y, depth=self.num_groups) > 0
 
         # batch_noise should be as small
         noise_size = tf.reduce_sum(tf.abs(batch_noise), axis=-1)
 
         # cross entropy
+        y = tf.reshape(y, shape=[-1])
+        y = tf.one_hot(y, depth=self.num_groups, dtype=tf.float32)
+        y = y * (1 - self.label_smoothing)
+        y_mask = tf.cast(y > 0, dtype=tf.float32)
+        y = y + (1.0 - y_mask) * self.label_smoothing / self.num_groups
         batch_loss = self.discriminator_loss(y, batch_probs)
 
         # we want to min KL divergence
@@ -196,7 +195,7 @@ class TripletEncoderV4(tf.keras.Model):
 
         return (
             tf.reduce_mean(noise_size),
-            tf.reduce_mean(batch_loss) * 0.1,
+            tf.reduce_mean(batch_loss),
             tf.reduce_mean(kl),
         )
 
@@ -311,7 +310,6 @@ class TripletEncoderV4(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
         encoder_input = self.unifrac_model(inputs, training=False)
-        encoder_input = self.unifrac_norm(encoder_input, training=training)
 
         encoder_output = self.encoder(encoder_input)
 
