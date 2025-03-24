@@ -233,6 +233,13 @@ class TripletEncoderV4(tf.keras.Model):
             tf.reduce_mean(kl),
         )
 
+    def _compute_batch_noise(self, residual, batch_noise):
+        output_norm = tf.norm(residual, axis=-1, keepdims=True)
+        batch_norn = tf.norm(batch_noise, axis=-1, keepdims=True)
+        mask = tf.cast(batch_norn >= 0.5 * output_norm, dtype=tf.float32)
+        loss = tf.reduce_sum(batch_norn * mask)
+        return tf.math.divide_no_nan(loss, tf.reduce_sum(mask))
+
     def predict_step(
         self,
         data: Union[
@@ -253,20 +260,26 @@ class TripletEncoderV4(tf.keras.Model):
         inputs, y = data
 
         with tf.GradientTape() as tape:
-            (batch_noise, batch_probs, res_probs, encoder_input, decoder_output) = self(
-                inputs, return_training_output=True, training=True
-            )
+            (
+                batch_noise,
+                batch_probs,
+                res_probs,
+                encoder_input,
+                decoder_output,
+                encoder_residual,
+            ) = self(inputs, return_training_output=True, training=True)
             ae_loss = self._reconstruction_loss(encoder_input, decoder_output)
             noise_loss, batch_loss, res_loss = self._compute_discriminator_loss(
                 y, batch_noise, batch_probs, res_probs
             )
-            loss = ae_loss + batch_loss + res_loss
+            batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
+            loss = ae_loss + batch_loss + res_loss + batch_noise_loss
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.loss_tracker.update_state(loss)
         self.asv_rec_tracker.update_state(ae_loss)
-        self.batch_noise_Tracker.update_state(noise_loss)
+        self.batch_noise_Tracker.update_state(batch_noise_loss)
         self.batch_class_tracker.update_state(batch_loss)
         self.res_class_tracker.update_state(res_loss)
         return {
@@ -286,18 +299,24 @@ class TripletEncoderV4(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        (batch_noise, batch_probs, res_probs, encoder_input, decoder_output) = self(
-            inputs, return_training_output=True, training=False
-        )
+        (
+            batch_noise,
+            batch_probs,
+            res_probs,
+            encoder_input,
+            decoder_output,
+            encoder_residual,
+        ) = self(inputs, return_training_output=True, training=False)
         ae_loss = self._reconstruction_loss(encoder_input, decoder_output)
         noise_loss, batch_loss, res_loss = self._compute_discriminator_loss(
             y, batch_noise, batch_probs, res_probs
         )
-        loss = ae_loss + batch_loss + res_loss
+        batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
+        loss = ae_loss + batch_loss + res_loss + batch_noise_loss
 
         self.loss_tracker.update_state(loss)
         self.asv_rec_tracker.update_state(ae_loss)
-        self.batch_noise_Tracker.update_state(noise_loss)
+        self.batch_noise_Tracker.update_state(batch_noise_loss)
         self.batch_class_tracker.update_state(batch_loss)
         self.res_class_tracker.update_state(res_loss)
         return {
@@ -347,6 +366,7 @@ class TripletEncoderV4(tf.keras.Model):
             res_probs,
             encoder_input,
             decoder_output,
+            encoder_residual,
         )
 
     def get_config(self):
