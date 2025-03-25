@@ -13,7 +13,7 @@ class ASVEncoderV2(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_layers_per_block: int = 8,
-        num_layers: int = 6,
+        num_layers: int = 12,
         **kwargs,
     ):
         super(ASVEncoderV2, self).__init__(**kwargs)
@@ -63,8 +63,12 @@ class ASVEncoderV2(tf.keras.Model):
             trainable=True,
             dtype=tf.float32,
         )
-
-        self.asv_encoder = ConvFeedForward(outdim=self.filters)
+        asv_layers = []
+        for _ in range(self.num_layers):
+            asv_layers += [ConvFeedForward()]
+        self.asv_encoder = tf.keras.Sequential(
+            asv_layers + [ConvFeedForward(outdim=self.filters)]
+        )
         super(ASVEncoderV2, self).build(input_shape)
 
     def predict_step(self, data):
