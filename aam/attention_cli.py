@@ -430,7 +430,15 @@ def fit_new_regressor(
     # start pre processing dataset
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
         [m_metadata_column]
-    batch_indicies = tf.TensorShape([None, 2])
+    ]
+    num_samples = df.shape[0]
+    indices = np.arange(num_samples, dtype=np.int32)
+
+    np.random.shuffle(indices)
+    train_size = int(num_samples * 0.8)
+
+    train_indices = indices[:train_size]
+    train_df = df.iloc[train_indices]
 
     val_indices = indices[train_size:]
     val_df = df.iloc[val_indices]
