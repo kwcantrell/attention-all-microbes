@@ -41,9 +41,9 @@ class Regressor(tf.keras.Model):
         if self.built:
             print("Regressor is already built")
             return
-        self.input_norm = tf.keras.layers.BatchNormalization(center=False, scale=False)
+        self.input_norm = tf.keras.layers.BatchNormalization()
         layers = []
-        for _ in range(self.num_layers):
+        for _ in range(self.num_layers - 1):
             layers += [
                 ConvFeedForward(
                     self.num_filters,
@@ -52,9 +52,23 @@ class Regressor(tf.keras.Model):
                 )
             ]
         self.regressor = tf.keras.Sequential(
-            layers + [tf.keras.layers.Dense(1)],
+            layers
+            + [
+                ConvFeedForward(
+                    self.num_filters,
+                    self.kernel_size,
+                    num_layers=self.conv_blocks_per_layer,
+                    outdim=1,
+                )
+            ],
             name="regressor",
         )
+        # self.regressor = ConvFeedForward(
+        #     self.num_filters,
+        #     self.kernel_size,
+        #     num_layers=self.conv_blocks_per_layer,
+        #     outdim=1,
+        # )
         super(Regressor, self).build(input_shape)
 
     def predict_step(

@@ -111,18 +111,18 @@ class TripletEncoder(tf.keras.Model):
         y = tf.one_hot(y, depth=self.num_groups, dtype=tf.float32)
         batch_loss = self.discriminator_loss(y, batch_probs)
 
-        # # we want to min KL divergence
-        # # uniform = tf.ones_like(res_probs) * (
-        # #     1.0 / tf.cast(self.num_groups, dtype=tf.float32)
-        # # )
-        # # p = uniform
-        # remaining_explained = (1.0 - self.group_explained) / self.num_groups
-        # p = y * (self.group_explained - remaining_explained) + remaining_explained
-        # q = res_probs
-        # log_pq = tf.math.log(p) - tf.math.log(q)
-        # kl = tf.reduce_sum(p * log_pq, axis=-1)
-        mask = y > 0
-        kl = -1.0 * tf.math.log(res_probs[mask] + 1e-7)
+        # we want to min KL divergence
+        # uniform = tf.ones_like(res_probs) * (
+        #     1.0 / tf.cast(self.num_groups, dtype=tf.float32)
+        # )
+        # p = uniform
+        remaining_explained = (1.0 - self.group_explained) / self.num_groups
+        p = y * (self.group_explained - remaining_explained) + remaining_explained
+        q = res_probs
+        log_pq = tf.math.log(p) - tf.math.log(q)
+        kl = tf.reduce_sum(p * log_pq, axis=-1)
+        # mask = y > 0
+        # kl = -1.0 * tf.math.log(res_probs[mask] + 1e-7)
 
         return tf.reduce_mean(batch_loss), tf.reduce_mean(kl)
 
@@ -169,7 +169,7 @@ class TripletEncoder(tf.keras.Model):
             batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
 
             ae_loss = rec_loss
-            disc_loss = batch_noise_loss + res_loss
+            disc_loss = batch_loss + res_loss + batch_noise_loss
         disc_trainable = (
             self.discriminator.trainable_variables
             + self.batch_classifier.trainable_variables
@@ -250,8 +250,8 @@ class TripletEncoder(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         encoder_input = self.unifrac_model(inputs, training=False)
         encoder_output = self.encoder(encoder_input)
-        batch_noise = self.discriminator(tf.stop_gradient(encoder_output))
-        encoder_residual = encoder_output - tf.stop_gradient(batch_noise)
+        batch_noise = self.discriminator(encoder_output)
+        encoder_residual = encoder_output - batch_noise
         decoder_output = self.decoder(encoder_residual)
 
         batch_probs = self.batch_classifier(batch_noise)
@@ -267,7 +267,7 @@ class TripletEncoder(tf.keras.Model):
             res_probs,
             encoder_input,
             decoder_output,
-            tf.stop_gradient(encoder_residual),
+            encoder_residual,
         )
 
     def get_config(self):

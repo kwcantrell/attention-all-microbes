@@ -5,28 +5,32 @@ import tensorflow as tf
 class ConvFeedForward(tf.keras.layers.Layer):
     def __init__(
         self,
-        num_filters=32,
+        filters=32,
         kernel_size=3,
-        num_layers=8,
+        conv_blocks=8,
         pool=0,
         outdim=None,
+        conv_dropout_rate=0.0,
+        ff_dropout_rate=0.0,
         **kwargs,
     ):
         super(ConvFeedForward, self).__init__(**kwargs)
-        self.num_filters = num_filters
+        self.filters = filters
         self.kernel_size = kernel_size
-        self.num_layers = num_layers
+        self.conv_blocks = conv_blocks
         self.pool = pool
         self.outdim = outdim
+        self.conv_dropout_rate = conv_dropout_rate
+        self.ff_dropout_rate = ff_dropout_rate
 
     def build(self, input_shape):
         units = input_shape[-1]
 
         conv_layers = [tf.keras.layers.Reshape([-1, 1])]
-        for _ in range(self.num_layers):
+        for _ in range(self.conv_blocks):
             conv_layers += [
                 tf.keras.layers.Conv1D(
-                    filters=self.num_filters,
+                    filters=self.filters,
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
@@ -37,6 +41,9 @@ class ConvFeedForward(tf.keras.layers.Layer):
             + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))],
             name="conv_layers",
         )
+
+        if self.conv_dropout_rate > 0.0:
+            self.conv_dropout = tf.keras.layers.Dropout(self.conv_dropout_rate)
 
         if self.pool < 0:
             self.ff = tf.keras.Sequential(
@@ -69,6 +76,9 @@ class ConvFeedForward(tf.keras.layers.Layer):
                     tf.keras.layers.Dense(units),
                 ]
             )
+        if self.ff_dropout_rate > 0.0:
+            self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
+
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -77,11 +87,13 @@ class ConvFeedForward(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        conv_outputs = inputs + self._rezero * self.conv_layers(inputs)
+        conv_output = self.conv_layers(inputs)
+        ff_input = inputs + self._rezero * conv_output
 
+        ff_output = self.ff(ff_input)
         if self.pool or self.outdim is not None:
-            conv_outputs = self.res_pool(conv_outputs)
-        output = conv_outputs + self._rezero * self.ff(conv_outputs)
+            ff_input = self.res_pool(ff_input)
+        output = ff_input + self._rezero * ff_output
         return output
 
     def get_config(self):
@@ -90,11 +102,13 @@ class ConvFeedForward(tf.keras.layers.Layer):
             .get_config()
             .update(
                 {
-                    "num_filters": self.num_filters,
+                    "filters": self.filters,
                     "kernel_size": self.kernel_size,
-                    "num_layers": self.num_layers,
+                    "conv_blocks": self.conv_blocks,
                     "pool": self.pool,
                     "outdim": self.outdim,
+                    "conv_dropout_rate": self.conv_dropout_rate,
+                    "ff_dropout_rate": self.ff_dropout_rate,
                 }
             )
         )

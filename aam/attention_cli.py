@@ -384,7 +384,7 @@ def fit_unifrac_regressor(
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=10000, required=False, type=int)
-@click.option("--p-layers", default=6, required=False, type=int)
+@click.option("--p-layers", default=2, required=False, type=int)
 @click.option("--p-blocks-per-layer", default=8, required=False, type=int)
 @click.option("--p-filters", default=32, required=False, type=int)
 def fit_new_regressor(
@@ -444,8 +444,8 @@ def fit_new_regressor(
     train_gen = RegressorGenerator(
         metadata=train_df,
         shuffle=True,
-        gen_new_tables=False,
-        # gen_new_table_frequency=3,
+        gen_new_tables=True,
+        gen_new_table_frequency=3,
         epochs=p_epochs,
         batch_size=p_batch_size,
         **common_kwargs,

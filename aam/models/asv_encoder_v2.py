@@ -12,8 +12,8 @@ class ASVEncoderV2(tf.keras.Model):
         self,
         filters: int = 32,
         kernel_size: int = 3,
-        conv_layers_per_block: int = 8,
-        num_layers: int = 12,
+        conv_blocks_per_layers: int = 8,
+        num_layers: int = 6,
         **kwargs,
     ):
         super(ASVEncoderV2, self).__init__(**kwargs)
@@ -21,7 +21,7 @@ class ASVEncoderV2(tf.keras.Model):
         self.filters = filters
 
         self.kernel_size = kernel_size
-        self.conv_layers_per_block = conv_layers_per_block
+        self.conv_blocks_per_layers = conv_blocks_per_layers
         self.num_layers = num_layers
         self.base_tokens = 5
 
@@ -44,7 +44,7 @@ class ASVEncoderV2(tf.keras.Model):
         )
 
         nuc_block = []
-        for _ in range(self.conv_layers_per_block):
+        for _ in range(self.conv_blocks_per_layers):
             nuc_block += [
                 tf.keras.layers.Conv1D(
                     filters=self.filters,
@@ -53,10 +53,7 @@ class ASVEncoderV2(tf.keras.Model):
                     padding="same",
                 )
             ]
-        self.nuc_block = tf.keras.Sequential(
-            nuc_block + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))],
-            name="nuc_block",
-        )
+        self.nuc_block = tf.keras.Sequential(nuc_block, name="nuc_block")
         self._nuc_rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -64,10 +61,24 @@ class ASVEncoderV2(tf.keras.Model):
             dtype=tf.float32,
         )
         asv_layers = []
-        for _ in range(self.num_layers):
-            asv_layers += [ConvFeedForward()]
+        for _ in range(self.num_layers - 1):
+            asv_layers += [
+                ConvFeedForward(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layers,
+                )
+            ]
         self.asv_encoder = tf.keras.Sequential(
-            asv_layers + [ConvFeedForward(outdim=self.filters)]
+            asv_layers
+            + [
+                ConvFeedForward(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layers,
+                    outdim=self.filters,
+                )
+            ]
         )
         super(ASVEncoderV2, self).build(input_shape)
 
@@ -119,12 +130,9 @@ class ASVEncoderV2(tf.keras.Model):
         inputs = self.emb_layer(inputs)
 
         nuc_output = self.nuc_block(inputs)
-        nuc_output = (
-            tf.cast(tf.reduce_mean(inputs, axis=-1), dtype=self.compute_dtype)
-            + tf.cast(self._nuc_rezero, dtype=self.compute_dtype) * nuc_output
-        )
+        asv_input = tf.reduce_mean(inputs + self._nuc_rezero * nuc_output, axis=-1)
 
-        return self.asv_encoder(nuc_output)
+        return self.asv_encoder(asv_input)
 
     def get_config(self):
         config = super(ASVEncoderV2, self).get_config()
@@ -132,7 +140,7 @@ class ASVEncoderV2(tf.keras.Model):
             {
                 "filters": self.filters,
                 "kernel_size": self.kernel_size,
-                "conv_layers_per_block": self.conv_layers_per_block,
+                "conv_blocks_per_layers": self.conv_blocks_per_layers,
                 "num_layers": self.num_layers,
                 "build_input_shape": self.get_build_config(),
             }
