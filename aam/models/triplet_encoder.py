@@ -5,47 +5,8 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import _pairwise_distances, global_orthogonal_regulization
-from aam.models.asv_dense_count_encoder import ASVDenseCountEncoder
 from aam.models.convolution_block import ConvolutionBlock
-
-
-class DenseBlock2(tf.keras.layers.Layer):
-    def __init__(self, pool=0, **kwargs):
-        super(DenseBlock2, self).__init__(**kwargs)
-        self.pool = pool
-
-    def build(self, input_shape):
-        units = input_shape[-1]
-        self.dense_inner = tf.keras.layers.Dense(units, activation="gelu")
-
-        if self.pool < 0:
-            self.dense_outer = tf.keras.layers.Dense(units // 2)
-            self.res_pool = tf.keras.layers.Dense(units // 2)
-        elif self.pool > 0:
-            self.dense_outer = tf.keras.layers.Dense(units * 2)
-            self.res_pool = tf.keras.layers.Dense(units * 2)
-        else:
-            self.dense_outer = tf.keras.layers.Dense(units)
-
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
-        )
-
-    def call(self, inputs, training=False):
-        output = self.dense_inner(inputs)
-        output = self.dense_outer(output)
-
-        # residual step
-        if self.pool:
-            inputs = self.res_pool(inputs)
-        output = inputs + self._rezero * output
-        return output
-
-    def get_config(self):
-        return super().get_config().update({"pool": self.pool})
+from aam.models.feedforward import FeedForward
 
 
 @tf.keras.saving.register_keras_serializable(package="TripletEncoder")
@@ -56,7 +17,7 @@ class TripletEncoder(tf.keras.Model):
         unifrac_model,
         num_noise_layers=6,
         compress_factor=3,
-        num_filters=8,
+        num_filters=16,
         kernel_size=3,
         pool_size=2,
         **kwargs,
@@ -100,43 +61,83 @@ class TripletEncoder(tf.keras.Model):
         compression_size = asv_embeddings[-1] // (2**self.compress_factor)
 
         encoder_layers = []
-        for _ in range(self.compress_factor):
+        cur_dim = asv_embeddings[-1]
+        for i in range(self.compress_factor):
             encoder_layers += [
-                DenseBlock2(),
-                DenseBlock2(),
-                DenseBlock2(),
-                DenseBlock2(pool=-1),
+                tf.keras.layers.Reshape([-1, 1]),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
+                FeedForward(pool=-1),
             ]
         self.encoder = tf.keras.Sequential(
-            encoder_layers + [tf.keras.layers.Dense(compression_size)],
+            encoder_layers + [FeedForward(pool=0)],
             name="encoder",
         )
 
-        discriminator_layers = []
+        discriminator_layers = [tf.keras.layers.Reshape([-1, 1])]
         for _ in range(self.num_noise_layers):
-            discriminator_layers += [DenseBlock2()]
+            discriminator_layers += [
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+            ]
         self.discriminator = tf.keras.Sequential(
-            discriminator_layers + [tf.keras.layers.Dense(compression_size)],
+            discriminator_layers
+            + [
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
+                FeedForward(pool=0),
+            ],
             name="discriminator",
         )
 
         # build Decoder
         decoder_layers = []
+        cur_dim = compression_size
         for _ in range(self.compress_factor):
             decoder_layers += [
-                DenseBlock2(),
-                DenseBlock2(),
-                DenseBlock2(),
-                DenseBlock2(pool=1),
+                tf.keras.layers.Reshape([-1, 1]),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    pool_size=0,
+                ),
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
+                FeedForward(pool=1),
             ]
+            cur_dim *= 2
         self.decoder = tf.keras.Sequential(
-            decoder_layers + [tf.keras.layers.Dense(asv_embeddings[-1])],
+            decoder_layers + [FeedForward(pool=0)],
             name="decoder",
         )
 
         self.batch_classifier = tf.keras.Sequential(
             [
-                DenseBlock2(),
                 tf.keras.layers.Dense(
                     self.num_groups, use_bias=True, activation="softmax"
                 ),
@@ -298,7 +299,6 @@ class TripletEncoder(tf.keras.Model):
         self, inputs, return_training_output=False, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         encoder_input = self.unifrac_model(inputs, training=False)
-
         encoder_output = self.encoder(encoder_input)
         batch_noise = self.discriminator(tf.stop_gradient(encoder_output))
         encoder_residual = encoder_output - tf.stop_gradient(batch_noise)

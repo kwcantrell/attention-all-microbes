@@ -253,7 +253,7 @@ def fit_unifrac_regressor(
 
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.unifrac_generator_v2 import UnifracGeneratorV2
-    from aam.models.unifrac_encoder_v4 import UnifracEncoderV4
+    from aam.models.unifrac_encoder import UnifracEncoder
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
@@ -309,7 +309,7 @@ def fit_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = UnifracEncoderV4(non_pool_blocks_per_layer=3)
+        model = UnifracEncoder(non_pool_blocks_per_layer=3)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])

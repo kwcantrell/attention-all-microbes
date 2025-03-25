@@ -4,7 +4,8 @@ from typing import Union
 
 import tensorflow as tf
 
-from aam.models.regressor_v2 import DenseBlock
+from aam.models.convolution_block import ConvolutionBlock
+from aam.models.feedforward import FeedForward
 
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV3")
@@ -14,6 +15,8 @@ class RegressorV3(tf.keras.Model):
         base_model,
         shift,
         scale,
+        num_filters=16,
+        kernel_size=3,
         num_regressor_layers=6,
         dropout_rate=0.0,
         **kwargs,
@@ -25,6 +28,8 @@ class RegressorV3(tf.keras.Model):
         self.num_regressor_layers = num_regressor_layers
         self.shift = shift
         self.scale = scale
+        self.num_filters = num_filters
+        self.kernel_size = kernel_size
         self.base_model = base_model
         self.base_model.trainable = False
         self.dropout_rate = dropout_rate
@@ -33,11 +38,16 @@ class RegressorV3(tf.keras.Model):
         if self.built:
             print("RegressorV3 is already built")
             return
-        layers = []
+        layers = [tf.keras.layers.Reshape([-1, 1])]
         for _ in range(self.num_regressor_layers):
-            layers.append(DenseBlock(pool=False, dropout_rate=self.dropout_rate))
+            layers.append(ConvolutionBlock(self.num_filters, self.kernel_size))
         self.regressor = tf.keras.Sequential(
-            layers + [tf.keras.layers.Dense(1)], name="regressor"
+            layers
+            + [
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
+                FeedForward(outdim=1),
+            ],
+            name="regressor",
         )
         super(RegressorV3, self).build(input_shape)
 
@@ -121,6 +131,8 @@ class RegressorV3(tf.keras.Model):
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
                 "shift": self.shift,
                 "scale": self.scale,
+                "num_filters": self.num_filters,
+                "kernel_size": self.kernel_size,
                 "num_regressor_layers": self.num_regressor_layers,
                 "dropout_rate": self.dropout_rate,
                 "build_input_shape": self.get_build_config(),
