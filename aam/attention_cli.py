@@ -864,7 +864,7 @@ def fit_triplet_regressor(
 
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.triplet_generator_dataset_v2 import TripletGeneratorV2
-    from aam.models.triplet_encoder_v4 import TripletEncoderV4
+    from aam.models.triplet_encoder import TripletEncoder
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
@@ -888,8 +888,8 @@ def fit_triplet_regressor(
         "sequence_embeddings": i_sequence_embeddings,
         "sequence_labels": i_sequence_labels,
         "drop_remainder": False,
-        "normalize_embeddings": False,
         "group_counts": df[m_metadata_column].value_counts().to_dict(),
+        "gen_new_table_frequency": 10,
     }
     train_gen = TripletGeneratorV2(
         metadata=train_df,
@@ -920,7 +920,8 @@ def fit_triplet_regressor(
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
         unifrac_model = tf.keras.models.load_model(i_unifrac_model, compile=False)
-        model = TripletEncoderV4(num_groups, unifrac_model)
+        unifrac_model.trainable = False
+        model = TripletEncoder(num_groups, unifrac_model)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])

@@ -7,10 +7,7 @@ class SequenceEmbeddings:
         embeddings = np.load(embeddings_fp)
         emb_mean = np.mean(embeddings, axis=0)
 
-        if normalize:
-            emb_std = np.std(embeddings, axis=0)
-        else:
-            emb_std = 1
+        emb_std = np.std(embeddings, axis=0)
         self.embeddings = (embeddings - emb_mean) / emb_std
 
         self.labels = labels_fp

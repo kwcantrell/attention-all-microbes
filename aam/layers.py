@@ -69,7 +69,9 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.nucleotide_position = tf.range(
             0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
         )
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(reduction="none")
+        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(
+            reduction="none", label_smoothing=0.1
+        )
 
     def build(self, input_shape):
         if self.built:
