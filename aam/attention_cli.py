@@ -399,7 +399,7 @@ def fit_unifrac_regressor(
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=10000, required=False, type=int)
-@click.option("--p-num-hidden-layrs", default=6, required=False, type=int)
+@click.option("--p-num-hidden-layers", default=6, required=False, type=int)
 def fit_new_regressor(
     i_table: str,
     i_sequence_embeddings,
@@ -430,15 +430,7 @@ def fit_new_regressor(
     # start pre processing dataset
     df = pd.read_csv(m_metadata_file, sep="\t", index_col=0, dtype={0: str})[
         [m_metadata_column]
-    ]
-    num_samples = df.shape[0]
-    indices = np.arange(num_samples, dtype=np.int32)
-
-    np.random.shuffle(indices)
-    train_size = int(num_samples * 0.8)
-
-    train_indices = indices[:train_size]
-    train_df = df.iloc[train_indices]
+    batch_indicies = tf.TensorShape([None, 2])
 
     val_indices = indices[train_size:]
     val_df = df.iloc[val_indices]
