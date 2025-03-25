@@ -15,10 +15,10 @@ class UnifracEncoder(tf.keras.Model):
     def __init__(
         self,
         num_encoder_layers=8,
-        non_pool_blocks_per_layer=3,
+        non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=8,
+        conv_blocks_per_layer=2,
         **kwargs,
     ):
         super(UnifracEncoder, self).__init__(**kwargs)

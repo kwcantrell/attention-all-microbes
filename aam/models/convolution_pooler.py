@@ -3,9 +3,7 @@ import tensorflow as tf
 
 @tf.keras.saving.register_keras_serializable(package="ConvolutionPooler")
 class ConvolutionPooler(tf.keras.layers.Layer):
-    def __init__(
-        self, num_filters=32, kernel_size=3, num_layers=3, upscale=False, **kwargs
-    ):
+    def __init__(self, num_filters=32, kernel_size=3, num_layers=3, **kwargs):
         super(ConvolutionPooler, self).__init__(**kwargs)
         self.num_filters = num_filters
         self.kernel_size = kernel_size

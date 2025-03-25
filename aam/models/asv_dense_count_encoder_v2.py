@@ -35,7 +35,13 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
         conv_layers = []
         i = 0
         while dense_size > asv_embeddings[-1]:
-            conv_layers += [ConvolutionPooler()]
+            conv_layers += [
+                ConvolutionPooler(
+                    num_filters=self.num_filters,
+                    kernel_size=self.kernel_size,
+                    num_layers=self.non_pool_blocks_per_layer,
+                )
+            ]
             dense_size /= 2
             i += 1
         print(f"{i} dense conv layers")
