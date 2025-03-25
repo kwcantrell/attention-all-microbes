@@ -4,6 +4,7 @@ from typing import Union
 
 import tensorflow as tf
 
+from aam.models.conv_feedforward import ConvFeedForward
 from aam.models.convolution_block import ConvolutionBlock
 from aam.models.feedforward import FeedForward
 
@@ -15,9 +16,10 @@ class RegressorV3(tf.keras.Model):
         base_model,
         shift,
         scale,
-        num_filters=16,
+        num_filters=32,
         kernel_size=3,
-        num_regressor_layers=6,
+        num_layers=6,
+        conv_blocks_per_layer=8,
         dropout_rate=0.0,
         **kwargs,
     ):
@@ -25,28 +27,31 @@ class RegressorV3(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
 
-        self.num_regressor_layers = num_regressor_layers
+        self.num_layers = num_layers
         self.shift = shift
         self.scale = scale
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.base_model = base_model
         self.base_model.trainable = False
+        self.conv_blocks_per_layer = conv_blocks_per_layer
         self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
         if self.built:
             print("RegressorV3 is already built")
             return
-        layers = [tf.keras.layers.Reshape([-1, 1])]
-        for _ in range(self.num_regressor_layers):
-            layers.append(ConvolutionBlock(self.num_filters, self.kernel_size))
+        layers = []
+        for _ in range(self.num_layers):
+            layers += [
+                ConvFeedForward(
+                    self.num_filters,
+                    self.kernel_size,
+                    num_layers=self.conv_blocks_per_layer,
+                )
+            ]
         self.regressor = tf.keras.Sequential(
-            layers
-            + [
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-                FeedForward(outdim=1),
-            ],
+            layers + [FeedForward(outdim=1)],
             name="regressor",
         )
         super(RegressorV3, self).build(input_shape)
@@ -133,7 +138,8 @@ class RegressorV3(tf.keras.Model):
                 "scale": self.scale,
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
-                "num_regressor_layers": self.num_regressor_layers,
+                "conv_blocks_per_layer": self.conv_blocks_per_layer,
+                "num_layers": self.num_layers,
                 "dropout_rate": self.dropout_rate,
                 "build_input_shape": self.get_build_config(),
             }

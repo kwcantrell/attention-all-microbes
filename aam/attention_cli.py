@@ -399,7 +399,9 @@ def fit_unifrac_regressor(
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=10000, required=False, type=int)
-@click.option("--p-num-hidden-layers", default=6, required=False, type=int)
+@click.option("--p-layers", default=6, required=False, type=int)
+@click.option("--p-blocks-per-layer", default=8, required=False, type=int)
+@click.option("--p-filters", default=32, required=False, type=int)
 def fit_new_regressor(
     i_table: str,
     i_sequence_embeddings,
@@ -418,7 +420,9 @@ def fit_new_regressor(
     output_dir: str,
     p_weight_decay: float,
     p_rarefy_depth: int,
-    p_num_hidden_layers: int,
+    p_layers: int,
+    p_blocks_per_layer: int,
+    p_filters: int,
 ):
     import tensorflow_addons as tfa
 
@@ -488,7 +492,9 @@ def fit_new_regressor(
             base_model,
             train_gen.shift,
             train_gen.scale,
-            num_regressor_layers=p_num_hidden_layers,
+            num_layers=p_layers,
+            num_filters=p_filters,
+            conv_blocks_per_layer=p_blocks_per_layer,
             dropout_rate=p_dropout,
         )
 
