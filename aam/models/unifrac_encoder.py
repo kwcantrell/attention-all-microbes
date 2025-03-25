@@ -6,8 +6,8 @@ import tensorflow as tf
 
 from aam.losses import PairwiseLoss
 from aam.models.asv_dense_count_encoder_v2 import ASVDenseCountEncoderV2
+from aam.models.conv_feedforward import ConvFeedForward
 from aam.models.convolution_block import ConvolutionBlock
-from aam.models.feedforward import FeedForward
 from aam.models.utils import sample_embeddings
 
 
@@ -17,8 +17,9 @@ class UnifracEncoder(tf.keras.Model):
         self,
         num_encoder_layers=8,
         non_pool_blocks_per_layer=3,
-        num_filters=16,
+        num_filters=32,
         kernel_size=3,
+        conv_blocks_per_layer=8,
         **kwargs,
     ):
         super(UnifracEncoder, self).__init__(**kwargs)
@@ -29,28 +30,29 @@ class UnifracEncoder(tf.keras.Model):
         self.non_pool_blocks_per_layer = non_pool_blocks_per_layer
         self.num_filters = num_filters
         self.kernel_size = kernel_size
+        self.conv_blocks_per_layer = conv_blocks_per_layer
 
     def build(self, input_shape):
         if self.built:
             print("UnifracEncoder is already built")
             return
 
-        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
-            input_shape
-        )
         self.asv_encoder = ASVDenseCountEncoderV2(
-            non_pool_blocks_per_layer=self.non_pool_blocks_per_layer, name="asv_encoder"
+            non_pool_blocks_per_layer=self.non_pool_blocks_per_layer,
+            name="asv_encoder",
         )
 
-        encoder_layers = [tf.keras.layers.Reshape([-1, 1])]
+        encoder_layers = []
         for _ in range(self.num_encoder_layers):
-            encoder_layers += [ConvolutionBlock(self.num_filters, self.kernel_size)]
+            encoder_layers += [
+                ConvFeedForward(
+                    self.num_filters,
+                    self.kernel_size,
+                    num_layers=self.conv_blocks_per_layer,
+                )
+            ]
         self.encoder = tf.keras.Sequential(
-            encoder_layers
-            + [
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-                FeedForward(),
-            ],
+            encoder_layers,
             name="encoder",
         )
         super(UnifracEncoder, self).build(input_shape)
@@ -132,6 +134,7 @@ class UnifracEncoder(tf.keras.Model):
                 "non_pool_blocks_per_layer": self.non_pool_blocks_per_layer,
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
+                "conv_blocks_per_layer": self.conv_blocks_per_layer,
                 "build_input_shape": self.get_build_config(),
             }
         )
