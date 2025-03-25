@@ -399,6 +399,7 @@ def fit_unifrac_regressor(
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=10000, required=False, type=int)
+@click.option("--p-num-hidden-layrs", default=6, required=False, type=int)
 def fit_new_regressor(
     i_table: str,
     i_sequence_embeddings,
@@ -417,6 +418,7 @@ def fit_new_regressor(
     output_dir: str,
     p_weight_decay: float,
     p_rarefy_depth: int,
+    p_num_hidden_layers: int,
 ):
     import tensorflow_addons as tfa
 
@@ -483,7 +485,11 @@ def fit_new_regressor(
     else:
         base_model = tf.keras.models.load_model(i_base_model, compile=False)
         model = RegressorV3(
-            base_model, train_gen.shift, train_gen.scale, dropout_rate=p_dropout
+            base_model,
+            train_gen.shift,
+            train_gen.scale,
+            num_regressor_layers=p_num_hidden_layers,
+            dropout_rate=p_dropout,
         )
 
     token_shape = tf.TensorShape([None, 512])
