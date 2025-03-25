@@ -98,12 +98,15 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
 
 
 class LAMBLRScheduler(tf.keras.callbacks.Callback):
-    def __init__(self, scheduler):
+    def __init__(self, scheduler, optimizer=None):
         self.scheduler = scheduler
+        self.optimizer = optimizer
 
     def on_batch_end(self, batch, logs=None):
-        step = float(tf.keras.backend.get_value(self.model.optimizer.iterations))
-        self.model.optimizer.learning_rate.assign(self.scheduler(step))
+        if self.optimizer is None:
+            self.optimizer = self.model.optimizer
+        step = float(tf.keras.backend.get_value(self.optimizer.iterations))
+        self.optimizer.learning_rate.assign(self.scheduler(step))
 
 
 class ConfusionMatrx(tf.keras.callbacks.Callback):

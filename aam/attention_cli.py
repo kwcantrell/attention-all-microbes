@@ -309,7 +309,7 @@ def fit_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = UnifracEncoderV4(non_pool_blocks_per_layer=1)
+        model = UnifracEncoderV4(non_pool_blocks_per_layer=3)
 
     token_shape = tf.TensorShape([None, 512])
     batch_indicies = tf.TensorShape([None, 2])
@@ -929,11 +929,8 @@ def fit_triplet_regressor(
     dense_count = tf.TensorShape([None, train_gen.num_asvs])
     model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
     model.summary()
-    lr_scheduler = LAMBLRScheduler(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
-    )
 
-    optimizer = tfa.optimizers.LAMB(
+    ae_optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=[
@@ -953,6 +950,33 @@ def fit_triplet_regressor(
             "BatchNorm",
         ],
     )
+
+    ae_lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps), ae_optimizer
+    )
+    disc_optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
+        weight_decay=p_weight_decay,
+        exclude_from_weight_decay=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "batch_norm",
+            "BatchNorm",
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+            "batch_norm",
+            "BatchNorm",
+        ],
+    )
+    disc_lr_scheduler = LAMBLRScheduler(
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps), disc_optimizer
+    )
     # optimizer = tf.keras.optimizers.AdamW(
     #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
     #     weight_decay=p_weight_decay,
@@ -966,7 +990,7 @@ def fit_triplet_regressor(
     #         "embeddings",
     #     ]
     # )
-    model.compile(optimizer=optimizer, run_eagerly=False)
+    model.compile(ae_optimizer, disc_optimizer, run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
     if not os.path.exists(log_dir):
@@ -980,7 +1004,8 @@ def fit_triplet_regressor(
         #     patience=p_patience,
         #     start_from_epoch=p_early_stop_warmup,
         # ),
-        lr_scheduler,
+        ae_lr_scheduler,
+        disc_lr_scheduler,
         model_saver,
     ]
     model.fit(
