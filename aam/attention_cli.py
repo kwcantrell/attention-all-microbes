@@ -723,7 +723,7 @@ def fit_denoised_unifrac_regressor(
         epochs=1,
         **common_kwargs,
     )
-    val_dataset = get_dataset(val_gen)
+    # val_dataset = get_dataset(val_gen)
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -803,8 +803,8 @@ def fit_denoised_unifrac_regressor(
         lr_scheduler,
     ]
     model.fit(
-        training_dataset,
-        validation_data=val_dataset,
+        train_gen,
+        validation_data=val_gen,
         callbacks=[*core_callbacks],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
