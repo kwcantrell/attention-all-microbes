@@ -1,7 +1,7 @@
 import tensorflow as tf
 
-from aam.models.convolution_block import ConvolutionBlock
-from aam.models.feedforward import FeedForward
+from aam.models.conv_feedforward import ConvFeedForward
+from aam.models.convolution_pooler import ConvolutionPooler
 
 
 @tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoderV2")
@@ -35,35 +35,13 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
         conv_layers = []
         i = 0
         while dense_size > asv_embeddings[-1]:
-            conv_layers += [tf.keras.layers.Reshape([-1, 1])]
-            for _ in range(self.non_pool_blocks_per_layer):
-                conv_layers += [
-                    ConvolutionBlock(
-                        self.num_filters,
-                        self.kernel_size,
-                        pool_size=0,
-                        dropout_rate=self.dropout_rate,
-                    )
-                ]
-            conv_layers += [
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=self.pool_size,
-                    dropout_rate=self.dropout_rate,
-                    use_max_pool=self.max_pool,
-                )
-            ]
-            conv_layers += [
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
-            ]
-
-            dense_size /= self.pool_size
+            conv_layers += [ConvolutionPooler()]
+            dense_size /= 2
             i += 1
         print(f"{i} dense conv layers")
 
         self.dense_count_encoder = tf.keras.Sequential(
-            conv_layers + [FeedForward(outdim=asv_embeddings[-1]), FeedForward()]
+            conv_layers + [ConvFeedForward(outdim=asv_embeddings[-1])]
         )
 
         if self.dropout_rate > 0.0:

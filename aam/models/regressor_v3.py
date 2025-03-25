@@ -18,8 +18,8 @@ class RegressorV3(tf.keras.Model):
         scale,
         num_filters=32,
         kernel_size=3,
-        num_layers=6,
-        conv_blocks_per_layer=8,
+        num_layers=3,
+        conv_blocks_per_layer=3,
         dropout_rate=0.0,
         **kwargs,
     ):
@@ -41,6 +41,7 @@ class RegressorV3(tf.keras.Model):
         if self.built:
             print("RegressorV3 is already built")
             return
+        self.input_norm = tf.keras.layers.BatchNormalization(center=False, scale=False)
         layers = []
         for _ in range(self.num_layers):
             layers += [
@@ -51,9 +52,10 @@ class RegressorV3(tf.keras.Model):
                 )
             ]
         self.regressor = tf.keras.Sequential(
-            layers + [FeedForward(outdim=1)],
+            layers + [tf.keras.layers.Dense(1)],
             name="regressor",
         )
+        self.regressor = ConvFeedForward(outdim=1)
         super(RegressorV3, self).build(input_shape)
 
     def predict_step(
@@ -124,7 +126,7 @@ class RegressorV3(tf.keras.Model):
 
     def call(self, inputs, training=False):
         base_embeddings = self.base_model(inputs, training=False)
-
+        base_embeddings = self.input_norm(base_embeddings, training=training)
         output = self.regressor(base_embeddings)
         print("RegressorV3 exit...")
         return output

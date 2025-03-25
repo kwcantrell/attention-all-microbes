@@ -304,9 +304,10 @@ if __name__ == "__main__":
         shuffle=False,
         return_asv_ids=True,
     )
-    dataset = get_dataset(ug)
-    model = tf.keras.models.load_model(
-        "/home/kalen/aam-research-exam/research-exam/healty-age-regression/asv-encoder-tax-v4/model.keras",
-        compile=False,
-    )
-    print(model.predict(dataset.take(1)))
+    print(ug[0])
+    # dataset = get_dataset(ug)
+    # model = tf.keras.models.load_model(
+    #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/asv-encoder-tax-v4/model.keras",
+    #     compile=False,
+    # )
+    # print(model.predict(dataset.take(1)))

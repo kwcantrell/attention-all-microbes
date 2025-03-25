@@ -107,10 +107,10 @@ def fit_asv_encoder(
 ):
     import tensorflow_addons as tfa
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    # tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
-    from aam.models.nucleotide_encoder_v5 import NucleotideEncoderV5
+    from aam.models.asv_encoder_v2 import ASVEncoderV2
     from aam.models.utils import cos_decay_with_warmup
 
     # launch datasets first so they can begin to preprocess
@@ -137,18 +137,7 @@ def fit_asv_encoder(
         print("loading existing model...")
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model: tf.keras.Model = NucleotideEncoderV5(
-            embedding_dim=p_embedding_dim,
-            max_bp=p_max_bp,
-            dropout_rate=p_dropout,
-            intermediate_activation=p_intermediate_activation,
-            attention_heads=p_attention_heads,
-            attention_layers=p_attention_layers,
-            intermediate_size=p_intermediate_size,
-            normalize_outputs=p_normalize_outputs,
-            use_residual_connections=p_use_residual_connections,
-            use_linear_bias=p_use_linear_bias,
-        )
+        model: tf.keras.Model = ASVEncoderV2()
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
 
@@ -168,15 +157,11 @@ def fit_asv_encoder(
             "LayerNorm",
         ],
     )
-    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
     token_shape = tf.TensorShape([None, 150])
     model.build(token_shape)
-    model.compile(
-        include_bert_loss=p_include_bert_loss,
-        optimizer=optimizer,
-        run_eagerly=False,
-    )
+    model.compile(optimizer=optimizer, run_eagerly=False)
     model.summary()
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -459,8 +444,8 @@ def fit_new_regressor(
     train_gen = RegressorGenerator(
         metadata=train_df,
         shuffle=True,
-        gen_new_tables=p_gen_new_table,
-        gen_new_table_frequency=3,
+        gen_new_tables=False,
+        # gen_new_table_frequency=3,
         epochs=p_epochs,
         batch_size=p_batch_size,
         **common_kwargs,

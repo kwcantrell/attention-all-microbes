@@ -5,6 +5,7 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import _pairwise_distances, global_orthogonal_regulization
+from aam.models.conv_feedforward import ConvFeedForward
 from aam.models.convolution_block import ConvolutionBlock
 from aam.models.feedforward import FeedForward
 
@@ -54,93 +55,33 @@ class TripletEncoder(tf.keras.Model):
             print("TripletEncoder is already built")
             return
 
-        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
-            input_shape
-        )
-        # build Encoder
-        compression_size = asv_embeddings[-1] // (2**self.compress_factor)
-
         encoder_layers = []
-        cur_dim = asv_embeddings[-1]
         for i in range(self.compress_factor):
             encoder_layers += [
-                tf.keras.layers.Reshape([-1, 1]),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-                FeedForward(pool=-1),
+                ConvFeedForward(self.num_filters, self.kernel_size, pool=-1),
             ]
-        self.encoder = tf.keras.Sequential(
-            encoder_layers + [FeedForward(pool=0)],
-            name="encoder",
-        )
+        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
 
-        discriminator_layers = [tf.keras.layers.Reshape([-1, 1])]
+        discriminator_layers = []
         for _ in range(self.num_noise_layers):
             discriminator_layers += [
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
+                ConvFeedForward(self.num_filters, self.kernel_size)
             ]
         self.discriminator = tf.keras.Sequential(
-            discriminator_layers
-            + [
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-                FeedForward(pool=0),
-            ],
-            name="discriminator",
+            discriminator_layers, name="discriminator"
         )
 
-        # build Decoder
         decoder_layers = []
-        cur_dim = compression_size
         for _ in range(self.compress_factor):
             decoder_layers += [
-                tf.keras.layers.Reshape([-1, 1]),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
-                ConvolutionBlock(
-                    self.num_filters,
-                    self.kernel_size,
-                    pool_size=0,
-                ),
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-                FeedForward(pool=1),
+                ConvFeedForward(self.num_filters, self.kernel_size, pool=1),
             ]
-            cur_dim *= 2
-        self.decoder = tf.keras.Sequential(
-            decoder_layers + [FeedForward(pool=0)],
-            name="decoder",
-        )
+        self.decoder = tf.keras.Sequential(decoder_layers, name="decoder")
 
         self.batch_classifier = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(
-                    self.num_groups, use_bias=True, activation="softmax"
-                ),
+                FeedForward(outdim=self.num_groups),
+                tf.keras.layers.Activation("softmax"),
             ],
             name="batch_classifier",
         )
@@ -173,6 +114,9 @@ class TripletEncoder(tf.keras.Model):
         q = res_probs
         log_pq = tf.math.log(p) - tf.math.log(q)
         kl = tf.reduce_sum(p * log_pq, axis=-1)
+        # cross entropy
+        # y = tf.ones_like(y) * (1.0 / self.num_groups)
+        # kl = self.discriminator_loss(y, res_probs)
 
         return tf.reduce_mean(batch_loss), tf.reduce_mean(kl)
 
@@ -218,20 +162,22 @@ class TripletEncoder(tf.keras.Model):
             )
             batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
 
-            ae_loss = rec_loss
-            disc_loss = batch_noise_loss + batch_loss + res_loss
-        ae_trainable = (
-            self.encoder.trainable_variables + self.decoder.trainable_variables
-        )
+            ae_loss = rec_loss + res_loss
+            disc_loss = batch_noise_loss + batch_loss
         disc_trainable = (
             self.discriminator.trainable_variables
             + self.batch_classifier.trainable_variables
         )
+        ae_trainable = (
+            self.encoder.trainable_variables
+            + self.decoder.trainable_variables
+            + self.batch_classifier.trainable_variables
+        )
 
-        ae_gradients = ae_tape.gradient(ae_loss, ae_trainable)
         disc_gradients = disc_tape.gradient(disc_loss, disc_trainable)
-        self.ae_optimizer.apply_gradients(zip(ae_gradients, ae_trainable))
+        ae_gradients = ae_tape.gradient(ae_loss, ae_trainable)
         self.disc_optimizer.apply_gradients(zip(disc_gradients, disc_trainable))
+        self.ae_optimizer.apply_gradients(zip(ae_gradients, ae_trainable))
 
         self.loss_tracker.update_state(ae_loss + disc_loss)
         self.asv_rec_tracker.update_state(rec_loss)

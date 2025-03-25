@@ -22,9 +22,9 @@ class ConvFeedForward(tf.keras.layers.Layer):
     def build(self, input_shape):
         units = input_shape[-1]
 
-        layers = [tf.keras.layers.Reshape([-1, 1])]
+        conv_layers = [tf.keras.layers.Reshape([-1, 1])]
         for _ in range(self.num_layers):
-            layers += [
+            conv_layers += [
                 tf.keras.layers.Conv1D(
                     filters=self.num_filters,
                     kernel_size=self.kernel_size,
@@ -32,26 +32,43 @@ class ConvFeedForward(tf.keras.layers.Layer):
                     padding="same",
                 )
             ]
-        layers += [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))]
+        self.conv_layers = tf.keras.Sequential(
+            conv_layers
+            + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))],
+            name="conv_layers",
+        )
 
         if self.pool < 0:
-            self.conv_ff = tf.keras.Sequential(
-                layers + [tf.keras.layers.Dense(units // 2)]
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units // 2),
+                ]
             )
             self.res_pool = tf.keras.layers.Dense(units // 2)
         elif self.pool > 0:
-            self.conv_ff = tf.keras.Sequential(
-                layers + [tf.keras.layers.Dense(units * 2)]
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units * 2),
+                ]
             )
             self.res_pool = tf.keras.layers.Dense(units * 2)
         elif self.outdim is not None:
-            self.conv_ff = tf.keras.Sequential(
-                layers + [tf.keras.layers.Dense(self.outdim)]
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(self.outdim),
+                ]
             )
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
-            self.conv_ff = tf.keras.Sequential(layers + [tf.keras.layers.Dense(units)])
-
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units),
+                ]
+            )
         self._rezero = self.add_weight(
             name="rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -60,12 +77,11 @@ class ConvFeedForward(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        output = self.conv_ff(inputs)
+        conv_outputs = inputs + self._rezero * self.conv_layers(inputs)
 
-        # residual step
         if self.pool or self.outdim is not None:
-            inputs = self.res_pool(inputs)
-        output = inputs + self._rezero * output
+            conv_outputs = self.res_pool(conv_outputs)
+        output = conv_outputs + self._rezero * self.ff(conv_outputs)
         return output
 
     def get_config(self):
