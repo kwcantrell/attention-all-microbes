@@ -889,7 +889,7 @@ def fit_triplet_regressor(
         "sequence_labels": i_sequence_labels,
         "drop_remainder": False,
         "group_counts": df[m_metadata_column].value_counts().to_dict(),
-        "gen_new_table_frequency": 10,
+        "gen_new_table_frequency": 3,
     }
     train_gen = TripletGeneratorV2(
         metadata=train_df,
