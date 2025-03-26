@@ -69,16 +69,10 @@ class TripletEncoder(tf.keras.Model):
                     conv_dropout_rate=self.conv_dropout_rate,
                     ff_dropout_rate=self.ff_dropout_rate,
                 ),
-                ConvFeedForward(
-                    self.filters,
-                    self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layer,
-                    conv_dropout_rate=self.conv_dropout_rate,
-                    ff_dropout_rate=self.ff_dropout_rate,
-                    pool=-1,
-                ),
             ]
-        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
+        self.encoder = tf.keras.Sequential(
+            encoder_layers + [tf.keras.layers.BatchNormalization()], name="encoder"
+        )
         discriminator_layers = []
         for _ in range(self.num_noise_layers):
             discriminator_layers += [
@@ -94,7 +88,7 @@ class TripletEncoder(tf.keras.Model):
             discriminator_layers, name="discriminator"
         )
 
-        decoder_layers = []
+        decoder_layers = [tf.keras.layers.BatchNormalization()]
         for _ in range(self.compress_factor):
             decoder_layers += [
                 ConvFeedForward(
@@ -103,14 +97,6 @@ class TripletEncoder(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layer,
                     conv_dropout_rate=self.conv_dropout_rate,
                     ff_dropout_rate=self.ff_dropout_rate,
-                ),
-                ConvFeedForward(
-                    self.filters,
-                    self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layer,
-                    conv_dropout_rate=self.conv_dropout_rate,
-                    ff_dropout_rate=self.ff_dropout_rate,
-                    pool=1,
                 ),
             ]
         self.decoder = tf.keras.Sequential(decoder_layers, name="decoder")
@@ -217,8 +203,8 @@ class TripletEncoder(tf.keras.Model):
             )
             batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
 
-            ae_loss = rec_loss
-            disc_loss = batch_loss + res_loss + batch_noise_loss
+            ae_loss = rec_loss + res_loss
+            disc_loss = batch_loss + batch_noise_loss
 
         disc_gradients = disc_tape.gradient(disc_loss, disc_trainable)
         ae_gradients = ae_tape.gradient(ae_loss, ae_trainable)
