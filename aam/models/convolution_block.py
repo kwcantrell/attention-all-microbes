@@ -6,59 +6,27 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self,
         filters,
         kernel_size,
-        pool_size=0,
-        use_max_pool=False,
+        num_blocks=8,
         dropout_rate=0.0,
         **kwargs,
     ):
         super(ConvolutionBlock, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
-        self.pool_size = pool_size
-        self.use_max_pool = use_max_pool
+        self.num_blocks = num_blocks
         self.dropout_rate = dropout_rate
 
-        self.conv_inner = tf.keras.Sequential(
-            [
+        conv_blocks = []
+        for _ in range(self.num_blocks):
+            conv_blocks += [
                 tf.keras.layers.Conv1D(
                     filters=self.filters,
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
-                ),
-                tf.keras.layers.Activation("gelu"),
+                )
             ]
-        )
-
-        if self.pool_size > 0:
-            if self.use_max_pool:
-                print("using max pooling")
-                self.conv_outer = tf.keras.layers.MaxPool1D(
-                    pool_size=self.pool_size,
-                    strides=self.pool_size,
-                    padding="same",
-                )
-            else:
-                print("not using max pooling")
-                self.conv_outer = tf.keras.layers.Conv1D(
-                    filters=self.filters,
-                    kernel_size=self.pool_size,
-                    strides=self.pool_size,
-                    padding="same",
-                )
-            self.res_pool = tf.keras.layers.Conv1D(
-                filters=self.filters,
-                kernel_size=self.pool_size,
-                strides=self.pool_size,
-                padding="same",
-            )
-        else:
-            self.conv_outer = tf.keras.layers.Conv1D(
-                filters=self.filters,
-                kernel_size=self.kernel_size,
-                strides=1,
-                padding="same",
-            )
+        self.conv_blocks = tf.keras.Sequential(conv_blocks, name="conv_blocks")
 
         if dropout_rate > 0.0:
             self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
@@ -71,15 +39,11 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        output = self.conv_inner(inputs)
-        output = self.conv_outer(output)
+        output = self.conv_blocks(inputs)
 
         if self.dropout_rate > 0.0:
             output = self.dropout(output, training=training)
 
-        # residual step
-        if self.pool_size > 0:
-            inputs = self.res_pool(inputs)
         output = inputs + self._rezero * output
 
         return output
@@ -90,8 +54,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
             {
                 "filters": self.filters,
                 "kernel_size": self.kernel_size,
-                "pool_size": self.pool_size,
-                "use_max_pool": self.use_max_pool,
+                "conv_blocks": self.conv_blocks,
                 "dropout_rate": self.dropout_rate,
             }
         )

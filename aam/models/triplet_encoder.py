@@ -6,7 +6,6 @@ import tensorflow as tf
 
 from aam.losses import _pairwise_distances, global_orthogonal_regulization
 from aam.models.conv_feedforward import ConvFeedForward
-from aam.models.convolution_block import ConvolutionBlock
 from aam.models.feedforward import FeedForward
 
 
@@ -16,12 +15,14 @@ class TripletEncoder(tf.keras.Model):
         self,
         num_groups,
         unifrac_model,
-        num_noise_layers=6,
-        compress_factor=1,
-        blocks_per_compression=6,
-        num_filters=64,
+        num_noise_layers=3,
+        compress_factor=3,
+        conv_blocks_per_layer=8,
+        filters=32,
         kernel_size=3,
         pool_size=2,
+        conv_dropout_rate=0.1,
+        ff_dropout_rate=0.1,
         **kwargs,
     ):
         super(TripletEncoder, self).__init__(**kwargs)
@@ -45,10 +46,12 @@ class TripletEncoder(tf.keras.Model):
 
         self.num_noise_layers = num_noise_layers
         self.compress_factor = compress_factor
-        self.blocks_per_compression = blocks_per_compression
-        self.num_filters = num_filters
+        self.conv_blocks_per_layer = conv_blocks_per_layer
+        self.filters = filters
         self.kernel_size = kernel_size
         self.pool_size = pool_size
+        self.conv_dropout_rate = conv_dropout_rate
+        self.ff_dropout_rate = ff_dropout_rate
         self.group_explained = 0.35
 
     def build(self, input_shape):
@@ -58,17 +61,37 @@ class TripletEncoder(tf.keras.Model):
 
         encoder_layers = []
         for i in range(self.compress_factor):
-            for _ in range(self.blocks_per_compression):
-                encoder_layers += [ConvFeedForward(self.num_filters, self.kernel_size)]
             encoder_layers += [
-                ConvFeedForward(self.num_filters, self.kernel_size),
+                ConvFeedForward(
+                    self.filters,
+                    self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    conv_dropout_rate=self.conv_dropout_rate,
+                    ff_dropout_rate=self.ff_dropout_rate,
+                )
             ]
+            # encoder_layers += [
+            #     ConvFeedForward(
+            #         self.filters,
+            #         self.kernel_size,
+            #         conv_blocks=self.conv_blocks_per_layer,
+            #         conv_dropout_rate=self.conv_dropout_rate,
+            #         ff_dropout_rate=self.ff_dropout_rate,
+            #         # pool=-1,
+            #     ),
+            # ]
         self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
 
         discriminator_layers = []
         for _ in range(self.num_noise_layers):
             discriminator_layers += [
-                ConvFeedForward(self.num_filters, self.kernel_size)
+                ConvFeedForward(
+                    self.filters,
+                    self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    conv_dropout_rate=self.conv_dropout_rate,
+                    ff_dropout_rate=self.ff_dropout_rate,
+                )
             ]
         self.discriminator = tf.keras.Sequential(
             discriminator_layers, name="discriminator"
@@ -76,11 +99,25 @@ class TripletEncoder(tf.keras.Model):
 
         decoder_layers = []
         for _ in range(self.compress_factor):
-            for _ in range(self.blocks_per_compression):
-                decoder_layers += [ConvFeedForward(self.num_filters, self.kernel_size)]
             decoder_layers += [
-                ConvFeedForward(self.num_filters, self.kernel_size),
+                ConvFeedForward(
+                    self.filters,
+                    self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    conv_dropout_rate=self.conv_dropout_rate,
+                    ff_dropout_rate=self.ff_dropout_rate,
+                )
             ]
+            # decoder_layers += [
+            #     ConvFeedForward(
+            #         self.filters,
+            #         self.kernel_size,
+            #         conv_blocks=self.conv_blocks_per_layer,
+            #         conv_dropout_rate=self.conv_dropout_rate,
+            #         ff_dropout_rate=self.ff_dropout_rate,
+            #         # pool=1,
+            #     ),
+            # ]
         self.decoder = tf.keras.Sequential(decoder_layers, name="decoder")
 
         self.batch_classifier = tf.keras.Sequential(
@@ -112,14 +149,12 @@ class TripletEncoder(tf.keras.Model):
         batch_loss = self.discriminator_loss(y, batch_probs)
 
         # we want to min KL divergence
-        # uniform = tf.ones_like(res_probs) * (
-        #     1.0 / tf.cast(self.num_groups, dtype=tf.float32)
-        # )
-        # p = uniform
-        remaining_explained = (1.0 - self.group_explained) / self.num_groups
-        p = y * (self.group_explained - remaining_explained) + remaining_explained
+        uniform = tf.ones_like(res_probs) * (
+            1.0 / tf.cast(self.num_groups, dtype=tf.float32)
+        )
+        p = uniform
         q = res_probs
-        log_pq = tf.math.log(p) - tf.math.log(q)
+        log_pq = tf.math.log(p) - tf.math.log(q + 1e-7)
         kl = tf.reduce_sum(p * log_pq, axis=-1)
         # mask = y > 0
         # kl = -1.0 * tf.math.log(res_probs[mask] + 1e-7)
@@ -153,7 +188,21 @@ class TripletEncoder(tf.keras.Model):
     ):
         inputs, y = data
 
-        with tf.GradientTape() as ae_tape, tf.GradientTape() as disc_tape:
+        disc_trainable = (
+            self.discriminator.trainable_variables
+            + self.batch_classifier.trainable_variables
+        )
+        ae_trainable = (
+            self.encoder.trainable_variables + self.decoder.trainable_variables
+        )
+        with (
+            tf.GradientTape(watch_accessed_variables=False) as ae_tape,
+            tf.GradientTape(watch_accessed_variables=False) as disc_tape,
+        ):
+            for var in disc_trainable:
+                disc_tape.watch(var)
+            for var in ae_trainable:
+                ae_tape.watch(var)
             (
                 batch_noise,
                 batch_probs,
@@ -170,13 +219,6 @@ class TripletEncoder(tf.keras.Model):
 
             ae_loss = rec_loss
             disc_loss = batch_loss + res_loss + batch_noise_loss
-        disc_trainable = (
-            self.discriminator.trainable_variables
-            + self.batch_classifier.trainable_variables
-        )
-        ae_trainable = (
-            self.encoder.trainable_variables + self.decoder.trainable_variables
-        )
 
         disc_gradients = disc_tape.gradient(disc_loss, disc_trainable)
         ae_gradients = ae_tape.gradient(ae_loss, ae_trainable)
@@ -280,10 +322,12 @@ class TripletEncoder(tf.keras.Model):
                 ),
                 "num_noise_layers": self.num_noise_layers,
                 "compress_factor": self.compress_factor,
-                "blocks_per_compression": self.blocks_per_compression,
-                "num_filters": self.num_filters,
+                "conv_blocks_per_layer": self.conv_blocks_per_layer,
+                "filters": self.filters,
                 "kernel_size": self.kernel_size,
                 "pool_size": self.pool_size,
+                "conv_dropout_rate": self.conv_dropout_rate,
+                "ff_dropout_rate": self.ff_dropout_rate,
                 "build_input_shape": self.get_build_config(),
             }
         )

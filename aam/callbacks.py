@@ -91,7 +91,7 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
             y_pred, y_true = self.model.predict(
                 self.dataset, steps=self.dataset.steps_per_epoch
             )
-            _mean_absolute_error(y_pred, y_true, f"{self.output_dir}-epoch-{epoch}.png")
+            _mean_absolute_error(y_pred, y_true, f"{self.output_dir}.png")
             self.epochs_left = 5
         else:
             self.epochs_left -= 1

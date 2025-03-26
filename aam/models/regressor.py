@@ -5,8 +5,6 @@ from typing import Union
 import tensorflow as tf
 
 from aam.models.conv_feedforward import ConvFeedForward
-from aam.models.convolution_block import ConvolutionBlock
-from aam.models.feedforward import FeedForward
 
 
 @tf.keras.saving.register_keras_serializable(package="Regressor")
@@ -16,11 +14,12 @@ class Regressor(tf.keras.Model):
         base_model,
         shift,
         scale,
-        num_filters=32,
+        filters=32,
         kernel_size=3,
-        num_layers=3,
-        conv_blocks_per_layer=3,
-        dropout_rate=0.0,
+        num_layers=6,
+        conv_blocks_per_layer=8,
+        conv_dropout_rate=0.25,
+        ff_dropout_rate=0.25,
         **kwargs,
     ):
         super(Regressor, self).__init__(**kwargs)
@@ -30,12 +29,13 @@ class Regressor(tf.keras.Model):
         self.num_layers = num_layers
         self.shift = shift
         self.scale = scale
-        self.num_filters = num_filters
+        self.filters = filters
         self.kernel_size = kernel_size
         self.base_model = base_model
         self.base_model.trainable = False
         self.conv_blocks_per_layer = conv_blocks_per_layer
-        self.dropout_rate = dropout_rate
+        self.conv_dropout_rate = conv_dropout_rate
+        self.ff_dropout_rate = ff_dropout_rate
 
     def build(self, input_shape):
         if self.built:
@@ -46,29 +46,27 @@ class Regressor(tf.keras.Model):
         for _ in range(self.num_layers - 1):
             layers += [
                 ConvFeedForward(
-                    self.num_filters,
+                    self.filters,
                     self.kernel_size,
-                    num_layers=self.conv_blocks_per_layer,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    conv_dropout_rate=self.conv_dropout_rate,
+                    ff_dropout_rate=self.ff_dropout_rate,
                 )
             ]
         self.regressor = tf.keras.Sequential(
             layers
             + [
                 ConvFeedForward(
-                    self.num_filters,
+                    self.filters,
                     self.kernel_size,
-                    num_layers=self.conv_blocks_per_layer,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    conv_dropout_rate=self.conv_dropout_rate,
+                    ff_dropout_rate=0.0,
                     outdim=1,
                 )
             ],
             name="regressor",
         )
-        # self.regressor = ConvFeedForward(
-        #     self.num_filters,
-        #     self.kernel_size,
-        #     num_layers=self.conv_blocks_per_layer,
-        #     outdim=1,
-        # )
         super(Regressor, self).build(input_shape)
 
     def predict_step(
@@ -151,11 +149,12 @@ class Regressor(tf.keras.Model):
                 "base_model": tf.keras.saving.serialize_keras_object(self.base_model),
                 "shift": self.shift,
                 "scale": self.scale,
-                "num_filters": self.num_filters,
+                "filters": self.filters,
                 "kernel_size": self.kernel_size,
                 "conv_blocks_per_layer": self.conv_blocks_per_layer,
                 "num_layers": self.num_layers,
-                "dropout_rate": self.dropout_rate,
+                "conv_dropout_rate": self.conv_dropout_rate,
+                "ff_dropout_rate": self.ff_dropout_rate,
                 "build_input_shape": self.get_build_config(),
             }
         )

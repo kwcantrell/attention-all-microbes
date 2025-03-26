@@ -36,10 +36,7 @@ class UnifracEncoder(tf.keras.Model):
             print("UnifracEncoder is already built")
             return
 
-        self.asv_encoder = ASVDenseCountEncoderV2(
-            non_pool_blocks_per_layer=self.non_pool_blocks_per_layer,
-            name="asv_encoder",
-        )
+        self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
@@ -47,7 +44,7 @@ class UnifracEncoder(tf.keras.Model):
                 ConvFeedForward(
                     self.num_filters,
                     self.kernel_size,
-                    num_layers=self.conv_blocks_per_layer,
+                    conv_blocks=self.conv_blocks_per_layer,
                 )
             ]
         self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")

@@ -294,9 +294,11 @@ def fit_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = UnifracEncoder(non_pool_blocks_per_layer=3)
+        model = UnifracEncoder()
 
-    token_shape = tf.TensorShape([None, 512])
+    token_shape = tf.TensorShape(
+        [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
+    )
     batch_indicies = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
@@ -384,7 +386,7 @@ def fit_unifrac_regressor(
 @click.option("--output-dir", required=True)
 @click.option("--p-weight-decay", default=0.0, show_default=True, type=float)
 @click.option("--p-rarefy-depth", default=10000, required=False, type=int)
-@click.option("--p-layers", default=2, required=False, type=int)
+@click.option("--p-layers", default=6, required=False, type=int)
 @click.option("--p-blocks-per-layer", default=8, required=False, type=int)
 @click.option("--p-filters", default=32, required=False, type=int)
 def fit_new_regressor(
@@ -477,13 +479,14 @@ def fit_new_regressor(
             base_model,
             train_gen.shift,
             train_gen.scale,
-            num_layers=p_layers,
-            num_filters=p_filters,
-            conv_blocks_per_layer=p_blocks_per_layer,
-            dropout_rate=p_dropout,
+            # num_layers=p_layers,
+            # filters=p_filters,
+            # conv_blocks_per_layer=p_blocks_per_layer,
         )
 
-    token_shape = tf.TensorShape([None, 512])
+    token_shape = tf.TensorShape(
+        [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
+    )
     batch_indicies = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])
@@ -837,7 +840,7 @@ def fit_denoised_unifrac_regressor(
 @click.option("--p-decay-steps", default=25000, show_default=True, type=int)
 @click.option("--output-dir", required=True)
 @click.option("--p-rarefy-depth", default=10000, required=False, type=int)
-@click.option("--p-weight-decay", default=0.00, show_default=True, type=float)
+@click.option("--p-weight-decay", default=0.01, show_default=True, type=float)
 def fit_triplet_regressor(
     i_table: str,
     i_sequence_embeddings,
@@ -902,7 +905,7 @@ def fit_triplet_regressor(
         shuffle=False,
         gen_new_tables=False,
         epochs=1,
-        batch_size=128,
+        batch_size=p_batch_size,
         **common_kwargs,
     )
 
@@ -920,7 +923,9 @@ def fit_triplet_regressor(
         unifrac_model.trainable = False
         model = TripletEncoder(num_groups, unifrac_model)
 
-    token_shape = tf.TensorShape([None, 512])
+    token_shape = tf.TensorShape(
+        [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
+    )
     batch_indicies = tf.TensorShape([None, 2])
     indicies_shape = tf.TensorShape([None])
     count_shape = tf.TensorShape([None, 1])

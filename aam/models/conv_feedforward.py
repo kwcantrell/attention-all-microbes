@@ -34,7 +34,8 @@ class ConvFeedForward(tf.keras.layers.Layer):
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
-                )
+                ),
+                tf.keras.layers.Activation("gelu"),
             ]
         self.conv_layers = tf.keras.Sequential(
             conv_layers
@@ -50,6 +51,7 @@ class ConvFeedForward(tf.keras.layers.Layer):
                 [
                     tf.keras.layers.Dense(units, activation="relu"),
                     tf.keras.layers.Dense(units // 2),
+                    tf.keras.layers.Activation("gelu"),
                 ]
             )
             self.res_pool = tf.keras.layers.Dense(units // 2)
@@ -58,6 +60,7 @@ class ConvFeedForward(tf.keras.layers.Layer):
                 [
                     tf.keras.layers.Dense(units, activation="relu"),
                     tf.keras.layers.Dense(units * 2),
+                    tf.keras.layers.Activation("gelu"),
                 ]
             )
             self.res_pool = tf.keras.layers.Dense(units * 2)
@@ -66,6 +69,7 @@ class ConvFeedForward(tf.keras.layers.Layer):
                 [
                     tf.keras.layers.Dense(units, activation="relu"),
                     tf.keras.layers.Dense(self.outdim),
+                    tf.keras.layers.Activation("gelu"),
                 ]
             )
             self.res_pool = tf.keras.layers.Dense(self.outdim)
@@ -74,6 +78,7 @@ class ConvFeedForward(tf.keras.layers.Layer):
                 [
                     tf.keras.layers.Dense(units, activation="relu"),
                     tf.keras.layers.Dense(units),
+                    tf.keras.layers.Activation("gelu"),
                 ]
             )
         if self.ff_dropout_rate > 0.0:
@@ -88,9 +93,13 @@ class ConvFeedForward(tf.keras.layers.Layer):
 
     def call(self, inputs, training=False):
         conv_output = self.conv_layers(inputs)
+        if self.conv_dropout_rate > 0.0:
+            conv_output = self.conv_dropout(conv_output, training=training)
         ff_input = inputs + self._rezero * conv_output
 
         ff_output = self.ff(ff_input)
+        if self.ff_dropout_rate > 0.0:
+            ff_output = self.ff_dropout(ff_output, training=training)
         if self.pool or self.outdim is not None:
             ff_input = self.res_pool(ff_input)
         output = ff_input + self._rezero * ff_output

@@ -3,17 +3,17 @@ import tensorflow as tf
 
 @tf.keras.saving.register_keras_serializable(package="ConvolutionPooler")
 class ConvolutionPooler(tf.keras.layers.Layer):
-    def __init__(self, num_filters=32, kernel_size=3, num_layers=3, **kwargs):
+    def __init__(self, filters=32, kernel_size=3, conv_blocks=3, **kwargs):
         super(ConvolutionPooler, self).__init__(**kwargs)
-        self.num_filters = num_filters
+        self.filters = filters
         self.kernel_size = kernel_size
-        self.num_layers = num_layers
+        self.conv_blocks = conv_blocks
 
         conv_layers = [tf.keras.layers.Reshape([-1, 1])]
-        for _ in range(self.num_layers):
+        for _ in range(self.conv_blocks):
             conv_layers += [
                 tf.keras.layers.Conv1D(
-                    filters=self.num_filters,
+                    filters=self.filters,
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
@@ -29,13 +29,13 @@ class ConvolutionPooler(tf.keras.layers.Layer):
             [
                 tf.keras.layers.Reshape([-1, 1]),
                 tf.keras.layers.Conv1D(
-                    filters=self.num_filters,
+                    filters=self.filters,
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
                 ),
                 tf.keras.layers.Conv1D(
-                    filters=self.num_filters,
+                    filters=self.filters,
                     kernel_size=2,
                     strides=2,
                     padding="same",
@@ -59,8 +59,12 @@ class ConvolutionPooler(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        conv_outputs = inputs + self._rezero * self.conv_layers(inputs)
-        output = self.res_pool(conv_outputs) + self._rezero * self.pooler(conv_outputs)
+        conv_output = self.conv_layers(inputs)
+        pooler_input = inputs + self._rezero * conv_output
+
+        pooler_output = self.pooler(pooler_input)
+        pooler_input = self.res_pool(pooler_input)
+        output = pooler_input + self._rezero * pooler_output
         return output
 
     def get_config(self):
@@ -69,9 +73,9 @@ class ConvolutionPooler(tf.keras.layers.Layer):
             .get_config()
             .update(
                 {
-                    "num_filters": self.num_filters,
+                    "filters": self.filters,
                     "kernel_size": self.kernel_size,
-                    "num_layers": self.num_layers,
+                    "conv_blocks": self.conv_blocks,
                 }
             )
         )
