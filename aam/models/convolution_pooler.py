@@ -17,7 +17,8 @@ class ConvolutionPooler(tf.keras.layers.Layer):
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
-                )
+                ),
+                tf.keras.layers.Activation("gelu"),
             ]
         self.conv_layers = tf.keras.Sequential(
             conv_layers
