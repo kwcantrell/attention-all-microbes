@@ -24,7 +24,8 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                     kernel_size=self.kernel_size,
                     strides=1,
                     padding="same",
-                )
+                ),
+                tf.keras.layers.Activation("gelu"),
             ]
         self.conv_blocks = tf.keras.Sequential(conv_blocks, name="conv_blocks")
 

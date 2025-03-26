@@ -49,36 +49,32 @@ class ConvFeedForward(tf.keras.layers.Layer):
         if self.pool < 0:
             self.ff = tf.keras.Sequential(
                 [
-                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units, activation="gelu"),
                     tf.keras.layers.Dense(units // 2),
-                    tf.keras.layers.Activation("gelu"),
                 ]
             )
             self.res_pool = tf.keras.layers.Dense(units // 2)
         elif self.pool > 0:
             self.ff = tf.keras.Sequential(
                 [
-                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units, activation="gelu"),
                     tf.keras.layers.Dense(units * 2),
-                    tf.keras.layers.Activation("gelu"),
                 ]
             )
             self.res_pool = tf.keras.layers.Dense(units * 2)
         elif self.outdim is not None:
             self.ff = tf.keras.Sequential(
                 [
-                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units, activation="gelu"),
                     tf.keras.layers.Dense(self.outdim),
-                    tf.keras.layers.Activation("gelu"),
                 ]
             )
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
             self.ff = tf.keras.Sequential(
                 [
-                    tf.keras.layers.Dense(units, activation="relu"),
+                    tf.keras.layers.Dense(units, activation="gelu"),
                     tf.keras.layers.Dense(units),
-                    tf.keras.layers.Activation("gelu"),
                 ]
             )
         if self.ff_dropout_rate > 0.0:
