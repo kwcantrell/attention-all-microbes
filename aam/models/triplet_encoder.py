@@ -85,7 +85,12 @@ class TripletEncoder(tf.keras.Model):
         self.discriminator = tf.keras.Sequential(
             discriminator_layers, name="discriminator"
         )
-
+        self._discrim_rezero = self._rezero = self.add_weight(
+            name="discrim_rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
         decoder_layers = [
             ConvFeedForward(
                 self.filters,
@@ -122,7 +127,9 @@ class TripletEncoder(tf.keras.Model):
 
     def _reconstruction_loss(self, encoder_input, decoder_output):
         # input_norm = tf.norm(encoder_input, axis=-1)
-        reconstruction_loss = tf.norm(encoder_input - decoder_output, axis=-1)
+        reconstruction_loss = tf.reduce_mean(
+            tf.abs(encoder_input - decoder_output), axis=-1
+        )
         # mask = tf.cast(
         #     reconstruction_loss > self.group_explained * (input_norm + 1e-7),
         #     dtype=tf.float32,
@@ -286,7 +293,7 @@ class TripletEncoder(tf.keras.Model):
         encoder_input = self.unifrac_model(inputs, training=False)
         encoder_output = self.encoder(encoder_input, training=training)
         batch_noise = self.discriminator(encoder_output)
-        encoder_residual = encoder_output - batch_noise
+        encoder_residual = encoder_output - self._discrim_rezero * batch_noise
         decoder_output = self.decoder(encoder_residual)
 
         batch_probs = self.batch_classifier(batch_noise)
