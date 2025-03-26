@@ -18,8 +18,8 @@ class Regressor(tf.keras.Model):
         kernel_size=3,
         num_layers=6,
         conv_blocks_per_layer=8,
-        conv_dropout_rate=0.0,
-        ff_dropout_rate=0.0,
+        conv_dropout_rate=0.25,
+        ff_dropout_rate=0.25,
         **kwargs,
     ):
         super(Regressor, self).__init__(**kwargs)
@@ -41,7 +41,7 @@ class Regressor(tf.keras.Model):
         if self.built:
             print("Regressor is already built")
             return
-        layers = [tf.keras.layers.BatchNormalization(momentum=0.999)]
+        layers = [tf.keras.layers.BatchNormalization()]
         for _ in range(self.num_layers - 1):
             layers += [
                 ConvFeedForward(

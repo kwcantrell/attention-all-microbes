@@ -21,8 +21,8 @@ class TripletEncoder(tf.keras.Model):
         filters=32,
         kernel_size=3,
         pool_size=2,
-        conv_dropout_rate=0.0,
-        ff_dropout_rate=0.0,
+        conv_dropout_rate=0.25,
+        ff_dropout_rate=0.25,
         **kwargs,
     ):
         super(TripletEncoder, self).__init__(**kwargs)
@@ -35,7 +35,7 @@ class TripletEncoder(tf.keras.Model):
         self.triplet_loss = global_orthogonal_regulization
         self.res_class_tracker = tf.keras.metrics.Mean(name="ortho_loss")
         self.discriminator_loss = tf.keras.losses.CategoricalCrossentropy(
-            reduction=tf.keras.losses.Reduction.NONE
+            reduction=tf.keras.losses.Reduction.NONE, label_smoothing=0.1
         )
         self.batch_mag_tracker = tf.keras.metrics.Mean(name="discriminator_mag")
         self.batch_class_tracker = tf.keras.metrics.Mean(name="discriminator_loss")
@@ -59,7 +59,7 @@ class TripletEncoder(tf.keras.Model):
             print("TripletEncoder is already built")
             return
 
-        encoder_layers = [tf.keras.layers.BatchNormalization(momentum=0.999)]
+        encoder_layers = [tf.keras.layers.BatchNormalization()]
         for i in range(self.compress_factor):
             encoder_layers += [
                 ConvFeedForward(
@@ -165,7 +165,9 @@ class TripletEncoder(tf.keras.Model):
         mask = tf.cast(
             discriminator_norn >= self.group_explained * encoder_norm, dtype=tf.float32
         )
-        return tf.reduce_mean(discriminator_norn * mask)
+        return tf.math.divide_no_nan(
+            tf.reduce_sum(discriminator_norn * mask), tf.reduce_sum(mask)
+        )
 
     def predict_step(
         self,
@@ -216,7 +218,7 @@ class TripletEncoder(tf.keras.Model):
             batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
 
             ae_loss = rec_loss
-            disc_loss = batch_loss + res_loss
+            disc_loss = batch_loss + res_loss + batch_noise_loss
 
         disc_gradients = disc_tape.gradient(disc_loss, disc_trainable)
         ae_gradients = ae_tape.gradient(ae_loss, ae_trainable)
@@ -258,7 +260,7 @@ class TripletEncoder(tf.keras.Model):
             y, batch_probs, res_probs
         )
         batch_noise_loss = self._compute_batch_noise(encoder_residual, batch_noise)
-        loss = ae_loss + batch_loss + res_loss
+        loss = ae_loss + batch_loss + res_loss + batch_noise_loss
 
         self.loss_tracker.update_state(loss)
         self.asv_rec_tracker.update_state(ae_loss)
