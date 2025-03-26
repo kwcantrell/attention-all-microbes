@@ -21,8 +21,8 @@ class TripletEncoder(tf.keras.Model):
         filters=32,
         kernel_size=3,
         pool_size=2,
-        conv_dropout_rate=0.25,
-        ff_dropout_rate=0.25,
+        conv_dropout_rate=0.0,
+        ff_dropout_rate=0.0,
         **kwargs,
     ):
         super(TripletEncoder, self).__init__(**kwargs)
@@ -59,8 +59,8 @@ class TripletEncoder(tf.keras.Model):
             print("TripletEncoder is already built")
             return
 
-        encoder_layers = [tf.keras.layers.BatchNormalization()]
-        for i in range(self.compress_factor):
+        encoder_layers = []
+        for i in range(self.num_noise_layers):
             encoder_layers += [
                 ConvFeedForward(
                     self.filters,
@@ -70,9 +70,7 @@ class TripletEncoder(tf.keras.Model):
                     ff_dropout_rate=self.ff_dropout_rate,
                 ),
             ]
-        self.encoder = tf.keras.Sequential(
-            encoder_layers + [tf.keras.layers.BatchNormalization()], name="encoder"
-        )
+        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
         discriminator_layers = []
         for _ in range(self.num_noise_layers):
             discriminator_layers += [
@@ -88,8 +86,8 @@ class TripletEncoder(tf.keras.Model):
             discriminator_layers, name="discriminator"
         )
 
-        decoder_layers = [tf.keras.layers.BatchNormalization()]
-        for _ in range(self.compress_factor):
+        decoder_layers = []
+        for _ in range(self.num_noise_layers):
             decoder_layers += [
                 ConvFeedForward(
                     self.filters,
@@ -103,7 +101,14 @@ class TripletEncoder(tf.keras.Model):
 
         self.batch_classifier = tf.keras.Sequential(
             [
-                FeedForward(outdim=self.num_groups),
+                ConvFeedForward(
+                    self.filters,
+                    self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    conv_dropout_rate=self.conv_dropout_rate,
+                    ff_dropout_rate=self.ff_dropout_rate,
+                    outdim=self.num_groups,
+                ),
                 tf.keras.layers.Activation("softmax"),
             ],
             name="batch_classifier",
@@ -118,8 +123,12 @@ class TripletEncoder(tf.keras.Model):
         self.disc_optimizer = disc_optimizer
 
     def _reconstruction_loss(self, encoder_input, decoder_output):
+        input_norm = tf.norm(encoder_input, axis=-1)
         reconstruction_loss = tf.norm(encoder_input - decoder_output, axis=-1)
-        mask = tf.cast(reconstruction_loss > self.group_explained, dtype=tf.float32)
+        mask = tf.cast(
+            reconstruction_loss > self.group_explained * (input_norm + 1e-7),
+            dtype=tf.float32,
+        )
         return tf.math.divide_no_nan(
             tf.reduce_sum(reconstruction_loss * mask), tf.reduce_sum(mask)
         )
@@ -133,27 +142,28 @@ class TripletEncoder(tf.keras.Model):
         batch_loss = self.discriminator_loss(y, batch_probs)
 
         # we want to min KL divergence
-        uniform = tf.ones_like(res_probs) * (
-            1.0 / tf.cast(self.num_groups, dtype=tf.float32)
-        )
-        p = uniform
-        q = res_probs
-        log_pq = tf.math.log(p) - tf.math.log(q + 1e-7)
-        kl = tf.reduce_sum(p * log_pq, axis=-1)
-        # mask = y > 0
-        # kl = -1.0 * tf.math.log(res_probs[mask] + 1e-7)
+        # uniform = tf.ones_like(res_probs) * (
+        #     1.0 / tf.cast(self.num_groups, dtype=tf.float32)
+        # )
+        # p = uniform
+        # q = res_probs
+        # log_pq = tf.math.log(p) - tf.math.log(q + 1e-7)
+        # kl = tf.reduce_sum(p * log_pq, axis=-1)
+        mask = y > 0
+        kl = -1.0 * tf.math.log(res_probs[mask] + 1e-7)
 
         return tf.reduce_mean(batch_loss), tf.reduce_mean(kl)
 
     def _compute_batch_noise(self, encoder_residual, discriminator_output):
-        encoder_norm = tf.norm(encoder_residual, axis=-1)
-        discriminator_norn = tf.norm(discriminator_output, axis=-1)
-        mask = tf.cast(
-            discriminator_norn >= self.group_explained * encoder_norm, dtype=tf.float32
-        )
-        return tf.math.divide_no_nan(
-            tf.reduce_sum(discriminator_norn * mask), tf.reduce_sum(mask)
-        )
+        # encoder_norm = tf.norm(encoder_residual, axis=-1)
+        discriminator_norm = tf.norm(discriminator_output, axis=-1)
+        # mask = tf.cast(
+        #     discriminator_norm >= self.group_explained * encoder_norm, dtype=tf.float32
+        # )
+        # return tf.math.divide_no_nan(
+        #     tf.reduce_sum(discriminator_norm * mask), tf.reduce_sum(mask)
+        # )
+        return tf.reduce_mean(discriminator_norm)
 
     def predict_step(
         self,
@@ -287,7 +297,7 @@ class TripletEncoder(tf.keras.Model):
 
         print("Triplet encoder exit...")
         if not return_training_output:
-            return encoder_residual
+            return decoder_output
 
         return (
             batch_noise,
