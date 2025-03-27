@@ -57,12 +57,7 @@ class ASVEncoderV3(tf.keras.Model):
         self.nuc_block = tf.keras.Sequential(
             nuc_block
             + [
-                ConvolutionBlock(
-                    filters=1,
-                    kernel_size=self.kernel_size,
-                    num_blocks=self.conv_blocks_per_layers,
-                ),
-                tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=-1)),
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
             ],
             name="nuc_block",
         )
