@@ -266,6 +266,7 @@ def fit_unifrac_regressor(
         "batch_size": p_batch_size,
         "drop_remainder": False,
         "normalize_sequence_embeddings": p_normalize_sequence_embeddings,
+        "gen_new_table_frequency": 10,
     }
 
     train_gen = UnifracGeneratorV2(

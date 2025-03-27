@@ -14,8 +14,8 @@ class ASVEncoderV2(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 8,
-        num_nuc_layers: int = 12,
-        num_asv_layers: int = 12,
+        num_nuc_layers: int = 6,
+        num_asv_layers: int = 6,
         **kwargs,
     ):
         super(ASVEncoderV2, self).__init__(**kwargs)

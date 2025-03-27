@@ -14,7 +14,7 @@ from aam.models.utils import sample_embeddings
 class UnifracEncoder(tf.keras.Model):
     def __init__(
         self,
-        num_encoder_layers=16,
+        num_encoder_layers=6,
         non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
