@@ -13,7 +13,7 @@ from aam.models.utils import sample_embeddings
 class UnifracEncoderV2(tf.keras.Model):
     def __init__(
         self,
-        num_encoder_layers=6,
+        num_encoder_layers=12,
         num_filters=32,
         kernel_size=3,
         conv_blocks_per_layer=8,
