@@ -16,7 +16,7 @@ class ASVEncoderV3(tf.keras.Model):
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 8,
         num_nuc_layers: int = 12,
-        num_asv_layers: int = 1,
+        num_asv_layers: int = 6,
         **kwargs,
     ):
         super(ASVEncoderV3, self).__init__(**kwargs)
@@ -50,14 +50,12 @@ class ASVEncoderV3(tf.keras.Model):
         nuc_block = []
         for _ in range(self.num_nuc_layers):
             nuc_block += [
-                ConvFeedForwardV2(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layers,
+                ConvolutionBlock(
+                    filters=self.filters, kernel_size=self.kernel_size, num_blocks=1
                 )
             ]
         self.nuc_block = tf.keras.Sequential(
-            nuc_block,
+            nuc_block + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],
             name="nuc_block",
         )
 
@@ -130,8 +128,7 @@ class ASVEncoderV3(tf.keras.Model):
         inputs += self.nucleotide_position
         inputs = self.emb_layer(inputs)
         nuc_output = self.nuc_block(inputs)
-        asv_input = tf.reduce_mean(nuc_output, axis=-1)
-        return self.asv_encoder(asv_input)
+        return self.asv_encoder(nuc_output)
 
     def get_config(self):
         config = super(ASVEncoderV3, self).get_config()

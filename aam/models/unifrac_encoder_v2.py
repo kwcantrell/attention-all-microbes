@@ -6,7 +6,8 @@ import tensorflow as tf
 
 from aam.losses import PairwiseLoss
 from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
-from aam.models.utils import sample_embeddings
+from aam.models.convolution_block import ConvolutionBlock
+from aam.models.utils import batch_embeddings
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracEncoderV2")
@@ -32,6 +33,19 @@ class UnifracEncoderV2(tf.keras.Model):
         if self.built:
             print("UnifracEncoderV2 is already built")
             return
+        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = (
+            input_shape
+        )
+        asv_layers = []
+        for _ in range(self.num_encoder_layers):
+            asv_layers += [
+                ConvolutionBlock(self.num_filters, self.kernel_size, num_blocks=1)
+            ]
+        self.asv_encoder = tf.keras.Sequential(
+            asv_layers + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],
+            name="asv_encoder",
+        )
+        self.asv_encoder.build([None, dense_counts[-1], asv_embeddings[-1]])
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
@@ -43,6 +57,7 @@ class UnifracEncoderV2(tf.keras.Model):
                 )
             ]
         self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
+        self.encoder.build([None, asv_embeddings[-1]])
         super(UnifracEncoderV2, self).build(input_shape)
 
     def predict_step(
@@ -104,11 +119,10 @@ class UnifracEncoderV2(tf.keras.Model):
 
         batch_indices = tf.cast(batch_indices, dtype=tf.int32)
         asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-
-        asv_embeddings = sample_embeddings(
+        asv_embeddings, _ = batch_embeddings(
             asv_embeddings, batch_indices, asv_counts, asv_indices
         )
-        encoder_input = asv_embeddings
+        encoder_input = self.asv_encoder(asv_embeddings)
         output_embeddings = self.encoder(encoder_input)
         print("UnifracEncoderV2 exit...")
         return output_embeddings
