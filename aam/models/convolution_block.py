@@ -6,7 +6,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self,
         filters,
         kernel_size,
-        num_blocks=8,
+        num_blocks=1,
         dropout_rate=0.0,
         **kwargs,
     ):

@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+from aam.models.convolution_block import ConvolutionBlock
+
 
 @tf.keras.saving.register_keras_serializable(package="ConvFeedForwardV2")
 class ConvFeedForwardV2(tf.keras.layers.Layer):
@@ -31,15 +33,7 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         else:
             conv_layers = []
         for _ in range(self.conv_blocks):
-            conv_layers += [
-                tf.keras.layers.Conv1D(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    strides=1,
-                    padding="same",
-                ),
-                tf.keras.layers.Activation("gelu"),
-            ]
+            conv_layers += [ConvolutionBlock(self.filters, self.kernel_size)]
         conv_layers += [
             tf.keras.layers.Lambda(
                 lambda x: tf.reduce_mean(x, axis=-1, keepdims=len(input_shape) != 2)
