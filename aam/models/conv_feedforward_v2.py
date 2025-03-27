@@ -42,7 +42,7 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             ]
         conv_layers += [
             tf.keras.layers.Lambda(
-                lambda x: tf.reduce_mean(x, axis=-1, keepdims=input_shape == 2)
+                lambda x: tf.reduce_mean(x, axis=-1, keepdims=len(input_shape == 2))
             )
         ]
         self.conv_layers = tf.keras.Sequential(conv_layers, name="conv_layers")
