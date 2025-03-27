@@ -64,8 +64,14 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         if self.ff_dropout_rate > 0.0:
             self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
 
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
+        self._conv_rezero = self.add_weight(
+            name="conv_rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
+        self._ff_rezero = self.add_weight(
+            name="ff_rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
             trainable=True,
             dtype=tf.float32,
@@ -75,14 +81,14 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         conv_output = self.conv_layers(inputs)
         if self.conv_dropout_rate > 0.0:
             conv_output = self.conv_dropout(conv_output, training=training)
-        ff_input = inputs + self._rezero * conv_output
+        ff_input = inputs + self._conv_rezero * conv_output
 
         ff_output = self.ff(ff_input)
         if self.ff_dropout_rate > 0.0:
             ff_output = self.ff_dropout(ff_output, training=training)
         if self.pool or self.outdim is not None:
             ff_input = self.res_pool(ff_input)
-        output = ff_input + self._rezero * ff_output
+        output = ff_input + self._ff_rezero * ff_output
         return output
 
     def get_config(self):

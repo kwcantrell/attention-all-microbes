@@ -19,7 +19,7 @@ class UnifracEncoderV2(tf.keras.Model):
         non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=3,
+        conv_blocks_per_layer=1,
         include_counts=False,
         **kwargs,
     ):
@@ -42,10 +42,7 @@ class UnifracEncoderV2(tf.keras.Model):
         if self.include_counts:
             self.asv_encoder = ASVDenseCountEncoderV3(name="asv_encoder")
 
-        encoder_layers = [
-            tf.keras.layers.Reshape([-1, 1]),
-            FeedForward(outdim=self.num_filters),
-        ]
+        encoder_layers = [tf.keras.layers.Reshape([-1, 1])]
         for _ in range(self.num_encoder_layers):
             encoder_layers += [
                 ConvFeedForwardV2(
