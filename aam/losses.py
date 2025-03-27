@@ -106,6 +106,8 @@ class PairwiseLoss(tf.keras.losses.Loss):
         y_pred_dist = _pairwise_distances(y_pred, squared=False)
 
         differences = tf.math.square(y_pred_dist - y_true)
+        mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1) > 0
+        differences = differences[mask]
         if self.use_mean_pairs:
             mean_mask = differences >= tf.reduce_mean(differences)
             differences = differences[mean_mask]
