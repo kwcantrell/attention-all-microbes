@@ -12,6 +12,7 @@ from aam.models.convolution_block import ConvolutionBlock
 class RegressorV2(tf.keras.Model):
     def __init__(
         self,
+        base_model,
         shift,
         scale,
         num_encoder_layers=8,
@@ -24,6 +25,8 @@ class RegressorV2(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
 
+        base_model.trainable = False
+        self.base_model = base_model
         self.shift = shift
         self.scale = scale
         self.num_encoder_layers = num_encoder_layers
@@ -37,12 +40,10 @@ class RegressorV2(tf.keras.Model):
             return
         asv_embeddings, dense_counts = input_shape
         asv_dim = asv_embeddings[-1]
-        count_layers = []
-        for _ in range(self.num_encoder_layers):
+        count_layers = [tf.keras.layers.Reshape([-1, 1])]
+        for _ in range(3):
             count_layers += [
-                ConvolutionBlock(
-                    asv_dim, self.kernel_size, num_blocks=1, pool=self.kernel_size
-                )
+                ConvolutionBlock(asv_dim, self.kernel_size, num_blocks=1, pool=True)
             ]
         self.count_encoder = tf.keras.Sequential(
             count_layers
@@ -145,6 +146,10 @@ class RegressorV2(tf.keras.Model):
         self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         asv_embeddings, dense_counts = inputs
+        # asv_embeddings = self.base_model(asv_embeddings, training=False)
+        dense_counts = tf.math.log1p(
+            dense_counts / tf.reduce_sum(dense_counts, axis=-1, keepdims=True)
+        )
         count_output = self.count_encoder(dense_counts)
         encoder_input = asv_embeddings + self._rezero * count_output
         output_embeddings = self.encoder(encoder_input)

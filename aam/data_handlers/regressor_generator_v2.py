@@ -114,13 +114,16 @@ class RegressorGeneratorV2(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end])
 
     def _batch_data(self, batch_sample_ids):
-        dense_counts = []
+        embeddings, dense_counts = [], []
         for s_id in batch_sample_ids:
-            dense_counts.append(self.rarefied_table.data(s_id, dense=True))
-        embeddings = self.sample_embeddings.get(batch_sample_ids)
+            counts = self.rarefied_table.data(s_id, dense=True)
+            obs_indices = np.argwhere(counts > 0)
+            # embeddings.append(np.mean(self.sequence_embeddings[obs_indices], axis=0))
+            dense_counts.append(counts)
 
         dense_counts = np.vstack(dense_counts)
-        embeddings = np.vstack(embeddings)
+        # embeddings = np.vstack(embeddings)
+        embeddings = self.sequence_embeddings.get(batch_sample_ids)
         y_true = (
             self.metadata.loc[batch_sample_ids, self.metadata_column]
             .to_numpy()
@@ -210,9 +213,9 @@ if __name__ == "__main__":
     print(x[0].shape)
     print(x[1].shape)
 
-    model = RegressorV2(0, 1)
-    model.build(
-        [[None, ug.sample_embeddings.embeddings.shape[-1]], [None, ug.num_asvs]]
-    )
-    print(model(x))
-    # print(y)
+    # model = RegressorV2(0, 1)
+    # model.build(
+    #     [[None, ug.sample_embeddings.embeddings.shape[-1]], [None, ug.num_asvs]]
+    # )
+    # print(model(x))
+    # # print(y)

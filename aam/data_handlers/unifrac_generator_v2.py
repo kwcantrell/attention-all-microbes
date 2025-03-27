@@ -122,66 +122,21 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end], 1.0)
 
     def _batch_data(self, batch_sample_ids, weights):
-        (
-            num_unique_asvs,
-            sparse_indices,
-            obs_indices,
-            counts,
-            asv_counts,
-        ) = (
-            [],
-            [],
-            [],
-            [],
-            [],
-        )
-        cur_row_indx = 0
-        for s_id in batch_sample_ids:
+        embeddings = []
+        for batch_i, s_id in enumerate(batch_sample_ids):
             sample_data = self.rarefied_table.data(s_id, dense=False).tocoo()
-            (obs_idx, _), sample_asv_counts = sample_data.coords, sample_data.data
+            (obs_indices, _), sample_counts = sample_data.coords, sample_data.data
 
-            # remove zeros
-            non_zero_mask = sample_asv_counts > 0.0
-            obs_idx = obs_idx[non_zero_mask]
-            sample_counts = sample_asv_counts[non_zero_mask]
-            num_unique_asvs.append(len(obs_idx))
-            sparse_indices.append([[cur_row_indx, i] for i in range(len(obs_idx))])
+            count_mask = sample_counts > 0
+            obs_indices = obs_indices[count_mask]
+            embeddings.append(np.mean(self.sequence_embeddings[obs_indices], axis=0))
 
-            obs_indices.append(obs_idx)
-            counts.append(sample_counts)
-
-            dense_counts = np.zeros(self.num_asvs)
-            dense_counts[obs_idx] = sample_counts
-            asv_counts.append(dense_counts)
-            cur_row_indx += 1
-
-        num_unique_asvs = np.array(num_unique_asvs, dtype=np.int32)
-        sparse_indices = np.vstack(sparse_indices, dtype=np.int32)
-        obs_indices = np.hstack(obs_indices, dtype=np.int32)
-        counts = np.hstack(counts, dtype=np.float32)[:, np.newaxis]
-        asv_counts = np.vstack(asv_counts)
-
-        # get list of unique observations in batch
-        unique_obs, obs_indices = np.unique(obs_indices, return_inverse=True)
-        tokens = self.sequence_embeddings[unique_obs]
+        embeddings = np.vstack(embeddings, dtype=np.float32)
         y_true = self.distances.filter(batch_sample_ids).data
-
         if self.return_sample_ids:
-            return (
-                tokens,
-                sparse_indices,
-                obs_indices,
-                counts,
-                asv_counts,
-            ), batch_sample_ids
+            return embeddings, batch_sample_ids
 
-        return (
-            tokens,
-            sparse_indices,
-            obs_indices,
-            counts,
-            asv_counts,
-        ), y_true
+        return embeddings, y_true
 
     def on_epoch_end(self):
         if (
@@ -243,6 +198,8 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
 
 
 if __name__ == "__main__":
+    from aam.models.unifrac_encoder_v2 import UnifracEncoderV2
+
     ug = UnifracGeneratorV2(
         table="/home/kalen/removing-study-id/healthy-us-sorted-table.biom",
         tree_path="/home/kalen/removing-study-id/agp-filtered.nwk",
@@ -256,6 +213,10 @@ if __name__ == "__main__":
         return_sample_ids=False,
         drop_remainder=False,
     )
+    # model = UnifracEncoderV2(ug.sequence_embeddings.embeddings.shape[0])
+    # sparse_indicies = tf.TensorShape([None, 2])
+    # embeddings = tf.TensorShape([None, ug.sequence_embeddings.embeddings.shape[-1]])
+    # model.build([sparse_indicies, embeddings])
     x, y = ug[0]
-    print(x[-1])
-    print(y)
+    # print(model(x))
+    print(x.shape)

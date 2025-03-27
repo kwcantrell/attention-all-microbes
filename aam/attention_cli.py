@@ -139,8 +139,17 @@ def fit_asv_encoder(
     else:
         model: tf.keras.Model = ASVEncoderV3()
 
-    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
-
+    # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
+    plateau = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.9,
+        patience=5,
+        verbose=0,
+        mode="auto",
+        min_delta=0.000,
+        cooldown=0,
+        min_lr=0.0,
+    )
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
@@ -177,7 +186,7 @@ def fit_asv_encoder(
 
     model.fit(
         train_dataset,
-        callbacks=[*core_callbacks, lr_scheduler],
+        callbacks=[*core_callbacks, plateau],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
     )
@@ -297,17 +306,23 @@ def fit_unifrac_regressor(
     else:
         model = UnifracEncoderV2()
 
-    token_shape = tf.TensorShape(
+    embeddings = tf.TensorShape(
         [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
     )
-    batch_indicies = tf.TensorShape([None, 2])
-    indicies_shape = tf.TensorShape([None])
-    count_shape = tf.TensorShape([None, 1])
-    dense_count = tf.TensorShape([None, train_gen.num_asvs])
-    model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
+    model.build(embeddings)
     model.summary()
     lr_scheduler = LAMBLRScheduler(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps, 1e-4)
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps, 0.1)
+    )
+    plateau = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.9,
+        patience=5,
+        verbose=0,
+        mode="auto",
+        min_delta=0.000,
+        cooldown=0,
+        min_lr=0.0,
     )
 
     optimizer = tfa.optimizers.LAMB(
@@ -344,7 +359,8 @@ def fit_unifrac_regressor(
         #     patience=p_patience,
         #     start_from_epoch=p_early_stop_warmup,
         # ),
-        lr_scheduler,
+        # lr_scheduler,
+        plateau,
         model_saver,
     ]
     model.fit(
@@ -481,7 +497,8 @@ def fit_new_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = RegressorV2(train_gen.shift, train_gen.scale)
+        base_model = tf.keras.models.load_model(i_base_model, compile=False)
+        model = RegressorV2(base_model, train_gen.shift, train_gen.scale)
 
     token_shape = tf.TensorShape(
         [None, train_gen.sample_embeddings.embeddings.shape[-1]]
