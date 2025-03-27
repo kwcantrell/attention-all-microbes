@@ -45,6 +45,8 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         if self.dropout_rate > 0.0:
             output = self.dropout(output, training=training)
 
+        if self.filters == 1:
+            inputs = tf.reduce_mean(inputs, axis=-1, keepdims=True)
         output = inputs + self._rezero * output
 
         return output
