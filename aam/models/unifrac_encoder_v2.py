@@ -7,6 +7,7 @@ import tensorflow as tf
 from aam.losses import PairwiseLoss
 from aam.models.asv_dense_count_encoder_v3 import ASVDenseCountEncoderV3
 from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
+from aam.models.feedforward import FeedForward
 from aam.models.utils import sample_embeddings
 
 
@@ -18,7 +19,7 @@ class UnifracEncoderV2(tf.keras.Model):
         non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=1,
+        conv_blocks_per_layer=3,
         include_counts=False,
         **kwargs,
     ):
@@ -41,7 +42,10 @@ class UnifracEncoderV2(tf.keras.Model):
         if self.include_counts:
             self.asv_encoder = ASVDenseCountEncoderV3(name="asv_encoder")
 
-        encoder_layers = []
+        encoder_layers = [
+            tf.keras.layers.Reshape([-1, 1]),
+            FeedForward(outdim=self.num_filters),
+        ]
         for _ in range(self.num_encoder_layers):
             encoder_layers += [
                 ConvFeedForwardV2(
@@ -50,7 +54,11 @@ class UnifracEncoderV2(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layer,
                 )
             ]
-        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
+        self.encoder = tf.keras.Sequential(
+            encoder_layers
+            + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))],
+            name="encoder",
+        )
         super(UnifracEncoderV2, self).build(input_shape)
 
     def predict_step(

@@ -14,7 +14,7 @@ class ASVEncoderV3(tf.keras.Model):
         self,
         filters: int = 32,
         kernel_size: int = 3,
-        conv_blocks_per_layers: int = 1,
+        conv_blocks_per_layers: int = 3,
         num_nuc_layers: int = 6,
         num_asv_layers: int = 6,
         **kwargs,
@@ -36,8 +36,15 @@ class ASVEncoderV3(tf.keras.Model):
         if self.built:
             return
 
+        seq_size = input_shape[-1]
+        num_tokens = self.base_tokens * seq_size
+        self.nucleotide_position = tf.reshape(
+            tf.range(0, self.base_tokens * seq_size, self.base_tokens, dtype=tf.int32),
+            shape=[1, -1],
+        )
+
         self.emb_layer = tf.keras.layers.Embedding(
-            self.base_tokens, self.filters, input_length=input_shape[-1]
+            num_tokens, self.filters, input_length=input_shape[-1]
         )
 
         nuc_block = []
@@ -119,6 +126,8 @@ class ASVEncoderV3(tf.keras.Model):
         return output_trackers
 
     def call(self, inputs, training=False):
+        inputs = tf.cast(inputs, dtype=tf.int32)
+        inputs += self.nucleotide_position
         inputs = self.emb_layer(inputs)
         nuc_output = self.nuc_block(inputs)
         asv_input = tf.reduce_mean(nuc_output, axis=-1)

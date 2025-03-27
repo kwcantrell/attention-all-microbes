@@ -12,13 +12,13 @@ class FeedForward(tf.keras.layers.Layer):
         units = input_shape[-1]
 
         if self.pool < 0:
-            self.dense = tf.keras.layers.Dense(units // 2)
+            self.dense = tf.keras.layers.Dense(units // 2, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(units // 2)
         elif self.pool > 0:
-            self.dense = tf.keras.layers.Dense(units * 2)
+            self.dense = tf.keras.layers.Dense(units * 2, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(units * 2)
         elif self.outdim is not None:
-            self.dense = tf.keras.layers.Dense(self.outdim)
+            self.dense = tf.keras.layers.Dense(self.outdim, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
             self.dense = tf.keras.layers.Dense(units)
