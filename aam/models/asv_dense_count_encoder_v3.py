@@ -1,11 +1,11 @@
 import tensorflow as tf
 
-from aam.models.conv_feedforward import ConvFeedForward
+from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
 from aam.models.convolution_pooler import ConvolutionPooler
 
 
-@tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoderV2")
-class ASVDenseCountEncoderV2(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="ASVDenseCountEncoderV3")
+class ASVDenseCountEncoderV3(tf.keras.Model):
     def __init__(
         self,
         pool_conv_blocks_per_layer=2,
@@ -17,7 +17,7 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
         max_pool=False,
         **kwargs,
     ):
-        super(ASVDenseCountEncoderV2, self).__init__(**kwargs)
+        super(ASVDenseCountEncoderV3, self).__init__(**kwargs)
         self.ff_conv_blocks_per_layer = ff_conv_blocks_per_layer
         self.pool_conv_blocks_per_layer = pool_conv_blocks_per_layer
         self.filters = filters
@@ -28,7 +28,7 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
 
     def build(self, input_shape):
         if self.built:
-            print("ASVDenseCountEncoderV2 is already built")
+            print("ASVDenseCountEncoderV3 is already built")
             return
 
         asv_embeddings, dense_counts = input_shape
@@ -51,7 +51,7 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
         self.dense_count_encoder = tf.keras.Sequential(
             conv_layers
             + [
-                ConvFeedForward(
+                ConvFeedForwardV2(
                     filters=self.filters,
                     kernel_size=self.kernel_size,
                     conv_blocks=self.ff_conv_blocks_per_layer,
@@ -70,7 +70,7 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
             dtype=tf.float32,
         )
 
-        super(ASVDenseCountEncoderV2, self).build(input_shape)
+        super(ASVDenseCountEncoderV3, self).build(input_shape)
 
     def _log1p_relative_abundance(self, dense_counts):
         # compute relative abundance
@@ -100,7 +100,7 @@ class ASVDenseCountEncoderV2(tf.keras.Model):
         return output
 
     def get_config(self):
-        config = super(ASVDenseCountEncoderV2, self).get_config()
+        config = super(ASVDenseCountEncoderV3, self).get_config()
         config.update(
             {
                 "ff_conv_blocks_per_layer": self.ff_conv_blocks_per_layer,

@@ -5,41 +5,42 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
-from aam.models.asv_dense_count_encoder_v2 import ASVDenseCountEncoderV2
+from aam.models.asv_dense_count_encoder_v3 import ASVDenseCountEncoderV3
 from aam.models.conv_feedforward import ConvFeedForward
 from aam.models.utils import sample_embeddings
 
 
-@tf.keras.saving.register_keras_serializable(package="UnifracEncoder")
-class UnifracEncoder(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="RegressorV2")
+class RegressorV2(tf.keras.Model):
     def __init__(
         self,
-        num_encoder_layers=6,
+        shift,
+        scale,
+        num_encoder_layers=8,
         non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=1,
-        include_counts=False,
+        conv_blocks_per_layer=2,
         **kwargs,
     ):
-        super(UnifracEncoder, self).__init__(**kwargs)
-        self.unifrac_loss = PairwiseLoss()
+        super(RegressorV2, self).__init__(**kwargs)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+        self.mae_tracker = tf.keras.metrics.Mean(name="mae")
 
+        self.shift = shift
+        self.scale = scale
         self.num_encoder_layers = num_encoder_layers
         self.non_pool_blocks_per_layer = non_pool_blocks_per_layer
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.conv_blocks_per_layer = conv_blocks_per_layer
-        self.include_counts = include_counts
 
     def build(self, input_shape):
         if self.built:
-            print("UnifracEncoder is already built")
+            print("RegressorV2 is already built")
             return
 
-        if self.include_counts:
-            self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
+        self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
@@ -50,8 +51,18 @@ class UnifracEncoder(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layer,
                 )
             ]
-        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
-        super(UnifracEncoder, self).build(input_shape)
+        self.encoder = tf.keras.Sequential(
+            encoder_layers
+            + [
+                ConvFeedForward(
+                    self.num_filters,
+                    self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layer,
+                    outdim=1,
+                )
+            ]
+        )
+        super(RegressorV2, self).build(input_shape)
 
     def predict_step(
         self,
@@ -61,11 +72,20 @@ class UnifracEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        return self(inputs, training=False), y
+        output = self(inputs, training=False)
+        y = y * self.scale + self.shift
+        output = output * self.scale + self.shift
+        return output, y
 
-    def _compute_loss(self, y, output_embeddings):
-        loss = self.unifrac_loss(y, output_embeddings)
-        return tf.reduce_mean(loss)
+    def _compute_loss(self, y, output):
+        loss = tf.reduce_mean(tf.square(y - output))
+        return loss
+
+    def _compute_metric(self, y, output):
+        y = y * self.scale + self.shift
+        output = output * self.scale + self.shift
+        mae = tf.reduce_mean(tf.abs(y - output))
+        return mae
 
     def train_step(
         self,
@@ -77,14 +97,17 @@ class UnifracEncoder(tf.keras.Model):
         inputs, y = data
 
         with tf.GradientTape() as tape:
-            output_embeddings = self(inputs, training=True)
-            loss = self._compute_loss(y, output_embeddings)
+            output = self(inputs, training=True)
+            loss = self._compute_loss(y, output)
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
+        mae = self._compute_metric(y, output)
         self.loss_tracker.update_state(loss)
+        self.mae_tracker.update_state(mae)
         return {
             "loss": self.loss_tracker.result(),
+            "mae": self.mae_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
@@ -96,44 +119,36 @@ class UnifracEncoder(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        output_embeddings = self(inputs, training=False)
-        loss = self._compute_loss(y, output_embeddings)
-
+        output = self(inputs, training=False)
+        loss = self._compute_loss(y, output)
+        mae = self._compute_metric(y, output)
         self.loss_tracker.update_state(loss)
+        self.mae_tracker.update_state(mae)
         return {
             "loss": self.loss_tracker.result(),
+            "mae": self.mae_tracker.result(),
             "learning_rate": self.optimizer.learning_rate,
         }
 
     def call(
         self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        asv_embeddings, batch_indices, asv_indices, asv_counts, dense_counts = inputs
-
-        batch_indices = tf.cast(batch_indices, dtype=tf.int32)
-        asv_indices = tf.cast(asv_indices, dtype=tf.int32)
-
-        asv_embeddings = sample_embeddings(
-            asv_embeddings, batch_indices, asv_counts, asv_indices
-        )
-        if self.include_counts:
-            encoder_input = self.asv_encoder([asv_embeddings, dense_counts])
-        else:
-            encoder_input = asv_embeddings
+        encoder_input = self.asv_encoder(inputs)
         output_embeddings = self.encoder(encoder_input)
-        print("UnifracEncoder exit...")
+        print("RegressorV2 exit...")
         return output_embeddings
 
     def get_config(self):
-        config = super(UnifracEncoder, self).get_config()
+        config = super(RegressorV2, self).get_config()
         config.update(
             {
+                "shift": self.shift,
+                "scale": self.scale,
                 "num_encoder_layers": self.num_encoder_layers,
                 "non_pool_blocks_per_layer": self.non_pool_blocks_per_layer,
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
                 "conv_blocks_per_layer": self.conv_blocks_per_layer,
-                "include_counts": self.include_counts,
                 "build_input_shape": self.get_build_config(),
             }
         )
@@ -141,7 +156,7 @@ class UnifracEncoder(tf.keras.Model):
 
     @classmethod
     def from_config(cls, config):
-        print("Constructing UnifracEncoder from config")
+        print("Constructing RegressorV2 from config")
         input_shape = None
         if "build_input_shape" in config:
             build_input_shape = config.pop("build_input_shape")

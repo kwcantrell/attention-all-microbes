@@ -5,16 +5,16 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
-from aam.models.asv_dense_count_encoder_v2 import ASVDenseCountEncoderV2
-from aam.models.conv_feedforward import ConvFeedForward
+from aam.models.asv_dense_count_encoder_v3 import ASVDenseCountEncoderV3
+from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
 from aam.models.utils import sample_embeddings
 
 
-@tf.keras.saving.register_keras_serializable(package="UnifracEncoder")
-class UnifracEncoder(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="UnifracEncoderV2")
+class UnifracEncoderV2(tf.keras.Model):
     def __init__(
         self,
-        num_encoder_layers=6,
+        num_encoder_layers=12,
         non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
@@ -22,7 +22,7 @@ class UnifracEncoder(tf.keras.Model):
         include_counts=False,
         **kwargs,
     ):
-        super(UnifracEncoder, self).__init__(**kwargs)
+        super(UnifracEncoderV2, self).__init__(**kwargs)
         self.unifrac_loss = PairwiseLoss()
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
@@ -35,23 +35,23 @@ class UnifracEncoder(tf.keras.Model):
 
     def build(self, input_shape):
         if self.built:
-            print("UnifracEncoder is already built")
+            print("UnifracEncoderV2 is already built")
             return
 
         if self.include_counts:
-            self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
+            self.asv_encoder = ASVDenseCountEncoderV3(name="asv_encoder")
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
             encoder_layers += [
-                ConvFeedForward(
+                ConvFeedForwardV2(
                     self.num_filters,
                     self.kernel_size,
                     conv_blocks=self.conv_blocks_per_layer,
                 )
             ]
         self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
-        super(UnifracEncoder, self).build(input_shape)
+        super(UnifracEncoderV2, self).build(input_shape)
 
     def predict_step(
         self,
@@ -121,11 +121,11 @@ class UnifracEncoder(tf.keras.Model):
         else:
             encoder_input = asv_embeddings
         output_embeddings = self.encoder(encoder_input)
-        print("UnifracEncoder exit...")
+        print("UnifracEncoderV2 exit...")
         return output_embeddings
 
     def get_config(self):
-        config = super(UnifracEncoder, self).get_config()
+        config = super(UnifracEncoderV2, self).get_config()
         config.update(
             {
                 "num_encoder_layers": self.num_encoder_layers,
@@ -141,7 +141,7 @@ class UnifracEncoder(tf.keras.Model):
 
     @classmethod
     def from_config(cls, config):
-        print("Constructing UnifracEncoder from config")
+        print("Constructing UnifracEncoderV2 from config")
         input_shape = None
         if "build_input_shape" in config:
             build_input_shape = config.pop("build_input_shape")
