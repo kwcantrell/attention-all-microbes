@@ -26,7 +26,10 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
     def build(self, input_shape):
         units = input_shape[-1]
 
-        conv_layers = [tf.keras.layers.Reshape([-1, 1])]
+        if len(input_shape) == 2:
+            conv_layers = [tf.keras.layers.Reshape([-1, 1])]
+        else:
+            conv_layers = []
         for _ in range(self.conv_blocks):
             conv_layers += [
                 tf.keras.layers.Conv1D(
@@ -37,11 +40,12 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
                 ),
                 tf.keras.layers.Activation("gelu"),
             ]
-        self.conv_layers = tf.keras.Sequential(
-            conv_layers
-            + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))],
-            name="conv_layers",
-        )
+        conv_layers += [
+            tf.keras.layers.Lambda(
+                lambda x: tf.reduce_mean(x, axis=-1, keepdims=input_shape == 2)
+            )
+        ]
+        self.conv_layers = tf.keras.Sequential(conv_layers, name="conv_layers")
 
         if self.conv_dropout_rate > 0.0:
             self.conv_dropout = tf.keras.layers.Dropout(self.conv_dropout_rate)
