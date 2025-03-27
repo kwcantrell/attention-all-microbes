@@ -5,7 +5,6 @@ import tensorflow as tf
 from aam.losses import PairwiseLoss
 from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
 from aam.models.convolution_block import ConvolutionBlock
-from aam.models.feedforward import FeedForward
 
 
 @tf.keras.saving.register_keras_serializable(package="ASVEncoderV3")
@@ -50,14 +49,10 @@ class ASVEncoderV3(tf.keras.Model):
         nuc_block = []
         for _ in range(self.num_nuc_layers):
             nuc_block += [
-                ConvFeedForwardV2(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layers,
-                )
+                ConvolutionBlock(filters=self.filters, kernel_size=self.kernel_size)
             ]
         self.nuc_block = tf.keras.Sequential(
-            nuc_block + tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1)),
+            nuc_block + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],
             name="nuc_block",
         )
 

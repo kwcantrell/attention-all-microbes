@@ -4,10 +4,8 @@ from typing import Union
 
 import tensorflow as tf
 
-from aam.losses import PairwiseLoss
-from aam.models.asv_dense_count_encoder_v3 import ASVDenseCountEncoderV3
-from aam.models.conv_feedforward import ConvFeedForward
-from aam.models.utils import sample_embeddings
+from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
+from aam.models.convolution_block import ConvolutionBlock
 
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV2")
@@ -17,7 +15,6 @@ class RegressorV2(tf.keras.Model):
         shift,
         scale,
         num_encoder_layers=8,
-        non_pool_blocks_per_layer=2,
         num_filters=32,
         kernel_size=3,
         conv_blocks_per_layer=2,
@@ -30,7 +27,6 @@ class RegressorV2(tf.keras.Model):
         self.shift = shift
         self.scale = scale
         self.num_encoder_layers = num_encoder_layers
-        self.non_pool_blocks_per_layer = non_pool_blocks_per_layer
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.conv_blocks_per_layer = conv_blocks_per_layer
@@ -39,13 +35,31 @@ class RegressorV2(tf.keras.Model):
         if self.built:
             print("RegressorV2 is already built")
             return
-
-        self.asv_encoder = ASVDenseCountEncoderV3(name="asv_encoder")
+        asv_embeddings, dense_counts = input_shape
+        asv_dim = asv_embeddings[-1]
+        count_layers = []
+        for _ in range(self.num_encoder_layers):
+            count_layers += [
+                ConvolutionBlock(
+                    asv_dim, self.kernel_size, num_blocks=1, pool=self.kernel_size
+                )
+            ]
+        self.count_encoder = tf.keras.Sequential(
+            count_layers
+            + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],
+            name="count_encoder",
+        )
+        self._rezero = self.add_weight(
+            name="rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
+        )
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
             encoder_layers += [
-                ConvFeedForward(
+                ConvFeedForwardV2(
                     self.num_filters,
                     self.kernel_size,
                     conv_blocks=self.conv_blocks_per_layer,
@@ -54,11 +68,8 @@ class RegressorV2(tf.keras.Model):
         self.encoder = tf.keras.Sequential(
             encoder_layers
             + [
-                ConvFeedForward(
-                    self.num_filters,
-                    self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layer,
-                    outdim=1,
+                tf.keras.layers.Lambda(
+                    lambda x: tf.reduce_mean(x, axis=-1, keepdims=True)
                 )
             ]
         )
@@ -133,7 +144,9 @@ class RegressorV2(tf.keras.Model):
     def call(
         self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        encoder_input = self.asv_encoder(inputs)
+        asv_embeddings, dense_counts = inputs
+        count_output = self.count_encoder(dense_counts)
+        encoder_input = asv_embeddings + self._rezero * count_output
         output_embeddings = self.encoder(encoder_input)
         print("RegressorV2 exit...")
         return output_embeddings
@@ -145,7 +158,6 @@ class RegressorV2(tf.keras.Model):
                 "shift": self.shift,
                 "scale": self.scale,
                 "num_encoder_layers": self.num_encoder_layers,
-                "non_pool_blocks_per_layer": self.non_pool_blocks_per_layer,
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
                 "conv_blocks_per_layer": self.conv_blocks_per_layer,
