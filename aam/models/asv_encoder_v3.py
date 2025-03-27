@@ -15,7 +15,7 @@ class ASVEncoderV3(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 8,
-        num_nuc_layers: int = 12,
+        num_nuc_layers: int = 6,
         num_asv_layers: int = 6,
         **kwargs,
     ):
@@ -50,17 +50,19 @@ class ASVEncoderV3(tf.keras.Model):
         nuc_block = []
         for _ in range(self.num_nuc_layers):
             nuc_block += [
-                ConvolutionBlock(
-                    filters=self.filters, kernel_size=self.kernel_size, num_blocks=1
+                ConvFeedForwardV2(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layers,
                 )
             ]
         self.nuc_block = tf.keras.Sequential(
-            nuc_block + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],
+            nuc_block + tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1)),
             name="nuc_block",
         )
 
         asv_layers = []
-        for _ in range(self.num_asv_layers - 1):
+        for _ in range(self.num_asv_layers):
             asv_layers += [
                 ConvFeedForwardV2(
                     filters=self.filters,
@@ -68,16 +70,7 @@ class ASVEncoderV3(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layers,
                 )
             ]
-        self.asv_encoder = tf.keras.Sequential(
-            asv_layers
-            + [
-                ConvFeedForwardV2(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layers,
-                )
-            ]
-        )
+        self.asv_encoder = tf.keras.Sequential(asv_layers)
         super(ASVEncoderV3, self).build(input_shape)
 
     def predict_step(self, data):

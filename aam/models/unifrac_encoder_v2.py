@@ -39,7 +39,12 @@ class UnifracEncoderV2(tf.keras.Model):
         asv_layers = []
         for _ in range(self.num_encoder_layers):
             asv_layers += [
-                ConvolutionBlock(self.num_filters, self.kernel_size, num_blocks=1)
+                ConvolutionBlock(
+                    self.num_filters,
+                    self.kernel_size,
+                    strides=self.kernel_size,
+                    num_blocks=1,
+                )
             ]
         self.asv_encoder = tf.keras.Sequential(
             asv_layers + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],

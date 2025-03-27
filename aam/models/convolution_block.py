@@ -6,6 +6,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self,
         filters,
         kernel_size,
+        strides=1,
         num_blocks=1,
         dropout_rate=0.0,
         **kwargs,
@@ -13,6 +14,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         super(ConvolutionBlock, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
+        self.strides = strides
         self.num_blocks = num_blocks
         self.dropout_rate = dropout_rate
 
@@ -22,13 +24,17 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                 tf.keras.layers.Conv1D(
                     filters=self.filters,
                     kernel_size=self.kernel_size,
-                    strides=1,
+                    strides=self.strides,
                     padding="same",
                 ),
                 tf.keras.layers.Activation("gelu"),
             ]
         self.conv_blocks = tf.keras.Sequential(conv_blocks, name="conv_blocks")
 
+        if self.strides > 1:
+            self.res_pool = tf.keras.layers.MaxPool1D(
+                pool_size=self.strides, strides=self.strides, padding="same"
+            )
         if dropout_rate > 0.0:
             self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
@@ -47,6 +53,9 @@ class ConvolutionBlock(tf.keras.layers.Layer):
 
         if self.filters == 1:
             inputs = tf.reduce_mean(inputs, axis=-1, keepdims=True)
+
+        if self.strides > 1:
+            inputs = self.res_pool(inputs)
         output = inputs + self._rezero * output
 
         return output
