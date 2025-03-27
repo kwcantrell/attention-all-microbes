@@ -43,7 +43,10 @@ class ASVEncoderV2(tf.keras.Model):
         )
 
         self.emb_layer = tf.keras.layers.Embedding(
-            num_tokens, self.filters, input_length=input_shape[-1]
+            num_tokens,
+            self.filters,
+            input_length=input_shape[-1],
+            embeddings_initializer="glorot_uniform",
         )
 
         nuc_block = []
