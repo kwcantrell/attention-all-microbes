@@ -266,7 +266,7 @@ def fit_unifrac_regressor(
         "batch_size": p_batch_size,
         "drop_remainder": False,
         "normalize_sequence_embeddings": p_normalize_sequence_embeddings,
-        "gen_new_table_frequency": 10,
+        "gen_new_table_frequency": 3,
     }
 
     train_gen = UnifracGeneratorV2(
@@ -363,6 +363,8 @@ def fit_unifrac_regressor(
 @click.option("--i-table", required=True, type=click.Path(exists=True), help=TABLE_DESC)
 @click.option("--i-sequence-embeddings", required=True, type=click.Path(exists=True))
 @click.option("--i-sequence-labels", required=True, type=click.Path(exists=True))
+@click.option("--i-sample-embeddings", required=True, type=click.Path(exists=True))
+@click.option("--i-sample-labels", required=True, type=click.Path(exists=True))
 @click.option(
     "--m-metadata-file",
     required=True,
@@ -394,6 +396,8 @@ def fit_new_regressor(
     i_table: str,
     i_sequence_embeddings,
     i_sequence_labels,
+    i_sample_embeddings,
+    i_sample_labels,
     m_metadata_file: str,
     m_metadata_column: str,
     p_batch_size: int,
@@ -415,7 +419,7 @@ def fit_new_regressor(
     import tensorflow_addons as tfa
 
     from aam.callbacks import LAMBLRScheduler, MeanAbsoluteError
-    from aam.data_handlers.regressor_generator import RegressorGenerator
+    from aam.data_handlers.regressor_generator_v2 import RegressorGeneratorV2
     from aam.models.regressor_v2 import RegressorV2
     from aam.models.utils import cos_decay_with_warmup
 
@@ -440,11 +444,13 @@ def fit_new_regressor(
         "rarefy_depth": p_rarefy_depth,
         "sequence_embeddings": i_sequence_embeddings,
         "sequence_labels": i_sequence_labels,
+        "sample_embeddings": i_sample_embeddings,
+        "sample_labels": i_sample_labels,
         "drop_remainder": False,
         "normalize_embeddings": False,
     }
 
-    train_gen = RegressorGenerator(
+    train_gen = RegressorGeneratorV2(
         metadata=train_df,
         shuffle=True,
         gen_new_tables=True,
@@ -454,7 +460,7 @@ def fit_new_regressor(
         **common_kwargs,
     )
 
-    val_gen = RegressorGenerator(
+    val_gen = RegressorGeneratorV2(
         metadata=val_df,
         shuffle=False,
         gen_new_tables=False,
@@ -475,24 +481,13 @@ def fit_new_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        base_model = tf.keras.models.load_model(i_base_model, compile=False)
-        model = RegressorV2(
-            # base_model,
-            train_gen.shift,
-            train_gen.scale,
-            # num_layers=p_layers,
-            # filters=p_filters,
-            # conv_blocks_per_layer=p_blocks_per_layer,
-        )
+        model = RegressorV2(train_gen.shift, train_gen.scale)
 
     token_shape = tf.TensorShape(
-        [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
+        [None, train_gen.sample_embeddings.embeddings.shape[-1]]
     )
-    batch_indicies = tf.TensorShape([None, 2])
-    indicies_shape = tf.TensorShape([None])
-    count_shape = tf.TensorShape([None, 1])
     dense_count = tf.TensorShape([None, train_gen.num_asvs])
-    model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
+    model.build([token_shape, dense_count])
     model.summary()
     lr_scheduler = LAMBLRScheduler(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)

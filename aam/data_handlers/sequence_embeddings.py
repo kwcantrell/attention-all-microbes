@@ -12,8 +12,15 @@ class SequenceEmbeddings:
             self.embeddings = (self.embeddings - emb_mean) / emb_std
 
         self.labels = labels_fp
+        print(len(self.labels))
 
     def iget(self, indices):
+        return self.embeddings[indices]
+
+    def get(self, ids):
+        labels, indices, _ = np.intersect1d(
+            self.labels, ids, assume_unique=True, return_indices=True
+        )
         return self.embeddings[indices]
 
     @property
