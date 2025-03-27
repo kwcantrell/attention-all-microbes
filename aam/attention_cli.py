@@ -295,7 +295,7 @@ def fit_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = UnifracEncoderV2(include_counts=False)
+        model = UnifracEncoderV2()
 
     token_shape = tf.TensorShape(
         [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
@@ -307,7 +307,7 @@ def fit_unifrac_regressor(
     model.build([token_shape, batch_indicies, indicies_shape, count_shape, dense_count])
     model.summary()
     lr_scheduler = LAMBLRScheduler(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps, 1e-4)
     )
 
     optimizer = tfa.optimizers.LAMB(

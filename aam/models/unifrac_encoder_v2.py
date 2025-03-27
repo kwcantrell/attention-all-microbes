@@ -15,12 +15,10 @@ from aam.models.utils import sample_embeddings
 class UnifracEncoderV2(tf.keras.Model):
     def __init__(
         self,
-        num_encoder_layers=12,
-        non_pool_blocks_per_layer=2,
+        num_encoder_layers=6,
         num_filters=32,
         kernel_size=3,
         conv_blocks_per_layer=1,
-        include_counts=False,
         **kwargs,
     ):
         super(UnifracEncoderV2, self).__init__(**kwargs)
@@ -28,21 +26,16 @@ class UnifracEncoderV2(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         self.num_encoder_layers = num_encoder_layers
-        self.non_pool_blocks_per_layer = non_pool_blocks_per_layer
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.conv_blocks_per_layer = conv_blocks_per_layer
-        self.include_counts = include_counts
 
     def build(self, input_shape):
         if self.built:
             print("UnifracEncoderV2 is already built")
             return
 
-        if self.include_counts:
-            self.asv_encoder = ASVDenseCountEncoderV3(name="asv_encoder")
-
-        encoder_layers = [tf.keras.layers.Reshape([-1, 1])]
+        encoder_layers = []
         for _ in range(self.num_encoder_layers):
             encoder_layers += [
                 ConvFeedForwardV2(
@@ -51,11 +44,7 @@ class UnifracEncoderV2(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layer,
                 )
             ]
-        self.encoder = tf.keras.Sequential(
-            encoder_layers
-            + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))],
-            name="encoder",
-        )
+        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
         super(UnifracEncoderV2, self).build(input_shape)
 
     def predict_step(
@@ -121,10 +110,7 @@ class UnifracEncoderV2(tf.keras.Model):
         asv_embeddings = sample_embeddings(
             asv_embeddings, batch_indices, asv_counts, asv_indices
         )
-        if self.include_counts:
-            encoder_input = self.asv_encoder([asv_embeddings, dense_counts])
-        else:
-            encoder_input = asv_embeddings
+        encoder_input = asv_embeddings
         output_embeddings = self.encoder(encoder_input)
         print("UnifracEncoderV2 exit...")
         return output_embeddings
@@ -134,11 +120,9 @@ class UnifracEncoderV2(tf.keras.Model):
         config.update(
             {
                 "num_encoder_layers": self.num_encoder_layers,
-                "non_pool_blocks_per_layer": self.non_pool_blocks_per_layer,
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
                 "conv_blocks_per_layer": self.conv_blocks_per_layer,
-                "include_counts": self.include_counts,
                 "build_input_shape": self.get_build_config(),
             }
         )
