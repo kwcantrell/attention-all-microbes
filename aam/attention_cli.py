@@ -139,7 +139,7 @@ def fit_asv_encoder(
     else:
         model: tf.keras.Model = ASVEncoderV3()
 
-    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
+    lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
 
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
