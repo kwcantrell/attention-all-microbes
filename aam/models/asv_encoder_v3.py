@@ -30,7 +30,7 @@ class ASVEncoderV3(tf.keras.Model):
         self.base_tokens = 5
 
         self.loss_tracker = tf.keras.metrics.Mean()
-        self.asv_loss = PairwiseLoss(use_mean_pairs=True)
+        self.asv_loss = PairwiseLoss(use_mean_pairs=False)
 
     def build(self, input_shape):
         if self.built:

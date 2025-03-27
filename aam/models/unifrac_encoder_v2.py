@@ -20,7 +20,7 @@ class UnifracEncoderV2(tf.keras.Model):
         **kwargs,
     ):
         super(UnifracEncoderV2, self).__init__(**kwargs)
-        self.unifrac_loss = PairwiseLoss(use_mean_pairs=True)
+        self.unifrac_loss = PairwiseLoss(use_mean_pairs=False)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         self.num_encoder_layers = num_encoder_layers
