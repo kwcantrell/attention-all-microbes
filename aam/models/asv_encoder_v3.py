@@ -74,7 +74,6 @@ class ASVEncoderV3(tf.keras.Model):
                 )
             ]
         )
-        self.asv_encoder = tf.keras.Sequential(asv_layers, name="asv_block")
         super(ASVEncoderV3, self).build(input_shape)
 
     def predict_step(self, data):
