@@ -15,8 +15,8 @@ class ASVEncoderV3(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 1,
-        num_nuc_layers: int = 12,
-        num_asv_layers: int = 3,
+        num_nuc_layers: int = 6,
+        num_asv_layers: int = 6,
         **kwargs,
     ):
         super(ASVEncoderV3, self).__init__(**kwargs)
@@ -54,21 +54,26 @@ class ASVEncoderV3(tf.keras.Model):
             name="nuc_block",
         )
 
-        asv_layers = [
-            ConvFeedForwardV2(
-                filters=self.filters,
-                kernel_size=self.kernel_size,
-                conv_blocks=self.conv_blocks_per_layers,
-                outdim=1,
-            ),
-            tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=-1)),
-            ConvFeedForwardV2(
-                filters=self.filters,
-                kernel_size=self.kernel_size,
-                conv_blocks=self.conv_blocks_per_layers,
-                outdim=self.filters,
-            ),
-        ]
+        asv_layers = []
+        for _ in range(self.num_asv_layers - 1):
+            asv_layers += [
+                ConvFeedForwardV2(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layers,
+                )
+            ]
+        self.asv_encoder = tf.keras.Sequential(
+            asv_layers
+            + [
+                ConvFeedForwardV2(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    conv_blocks=self.conv_blocks_per_layers,
+                    outdim=self.filters,
+                )
+            ]
+        )
         self.asv_encoder = tf.keras.Sequential(asv_layers, name="asv_block")
         super(ASVEncoderV3, self).build(input_shape)
 
@@ -116,7 +121,8 @@ class ASVEncoderV3(tf.keras.Model):
 
     def call(self, inputs, training=False):
         inputs = self.emb_layer(inputs)
-        asv_input = self.nuc_block(inputs)
+        nuc_output = self.nuc_block(inputs)
+        asv_input = tf.reduce_mean(nuc_output, axis=-1)
         return self.asv_encoder(asv_input)
 
     def get_config(self):
