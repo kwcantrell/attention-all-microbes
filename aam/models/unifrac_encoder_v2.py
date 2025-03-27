@@ -5,9 +5,7 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
-from aam.models.asv_dense_count_encoder_v3 import ASVDenseCountEncoderV3
 from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
-from aam.models.feedforward import FeedForward
 from aam.models.utils import sample_embeddings
 
 
@@ -22,7 +20,7 @@ class UnifracEncoderV2(tf.keras.Model):
         **kwargs,
     ):
         super(UnifracEncoderV2, self).__init__(**kwargs)
-        self.unifrac_loss = PairwiseLoss()
+        self.unifrac_loss = PairwiseLoss(use_mean_pairs=True)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
         self.num_encoder_layers = num_encoder_layers
