@@ -108,8 +108,7 @@ class ASVEncoderV3(tf.keras.Model):
 
     def call(self, inputs, training=False):
         inputs = self.emb_layer(inputs)
-
-        asv_input = self.nuc_block(inputs)
+        asv_input = self.nuc_block(tf.squeeze(inputs, axis=-1))
         return self.asv_encoder(asv_input)
 
     def get_config(self):
