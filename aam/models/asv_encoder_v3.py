@@ -5,6 +5,7 @@ import tensorflow as tf
 from aam.losses import PairwiseLoss
 from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
 from aam.models.convolution_block import ConvolutionBlock
+from aam.models.feedforward import FeedForward
 
 
 @tf.keras.saving.register_keras_serializable(package="ASVEncoderV3")
@@ -14,7 +15,7 @@ class ASVEncoderV3(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 1,
-        num_nuc_layers: int = 3,
+        num_nuc_layers: int = 12,
         num_asv_layers: int = 3,
         **kwargs,
     ):
@@ -49,30 +50,25 @@ class ASVEncoderV3(tf.keras.Model):
                     filters=self.filters,
                     kernel_size=self.kernel_size,
                     num_blocks=self.conv_blocks_per_layers,
-                )
+                ),
+                ConvolutionBlock(
+                    filters=self.filters,
+                    kernel_size=1,
+                    num_blocks=self.conv_blocks_per_layers,
+                ),
             ]
         self.nuc_block = tf.keras.Sequential(nuc_block, name="nuc_block")
 
         asv_layers = []
-        for _ in range(self.num_asv_layers - 1):
-            asv_layers += [
-                ConvFeedForwardV2(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layers,
-                )
-            ]
-        self.asv_encoder = tf.keras.Sequential(
-            asv_layers
-            + [
-                ConvFeedForwardV2(
-                    filters=self.filters,
-                    kernel_size=self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layers,
-                    outdim=self.filters,
-                )
-            ]
-        )
+        asv_layers += [
+            ConvFeedForwardV2(
+                filters=self.filters,
+                kernel_size=1,
+                conv_blocks=self.conv_blocks_per_layers,
+            ),
+            FeedForward(outdim=self.filters),
+        ]
+        self.asv_encoder = tf.keras.Sequential(asv_layers)
         super(ASVEncoderV3, self).build(input_shape)
 
     def predict_step(self, data):
