@@ -260,7 +260,7 @@ class TripletEncoder(tf.keras.Model):
             y, batch_probs, res_probs
         )
         batch_noise_loss = self._compute_batch_noise(batch_noise)
-        loss = ae_loss + batch_loss + res_loss + batch_noise_loss
+        loss = ae_loss + batch_loss + res_loss  # + batch_noise_loss
 
         self.loss_tracker.update_state(loss)
         self.asv_rec_tracker.update_state(ae_loss)
@@ -301,7 +301,7 @@ class TripletEncoder(tf.keras.Model):
 
         print("Triplet encoder exit...")
         if not return_training_output:
-            return encoder_residual
+            return decoder_output
 
         return (
             batch_noise,

@@ -19,6 +19,7 @@ class UnifracEncoder(tf.keras.Model):
         num_filters=32,
         kernel_size=3,
         conv_blocks_per_layer=2,
+        include_counts=False,
         **kwargs,
     ):
         super(UnifracEncoder, self).__init__(**kwargs)
@@ -30,13 +31,15 @@ class UnifracEncoder(tf.keras.Model):
         self.num_filters = num_filters
         self.kernel_size = kernel_size
         self.conv_blocks_per_layer = conv_blocks_per_layer
+        self.include_counts = include_counts
 
     def build(self, input_shape):
         if self.built:
             print("UnifracEncoder is already built")
             return
 
-        self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
+        if self.include_counts:
+            self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):
@@ -113,8 +116,10 @@ class UnifracEncoder(tf.keras.Model):
         asv_embeddings = sample_embeddings(
             asv_embeddings, batch_indices, asv_counts, asv_indices
         )
-
-        encoder_input = self.asv_encoder([asv_embeddings, dense_counts])
+        if self.include_counts:
+            encoder_input = self.asv_encoder([asv_embeddings, dense_counts])
+        else:
+            encoder_input = asv_embeddings
         output_embeddings = self.encoder(encoder_input)
         print("UnifracEncoder exit...")
         return output_embeddings
@@ -128,6 +133,7 @@ class UnifracEncoder(tf.keras.Model):
                 "num_filters": self.num_filters,
                 "kernel_size": self.kernel_size,
                 "conv_blocks_per_layer": self.conv_blocks_per_layer,
+                "include_counts": self.include_counts,
                 "build_input_shape": self.get_build_config(),
             }
         )

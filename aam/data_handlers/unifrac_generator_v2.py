@@ -14,13 +14,13 @@ from aam.data_handlers.sequence_embeddings import SequenceEmbeddings
 
 
 def weighted_normalized(table, phylogeny, *args):
-    variance_adjusted = True
+    variance_adjusted = False
     bypass_tips = False
     n_substeps = 1
     return ssu_inmem(
         table,
         phylogeny,
-        "weighted_unnormalized",
+        "unweighted",
         variance_adjusted,
         1.0,
         bypass_tips,

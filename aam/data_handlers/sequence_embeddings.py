@@ -4,11 +4,12 @@ from biom import Table
 
 class SequenceEmbeddings:
     def __init__(self, embeddings_fp, labels_fp, normalize=False):
-        embeddings = np.load(embeddings_fp)
-        emb_mean = np.mean(embeddings, axis=0)
-
-        emb_std = np.std(embeddings, axis=0)
-        self.embeddings = (embeddings - emb_mean) / emb_std
+        self.embeddings = np.load(embeddings_fp)
+        if normalize:
+            print("normalizing sequence embeddings...")
+            emb_mean = np.mean(self.embeddings, axis=0)
+            emb_std = np.std(self.embeddings, axis=0)
+            self.embeddings = (self.embeddings - emb_mean) / emb_std
 
         self.labels = labels_fp
 
