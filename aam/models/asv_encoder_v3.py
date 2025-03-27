@@ -54,7 +54,18 @@ class ASVEncoderV3(tf.keras.Model):
                     num_blocks=self.conv_blocks_per_layers,
                 ),
             ]
-        self.nuc_block = tf.keras.Sequential(nuc_block, name="nuc_block")
+        self.nuc_block = tf.keras.Sequential(
+            nuc_block
+            + [
+                ConvolutionBlock(
+                    filters=1,
+                    kernel_size=self.kernel_size,
+                    num_blocks=self.conv_blocks_per_layers,
+                ),
+                tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=-1)),
+            ],
+            name="nuc_block",
+        )
 
         self.asv_encoder = ConvFeedForwardV2(
             filters=self.filters,
@@ -108,7 +119,7 @@ class ASVEncoderV3(tf.keras.Model):
 
     def call(self, inputs, training=False):
         inputs = self.emb_layer(inputs)
-        asv_input = self.nuc_block(tf.squeeze(inputs, axis=-1))
+        asv_input = self.nuc_block(inputs)
         return self.asv_encoder(asv_input)
 
     def get_config(self):
