@@ -40,7 +40,7 @@ class RegressorV2(tf.keras.Model):
             print("RegressorV2 is already built")
             return
 
-        self.asv_encoder = ASVDenseCountEncoderV2(name="asv_encoder")
+        self.asv_encoder = ASVDenseCountEncoderV3(name="asv_encoder")
 
         encoder_layers = []
         for _ in range(self.num_encoder_layers):

@@ -110,7 +110,7 @@ def fit_asv_encoder(
     # tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
-    from aam.models.asv_encoder_v2 import ASVEncoderV2
+    from aam.models.asv_encoder_v3 import ASVEncoderV3
     from aam.models.utils import cos_decay_with_warmup
 
     # launch datasets first so they can begin to preprocess
@@ -137,7 +137,7 @@ def fit_asv_encoder(
         print("loading existing model...")
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model: tf.keras.Model = ASVEncoderV2()
+        model: tf.keras.Model = ASVEncoderV3()
 
     lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps))
 
