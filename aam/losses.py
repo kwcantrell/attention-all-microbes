@@ -30,14 +30,14 @@ def _pairwise_distances(
         # Because the gradient of sqrt is infinite when distances == 0.0
         # (ex: on the diagonal)
         # we need to add a small epsilon where distances == 0.0
-        # mask = tf.cast(tf.less_equal(distances, 0.0), tf.float32)
+        mask = tf.cast(distances != 0.0, tf.float32)
         distances = distances + 1e-6
 
         distances = tf.sqrt(distances)
 
         # Correct the epsilon added: set the distances on the mask to be
         # exactly 0.0
-        distances = distances
+        distances = distances * mask
 
     return distances
 
