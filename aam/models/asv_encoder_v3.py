@@ -75,7 +75,6 @@ class ASVEncoderV3(tf.keras.Model):
                     filters=self.filters,
                     kernel_size=self.kernel_size,
                     conv_blocks=self.conv_blocks_per_layers,
-                    outdim=self.filters,
                 )
             ]
         )
