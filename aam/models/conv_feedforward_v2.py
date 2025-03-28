@@ -37,7 +37,10 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             conv_layers += [ConvolutionBlock(self.filters, self.kernel_size)]
         self.conv = tf.keras.Sequential(conv_layers, name="conv")
 
-        ff_layers = [FeedForward(self.pool)]
+        ff_layers = [
+            tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1, keepdims=True)),
+            FeedForward(self.pool),
+        ]
         if len(input_shape) == 2:
             ff_layers.append(
                 tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))

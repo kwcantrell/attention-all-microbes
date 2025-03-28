@@ -323,7 +323,7 @@ def fit_unifrac_regressor(
         verbose=0,
         mode="auto",
         min_delta=0.000,
-        cooldown=100,
+        cooldown=5,
         min_lr=0.0,
     )
 

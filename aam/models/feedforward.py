@@ -10,9 +10,7 @@ class FeedForward(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         units = input_shape[-1]
-        ff_layers = [
-            tf.keras.layers.Dense(units * 4, activation="gelu"),
-        ]
+        ff_layers = []
 
         if self.pool < 0:
             ff_layers.append(tf.keras.layers.Dense(units // 2))
@@ -24,7 +22,7 @@ class FeedForward(tf.keras.layers.Layer):
             ff_layers.append(tf.keras.layers.Dense(self.outdim))
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
-            ff_layers.append(tf.keras.layers.Dense(units))
+            ff_layers.append(tf.keras.layers.Dense(units, activation="gelu"))
         self.ff = tf.keras.Sequential(ff_layers, name="ff")
 
     def call(self, inputs, training=False):
