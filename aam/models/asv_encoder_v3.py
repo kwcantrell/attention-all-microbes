@@ -113,16 +113,9 @@ class ASVEncoderV3(tf.keras.Model):
     def call(self, inputs, training=False):
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs += self.nucleotide_position
-        inputs = self.emb_layer(inputs)
-
-        nuc_output = inputs
-        for i in range(self.num_nuc_layers):
-            nuc_input = nuc_output
-            nuc_output = self.nuc_blocks[i](nuc_input)
-            nuc_output = nuc_input + self._rezero * nuc_output
-
-        encoder_input = tf.reduce_mean(nuc_output, axis=1)
-        return self.asv_encoder(encoder_input)
+        nuc_input = self.emb_layer(inputs)
+        nuc_output = self.nuc_encoder(nuc_input)
+        return self.asv_encoder(nuc_output)
 
     def get_config(self):
         config = super(ASVEncoderV3, self).get_config()
