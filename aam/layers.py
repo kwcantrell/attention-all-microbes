@@ -42,10 +42,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         intermediate_activation="gelu",
         add_token=True,
         embedding_dim=128,
-        normalize_outputs=True,
         use_residual_connections=False,
-        regularize_embeddings=False,
-        use_linear_bias=False,
+        use_linear_bias=True,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -57,20 +55,15 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.intermediate_ff = intermediate_ff
         self.intermediate_activation = intermediate_activation
         self.add_token = add_token
-        self.base_tokens = 6
-        self.num_tokens = self.base_tokens * self.max_bp + 2
-        self.normalize_outputs = normalize_outputs
+        self.base_tokens = 5
+        self.num_tokens = self.base_tokens
         self.use_residual_connections = use_residual_connections
-        self.regularize_embeddings = regularize_embeddings
         self.use_linear_bias = use_linear_bias
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
-        self.nucleotide_position = tf.range(
-            0, self.base_tokens * self.max_bp, self.base_tokens, dtype=tf.int32
-        )
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(
-            reduction="none", label_smoothing=0.1
+        self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy(
+            ignore_class=0, from_logits=True, reduction="none"
         )
 
     def build(self, input_shape):
@@ -97,7 +90,6 @@ class ASVEncoder(tf.keras.layers.Layer):
             dropout_rate=0.0,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
-            normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
             use_linear_bias=self.use_linear_bias,
         )
@@ -105,7 +97,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.nuc_pred = tf.keras.layers.Dense(
             self.num_tokens, use_bias=True, dtype=tf.float32
         )
-        self._softmax = tf.keras.layers.Activation("softmax", dtype=tf.float32)
         super().build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
@@ -152,7 +143,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
             # step 3: change 10% of <MASK> tokens to random token
             random_tokens = tf.random.uniform(
-                tf.shape(masked_inputs), minval=1, maxval=4, dtype=tf.int32
+                tf.shape(masked_inputs), minval=1, maxval=5, dtype=tf.int32
             )
 
             # step 4: create masked input
@@ -165,8 +156,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         random_mask = random_mask > 0
 
         # get nucleotides embeddigns
-        asv_tokens = masked_inputs + self.nucleotide_position
-        asv_input = self.emb_layer(asv_tokens)
+        asv_input = self.emb_layer(masked_inputs)
 
         # only add positional embeddings if using vanilla Transforer
         if not self.use_linear_bias:
@@ -178,7 +168,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        asv_tokens = inputs + self.nucleotide_position
+        asv_tokens = inputs
         loss = self._compute_nuc_loss(asv_tokens, output, random_mask)
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
@@ -189,8 +179,7 @@ class ASVEncoder(tf.keras.layers.Layer):
     def _compute_nuc_loss(self, tokens, embeddings, mask):
         tokens = tokens[mask]
         embeddings = embeddings[mask]
-        nuc_pred = self._softmax(self.nuc_pred(embeddings))
-        tokens = tf.one_hot(tokens, tf.shape(nuc_pred)[-1])
+        nuc_pred = self.nuc_pred(embeddings)
         return self.nuc_loss(tokens, nuc_pred)
 
     def get_config(self):
@@ -205,9 +194,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "intermediate_activation": self.intermediate_activation,
                 "add_token": self.add_token,
                 "embedding_dim": self.embedding_dim,
-                "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
-                "regularize_embeddings": self.regularize_embeddings,
                 "use_linear_bias": self.use_linear_bias,
             }
         )

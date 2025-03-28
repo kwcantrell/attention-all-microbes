@@ -109,6 +109,155 @@ def fit_asv_encoder(
 ):
     import tensorflow_addons as tfa
 
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    from aam.callbacks import LAMBLRScheduler
+    from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
+    from aam.models.nucleotide_encoder_v5 import NucleotideEncoderV5
+    from aam.models.utils import cos_decay_with_warmup
+
+    # launch datasets first so they can begin to preprocess
+    common_kwargs = {
+        "sequence_batch_size": p_sequence_batch_size,
+        "pairwise_batch_size": p_pairwise_batch_size,
+        "max_bp": p_max_bp,
+        "epochs": p_epochs,
+    }
+    train_gen = ASVGenerator(
+        tree=i_tree,
+        shuffle=True,
+        **common_kwargs,
+    )
+    train_dataset = get_dataset(train_gen)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    figure_path = os.path.join(output_dir, "figures")
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+    if i_model is not None:
+        print("loading existing model...")
+        model = tf.keras.models.load_model(i_model, compile=False)
+    else:
+        model: tf.keras.Model = NucleotideEncoderV5(
+            p_embedding_dim,
+            p_max_bp,
+            dropout_rate=p_dropout,
+            attention_heads=p_attention_heads,
+            attention_layers=p_attention_layers,
+            intermediate_size=p_intermediate_size,
+        )
+
+    # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
+    plateau = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="loss",
+        factor=0.9,
+        patience=5,
+        verbose=0,
+        mode="auto",
+        min_delta=0.000,
+        cooldown=0,
+        min_lr=0.0,
+    )
+    optimizer = tfa.optimizers.LAMB(
+        learning_rate=p_lr,
+        weight_decay=p_weight_decay,
+        exclude_from_weight_decay=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+        ],
+        exclude_from_layer_adaptation=[
+            "bias",
+            "rezero_alpha",
+            "layer_norm",
+            "LayerNorm",
+        ],
+    )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+
+    token_shape = tf.TensorShape([None, 150])
+    model.build(token_shape)
+    model.compile(
+        include_bert_loss=p_include_bert_loss, optimizer=optimizer, run_eagerly=False
+    )
+    model.summary()
+
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = os.path.join(output_dir, log_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    model_save_path = os.path.join(output_dir, "model.keras")
+    model_saver = SaveModel(model_save_path, 1, monitor="loss")
+    core_callbacks = [
+        # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+        model_saver,
+    ]
+
+    model.fit(
+        train_dataset,
+        callbacks=[*core_callbacks, plateau],
+        epochs=p_epochs,
+        steps_per_epoch=train_gen.steps_per_epoch,
+    )
+    model.set_weights(model_saver.best_weights)
+    model.save(model_save_path, save_format="keras")
+
+
+@cli.command()
+@click.option("--i-tree", required=True, type=click.Path(exists=True), help=TABLE_DESC)
+@click.option(
+    "--p-sequence-batch-size", default=128, show_default=True, required=False, type=int
+)
+@click.option(
+    "--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int
+)
+@click.option("--p-epochs", default=1000, show_default=True, type=int)
+@click.option("--p-dropout", default=0.1, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=512, type=int)
+@click.option("--p-attention-heads", default=8, type=int)
+@click.option("--p-attention-layers", default=8, type=int)
+@click.option("--p-intermediate-size", default=2048, type=int)
+@click.option(
+    "--p-intermediate-activation", default="gelu", show_default=True, type=str
+)
+@click.option("--p-lr", default=1e-4, show_default=True, type=float)
+@click.option("--p-decay-steps", default=1000, show_default=True, type=int)
+@click.option("--p-max-bp", default=150, show_default=True, type=int)
+@click.option("--output-dir", required=True)
+@click.option("--p-weight-decay", default=0.004, show_default=True, type=float)
+@click.option("--p-normalize-outputs", default=False, type=bool)
+@click.option("--p-use-residual-connections", default=False, type=bool)
+@click.option("--i-model", default=None, required=False, type=str)
+@click.option("--p-include-bert-loss", default=True, required=False, type=bool)
+@click.option("--p-use-linear-bias", default=True, type=bool)
+@click.option("--p-filters", default=32, type=int)
+def fit_asv_encoder_conv(
+    i_tree: str,
+    p_sequence_batch_size: int,
+    p_pairwise_batch_size: int,
+    p_epochs: int,
+    p_dropout: float,
+    p_embedding_dim: int,
+    p_attention_heads: int,
+    p_attention_layers: int,
+    p_intermediate_size: int,
+    p_intermediate_activation: str,
+    p_lr: float,
+    p_decay_steps: int,
+    p_max_bp: int,
+    output_dir: str,
+    p_weight_decay: float,
+    p_normalize_outputs: bool,
+    p_use_residual_connections: bool,
+    i_model: str,
+    p_include_bert_loss: bool,
+    p_use_linear_bias: bool,
+    p_filters: int,
+):
+    import tensorflow_addons as tfa
+
     # tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset

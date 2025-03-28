@@ -18,9 +18,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         attention_heads: int = 4,
         attention_layers: int = 4,
         intermediate_size: int = 256,
-        normalize_outputs: bool = False,
         use_residual_connections: bool = False,
-        regularize_embeddings=False,
         use_linear_bias=False,
         **kwargs,
     ):
@@ -33,9 +31,7 @@ class NucleotideEncoderV5(tf.keras.Model):
         self.attention_heads = attention_heads
         self.attention_layers = attention_layers
         self.intermediate_size = intermediate_size
-        self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
-        self.regularize_embeddings = regularize_embeddings
 
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
@@ -51,17 +47,22 @@ class NucleotideEncoderV5(tf.keras.Model):
             self.intermediate_size,
             intermediate_activation=self.intermediate_activation,
             embedding_dim=self.embedding_dim,
-            normalize_outputs=self.normalize_outputs,
             use_residual_connections=self.use_residual_connections,
-            regularize_embeddings=self.regularize_embeddings,
             use_linear_bias=self.use_linear_bias,
             name="asv_encoder",
         )
 
-        self.asv_ff_block = tf.keras.layers.Dense(
-            self.embedding_dim,
-            use_bias=True,
-            kernel_initializer=tf.keras.initializers.HeUniform(),
+        self.asv_ff = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(self.embedding_dim, activation="gelu"),
+                tf.keras.layers.Dense(self.embedding_dim),
+            ],
+            name="asv_ff",
+        )
+        self._rezero = self.add_weight(
+            name="rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
             dtype=tf.float32,
         )
 
@@ -152,18 +153,12 @@ class NucleotideEncoderV5(tf.keras.Model):
             tokens, include_bert_random_mask=include_bert_loss, training=training
         )
 
-        asv_embeddings = tf.reduce_mean(embeddings, axis=1)
-        embeddings = self.asv_ff_block(asv_embeddings, training=training)
-
-        return self.output_activation(embeddings)
-
-    def asv_embeddings(self, tokens):
-        embeddings = self.asv_encoder(
-            tokens, include_bert_random_mask=False, training=False
+        asv_input = tf.reduce_mean(embeddings, axis=1)
+        asv_output = self.asv_ff(asv_input)
+        asv_embeddings = (
+            asv_input + tf.cast(self._rezero, dtype=self.compute_dtype) * asv_output
         )
-
-        asv_embeddings = tf.reduce_mean(embeddings, axis=1)
-        return self.asv_ff_block(asv_embeddings, training=False)
+        return self.output_activation(asv_embeddings)
 
     def get_config(self):
         config = super(NucleotideEncoderV5, self).get_config()
@@ -178,10 +173,8 @@ class NucleotideEncoderV5(tf.keras.Model):
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
                 "intermediate_size": self.intermediate_size,
-                "normalize_outputs": self.normalize_outputs,
                 "use_residual_connections": self.use_residual_connections,
                 "build_input_shape": self.get_build_config(),
-                "regularize_embeddings": self.regularize_embeddings,
                 "use_linear_bias": self.use_linear_bias,
             }
         )

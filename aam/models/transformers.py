@@ -19,7 +19,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
         use_bias=False,
         norm_first=True,
         norm_epsilon=1e-6,
-        normalize_outputs=True,
         use_residual_connections=False,
         use_linear_bias=False,
         **kwargs,
@@ -34,7 +33,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._use_bias = use_bias
         self._norm_first = norm_first
         self._norm_epsilon = norm_epsilon
-        self.normalize_outputs = normalize_outputs
         self.use_residual_connections = use_residual_connections
         self.use_linear_bias = use_linear_bias
 
@@ -74,10 +72,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.encoder_layers = []
         for i in range(self.num_layers):
             self.encoder_layers.append(get_transformer(i))
-        if self.normalize_outputs:
-            self.output_normalization = tf.keras.layers.LayerNormalization(
-                epsilon=1e-6, dtype=tf.float32
-            )
         super(TransformerEncoder, self).build(input_shape)
 
     def get_config(self):
@@ -91,7 +85,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "use_bias": self._use_bias,
             "norm_first": self._norm_first,
             "norm_epsilon": self._norm_epsilon,
-            "normalize_outputs": self.normalize_outputs,
             "use_residual_connections": self.use_residual_connections,
             "use_linear_bias": self.use_linear_bias,
         }
@@ -139,10 +132,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
         if self.use_residual_connections:
             print("Encoder residual connection...")
             output_tensor = inputs + self._rezero * output_tensor
-
-        if self.normalize_outputs:
-            print("Encoder normalizing outputs...")
-            output_tensor = self.output_normalization(output_tensor)
 
         if self.compute_dtype == "float16":
             # output_tensor will always be float32
