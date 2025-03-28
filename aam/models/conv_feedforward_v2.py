@@ -49,12 +49,7 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             self.ff = tf.keras.layers.Dense(self.outdim, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
-            self.ff = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Dense(units * 4, activation="gelu"),
-                    tf.keras.layers.Dense(units),
-                ]
-            )
+            self.ff = tf.keras.layers.Dense(units, activation="gelu")
         if self.ff_dropout_rate > 0.0:
             self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
 
@@ -64,7 +59,10 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             trainable=True,
             dtype=tf.float32,
         )
-        self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
+        if len(input_shape) == 2:
+            self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
+        else:
+            self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))
 
     def call(self, inputs, training=False):
         ff_input = self.conv(inputs)
