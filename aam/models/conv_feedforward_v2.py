@@ -28,17 +28,13 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
     def build(self, input_shape):
         units = input_shape[-1]
 
-        if len(input_shape) != 2:
-            raise Exception("Must be rank 2!")
-
-        self.expand = tf.keras.layers.Reshape([-1, 1])
-        conv_layers = []
+        if len(input_shape) == 2:
+            conv_layers = [tf.keras.layers.Reshape([-1, 1])]
+        else:
+            conv_layers = []
         for i in range(self.conv_blocks):
-            conv_layers += [
-                tf.keras.Sequential([ConvolutionBlock(self.filters, self.kernel_size)])
-            ]
+            conv_layers += [ConvolutionBlock(self.filters, self.kernel_size)]
         self.conv = tf.keras.Sequential(conv_layers)
-        self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
 
         if self.conv_dropout_rate > 0.0:
             self.conv_dropout = tf.keras.layers.Dropout(self.conv_dropout_rate)
@@ -68,19 +64,16 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             trainable=True,
             dtype=tf.float32,
         )
+        self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
 
     def call(self, inputs, training=False):
-        conv_input = self.expand(inputs)
-        conv_output = self.conv(conv_input)
-        ff_input = self.compress(conv_output)
+        ff_input = self.conv(inputs)
 
         ff_output = self.ff(ff_input)
-        if self.ff_dropout_rate > 0.0:
-            ff_output = self.ff_dropout(ff_output, training=training)
         if self.pool or self.outdim is not None:
             ff_input = self.res_pool(ff_input)
         output = ff_input + self._ff_rezero * ff_output
-        return output
+        return self.compress(output)
 
     def get_config(self):
         return (
