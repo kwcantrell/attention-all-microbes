@@ -33,7 +33,7 @@ class UnifracEncoderV2(tf.keras.Model):
             print("UnifracEncoderV2 is already built")
             return
 
-        encoder_layers = []
+        encoder_layers = [tf.keras.layers.Reshape([-1, 1])]
         for _ in range(self.num_encoder_layers):
             encoder_layers += [
                 ConvFeedForwardV2(
@@ -42,6 +42,9 @@ class UnifracEncoderV2(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layer,
                 )
             ]
+        encoder_layers.append(
+            tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
+        )
         self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
         super(UnifracEncoderV2, self).build(input_shape)
 

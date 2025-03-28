@@ -14,8 +14,7 @@ class ASVEncoderV3(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 8,
-        num_nuc_layers: int = 6,
-        num_asv_layers: int = 12,
+        num_layers: int = 6,
         **kwargs,
     ):
         super(ASVEncoderV3, self).__init__(**kwargs)
@@ -24,8 +23,7 @@ class ASVEncoderV3(tf.keras.Model):
 
         self.kernel_size = kernel_size
         self.conv_blocks_per_layers = conv_blocks_per_layers
-        self.num_nuc_layers = num_nuc_layers
-        self.num_asv_layers = num_asv_layers
+        self.num_layers = num_layers
         self.base_tokens = 5
 
         self.loss_tracker = tf.keras.metrics.Mean()
@@ -46,26 +44,18 @@ class ASVEncoderV3(tf.keras.Model):
             num_tokens, self.filters, input_length=input_shape[-1]
         )
 
-        # nuc_blocks = []
-        # for i in range(self.num_nuc_layers):
-        #     nuc_blocks += [
-        #         ConvolutionBlock(filters=self.filters, kernel_size=self.kernel_size)
-        #     ]
-        # self.nuc_encoder = tf.keras.Sequential(
-        #     nuc_blocks + [tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=1))],
-        #     name="nuc_encoder",
-        # )
-
-        asv_layers = []
-        for _ in range(self.num_asv_layers):
-            asv_layers += [
+        layers = []
+        for i in range(self.num_layers):
+            layers += [
                 ConvFeedForwardV2(
                     filters=self.filters,
                     kernel_size=self.kernel_size,
                     conv_blocks=self.conv_blocks_per_layers,
                 )
             ]
-        self.asv_encoder = tf.keras.Sequential(asv_layers, name="sequence_encoder")
+        layers.append(tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1)))
+        self.encoder = tf.keras.Sequential(layers, name="encoder")
+
         super(ASVEncoderV3, self).build(input_shape)
 
     def predict_step(self, data):
@@ -114,8 +104,7 @@ class ASVEncoderV3(tf.keras.Model):
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs += self.nucleotide_position
         nuc_input = self.emb_layer(inputs)
-        # nuc_output = self.nuc_encoder(nuc_input)
-        return self.asv_encoder(nuc_input)
+        return self.encoder(nuc_input)
 
     def get_config(self):
         config = super(ASVEncoderV3, self).get_config()
@@ -124,7 +113,7 @@ class ASVEncoderV3(tf.keras.Model):
                 "filters": self.filters,
                 "kernel_size": self.kernel_size,
                 "conv_blocks_per_layers": self.conv_blocks_per_layers,
-                "num_asv_layers": self.num_asv_layers,
+                "num_layers": self.num_layers,
                 "build_input_shape": self.get_build_config(),
             }
         )

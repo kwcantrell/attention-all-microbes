@@ -10,33 +10,30 @@ class FeedForward(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         units = input_shape[-1]
+        ff_layers = [
+            tf.keras.layers.Dense(units * 4, activation="gelu"),
+        ]
 
         if self.pool < 0:
-            self.dense = tf.keras.layers.Dense(units // 2, activation="gelu")
+            ff_layers.append(tf.keras.layers.Dense(units // 2))
             self.res_pool = tf.keras.layers.Dense(units // 2)
         elif self.pool > 0:
-            self.dense = tf.keras.layers.Dense(units * 2, activation="gelu")
+            ff_layers.append(tf.keras.layers.Dense(units * 2))
             self.res_pool = tf.keras.layers.Dense(units * 2)
         elif self.outdim is not None:
-            self.dense = tf.keras.layers.Dense(self.outdim, activation="gelu")
+            ff_layers.append(tf.keras.layers.Dense(self.outdim))
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
-            self.dense = tf.keras.layers.Dense(units)
-
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
-        )
+            ff_layers.append(tf.keras.layers.Dense(units))
+        self.ff = tf.keras.Sequential(ff_layers, name="ff")
 
     def call(self, inputs, training=False):
-        output = self.dense(inputs)
+        output = self.ff(inputs)
 
         # residual step
         if self.pool or self.outdim is not None:
             inputs = self.res_pool(inputs)
-        output = inputs + self._rezero * output
+        output = inputs + output
         return output
 
     def get_config(self):

@@ -52,13 +52,6 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         if self.dropout_rate > 0.0:
             self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
-        )
-
     def call(self, inputs, training=False):
         output = self.conv_blocks(inputs)
 
@@ -70,7 +63,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
 
         if self.pool:
             inputs = self.res_pool(inputs)
-        output = inputs + self._rezero * output
+        output = inputs + output
         return output
 
     def get_config(self):

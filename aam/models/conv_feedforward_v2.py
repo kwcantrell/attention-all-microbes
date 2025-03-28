@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 from aam.models.convolution_block import ConvolutionBlock
+from aam.models.feedforward import FeedForward
 
 
 @tf.keras.saving.register_keras_serializable(package="ConvFeedForwardV2")
@@ -34,44 +35,32 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             conv_layers = []
         for i in range(self.conv_blocks):
             conv_layers += [ConvolutionBlock(self.filters, self.kernel_size)]
-        self.conv = tf.keras.Sequential(conv_layers)
+        self.conv = tf.keras.Sequential(conv_layers, name="conv")
 
-        if self.conv_dropout_rate > 0.0:
-            self.conv_dropout = tf.keras.layers.Dropout(self.conv_dropout_rate)
+        ff_layers = [FeedForward(self.pool)]
+        if len(input_shape) == 2:
+            ff_layers.append(
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
+            )
+        self.ff = tf.keras.Sequential(ff_layers, name="ff")
 
         if self.pool < 0:
-            self.ff = tf.keras.layers.Dense(units // 2, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(units // 2)
         elif self.pool > 0:
-            self.ff = tf.keras.layers.Dense(units * 2, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(units * 2)
         elif self.outdim is not None:
-            self.ff = tf.keras.layers.Dense(self.outdim, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(self.outdim)
-        else:
-            self.ff = tf.keras.layers.Dense(units, activation="gelu")
-        if self.ff_dropout_rate > 0.0:
-            self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
 
-        self._ff_rezero = self.add_weight(
+        self._rezero = self.add_weight(
             name="ff_rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
             trainable=True,
             dtype=tf.float32,
         )
-        if len(input_shape) == 2:
-            self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
-        else:
-            self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))
 
     def call(self, inputs, training=False):
         ff_input = self.conv(inputs)
-
-        ff_output = self.ff(ff_input)
-        if self.pool or self.outdim is not None:
-            ff_input = self.res_pool(ff_input)
-        output = ff_input + self._ff_rezero * ff_output
-        return self.compress(output)
+        return inputs + self._rezero * self.ff(ff_input)
 
     def get_config(self):
         return (
