@@ -129,7 +129,9 @@ class ASVEncoderV3(tf.keras.Model):
             nuc_input = nuc_output
             nuc_output = self.nuc_blocks[i](nuc_input)
             nuc_output = nuc_input + self._rezero * nuc_output
-        return self.asv_encoder(nuc_output)
+
+        encoder_input = tf.reduce_mean(nuc_output, axis=1)
+        return self.asv_encoder(encoder_input)
 
     def get_config(self):
         config = super(ASVEncoderV3, self).get_config()
