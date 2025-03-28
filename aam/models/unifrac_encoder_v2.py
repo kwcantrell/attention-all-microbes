@@ -12,16 +12,17 @@ from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
 class UnifracEncoderV2(tf.keras.Model):
     def __init__(
         self,
-        num_encoder_layers=6,
+        num_encoder_layers=12,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=8,
+        conv_blocks_per_layer=1,
         **kwargs,
     ):
         super(UnifracEncoderV2, self).__init__(**kwargs)
         self.unifrac_loss = PairwiseLoss(use_mean_pairs=False)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-
+        print("Num layers:", num_encoder_layers)
+        print("blocks per layers:", conv_blocks_per_layer)
         self.num_encoder_layers = num_encoder_layers
         self.num_filters = num_filters
         self.kernel_size = kernel_size

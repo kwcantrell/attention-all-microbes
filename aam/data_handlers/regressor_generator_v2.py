@@ -123,7 +123,7 @@ class RegressorGeneratorV2(tf.keras.utils.Sequence):
 
         dense_counts = np.vstack(dense_counts)
         # embeddings = np.vstack(embeddings)
-        embeddings = self.sequence_embeddings.get(batch_sample_ids)
+        embeddings = self.sample_embeddings.get(batch_sample_ids)
         y_true = (
             self.metadata.loc[batch_sample_ids, self.metadata_column]
             .to_numpy()
@@ -210,12 +210,13 @@ if __name__ == "__main__":
         rarefy_depth=10000,
     )
     x, y = ug[0]
-    print(x[0].shape)
-    print(x[1].shape)
+    print(x[0])
+    print(x[1])
 
-    # model = RegressorV2(0, 1)
-    # model.build(
-    #     [[None, ug.sample_embeddings.embeddings.shape[-1]], [None, ug.num_asvs]]
-    # )
+    model = RegressorV2(None, 0, 1)
+    model.build(
+        [[None, ug.sample_embeddings.embeddings.shape[-1]], [None, ug.num_asvs]]
+    )
+    model.summary()
     # print(model(x))
-    # # print(y)
+    # # # print(y)

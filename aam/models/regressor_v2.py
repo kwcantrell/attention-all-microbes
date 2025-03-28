@@ -25,8 +25,8 @@ class RegressorV2(tf.keras.Model):
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
 
-        base_model.trainable = False
-        self.base_model = base_model
+        # base_model.trainable = False
+        # self.base_model = base_model
         self.shift = shift
         self.scale = scale
         self.num_encoder_layers = num_encoder_layers

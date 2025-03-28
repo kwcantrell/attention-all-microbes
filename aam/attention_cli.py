@@ -141,9 +141,9 @@ def fit_asv_encoder(
 
     # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss",
+        monitor="loss",
         factor=0.9,
-        patience=5,
+        patience=1,
         verbose=0,
         mode="auto",
         min_delta=0.000,
@@ -315,7 +315,7 @@ def fit_unifrac_regressor(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps, 0.1)
     )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss",
+        monitor="loss",
         factor=0.9,
         patience=5,
         verbose=0,
@@ -463,7 +463,7 @@ def fit_new_regressor(
         "sample_embeddings": i_sample_embeddings,
         "sample_labels": i_sample_labels,
         "drop_remainder": False,
-        "normalize_embeddings": False,
+        "normalize_embeddings": True,
     }
 
     train_gen = RegressorGeneratorV2(
