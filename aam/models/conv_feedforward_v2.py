@@ -53,7 +53,12 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
             self.ff = tf.keras.layers.Dense(self.outdim, activation="gelu")
             self.res_pool = tf.keras.layers.Dense(self.outdim)
         else:
-            self.ff = tf.keras.layers.Dense(units, activation="gelu")
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(units * 4, activation="gelu"),
+                    tf.keras.layers.Dense(units),
+                ]
+            )
         if self.ff_dropout_rate > 0.0:
             self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
 

@@ -75,10 +75,7 @@ class UnifracEncoderV2(tf.keras.Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.loss_tracker.update_state(loss)
-        return {
-            "loss": self.loss_tracker.result(),
-            "learning_rate": self.optimizer.learning_rate,
-        }
+        return {"loss": self.loss_tracker.result()}
 
     def test_step(
         self,
@@ -92,10 +89,7 @@ class UnifracEncoderV2(tf.keras.Model):
         loss = self._compute_loss(y, output_embeddings)
 
         self.loss_tracker.update_state(loss)
-        return {
-            "loss": self.loss_tracker.result(),
-            "learning_rate": self.optimizer.learning_rate,
-        }
+        return {"loss": self.loss_tracker.result()}
 
     def call(
         self, inputs, training: bool = False

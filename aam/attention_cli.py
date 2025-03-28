@@ -83,6 +83,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--i-model", default=None, required=False, type=str)
 @click.option("--p-include-bert-loss", default=True, required=False, type=bool)
 @click.option("--p-use-linear-bias", default=True, type=bool)
+@click.option("--p-filters", default=32, type=int)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -104,6 +105,7 @@ def fit_asv_encoder(
     i_model: str,
     p_include_bert_loss: bool,
     p_use_linear_bias: bool,
+    p_filters: int,
 ):
     import tensorflow_addons as tfa
 
@@ -137,7 +139,7 @@ def fit_asv_encoder(
         print("loading existing model...")
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model: tf.keras.Model = ASVEncoderV3()
+        model: tf.keras.Model = ASVEncoderV3(filters=p_filters)
 
     # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
@@ -153,18 +155,18 @@ def fit_asv_encoder(
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
-        exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-        ],
-        exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-        ],
+        # exclude_from_weight_decay=[
+        #     "bias",
+        #     "rezero_alpha",
+        #     "layer_norm",
+        #     "LayerNorm",
+        # ],
+        # exclude_from_layer_adaptation=[
+        #     "bias",
+        #     "rezero_alpha",
+        #     "layer_norm",
+        #     "LayerNorm",
+        # ],
     )
     # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
@@ -316,7 +318,7 @@ def fit_unifrac_regressor(
     )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.5,
+        factor=0.9,
         patience=10,
         verbose=0,
         mode="auto",
@@ -328,22 +330,22 @@ def fit_unifrac_regressor(
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
-        exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "batch_norm",
-            "BatchNorm",
-        ],
-        exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "batch_norm",
-            "BatchNorm",
-        ],
+        # exclude_from_weight_decay=[
+        #     "bias",
+        #     "rezero_alpha",
+        #     "layer_norm",
+        #     "LayerNorm",
+        #     "batch_norm",
+        #     "BatchNorm",
+        # ],
+        # exclude_from_layer_adaptation=[
+        #     "bias",
+        #     "rezero_alpha",
+        #     "layer_norm",
+        #     "LayerNorm",
+        #     "batch_norm",
+        #     "BatchNorm",
+        # ],
     )
     model.compile(optimizer=optimizer, run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
