@@ -14,8 +14,8 @@ class ASVEncoderV3(tf.keras.Model):
         filters: int = 32,
         kernel_size: int = 3,
         conv_blocks_per_layers: int = 8,
-        num_nuc_layers: int = 12,
-        num_asv_layers: int = 12,
+        num_nuc_layers: int = 6,
+        num_asv_layers: int = 6,
         **kwargs,
     ):
         super(ASVEncoderV3, self).__init__(**kwargs)
@@ -46,23 +46,14 @@ class ASVEncoderV3(tf.keras.Model):
             num_tokens, self.filters, input_length=input_shape[-1]
         )
 
-        self.nuc_blocks = []
+        nuc_blocks = []
         for i in range(self.num_nuc_layers):
-            self.nuc_blocks += [
-                tf.keras.Sequential(
-                    [
-                        ConvolutionBlock(
-                            filters=self.filters, kernel_size=self.kernel_size
-                        )
-                    ],
-                    name=f"nuc_block_{i}",
-                )
+            nuc_blocks += [
+                ConvolutionBlock(filters=self.filters, kernel_size=self.kernel_size)
             ]
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
+        self.nuc_encoder = tf.keras.Sequential(
+            nuc_blocks + [tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=1))],
+            name="nuc_encoder",
         )
 
         asv_layers = []

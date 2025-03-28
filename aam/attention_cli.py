@@ -316,12 +316,12 @@ def fit_unifrac_regressor(
     )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.1,
+        factor=0.5,
         patience=10,
         verbose=0,
         mode="auto",
         min_delta=0.000,
-        cooldown=10,
+        cooldown=100,
         min_lr=0.0,
     )
 

@@ -20,6 +20,10 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self.num_blocks = num_blocks
         self.dropout_rate = dropout_rate
 
+    def build(self, input_shape):
+        if len(input_shape) != 3:
+            raise Exception("Must be rank 3!")
+
         conv_blocks = []
         for _ in range(self.num_blocks):
             conv_blocks += [
@@ -34,15 +38,18 @@ class ConvolutionBlock(tf.keras.layers.Layer):
 
         if self.pool:
             conv_blocks += [
-                tf.keras.layers.MaxPool1D(
-                    pool_size=self.kernel_size, strides=self.kernel_size, padding="same"
-                )
+                tf.keras.layers.Conv1D(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    strides=self.kernel_size,
+                    padding="same",
+                ),
             ]
             self.res_pool = tf.keras.layers.MaxPool1D(
                 pool_size=self.kernel_size, strides=self.kernel_size, padding="same"
             )
         self.conv_blocks = tf.keras.Sequential(conv_blocks, name="conv_blocks")
-        if dropout_rate > 0.0:
+        if self.dropout_rate > 0.0:
             self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
 
         self._rezero = self.add_weight(

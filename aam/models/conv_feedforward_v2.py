@@ -30,18 +30,15 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
 
         if len(input_shape) != 2:
             raise Exception("Must be rank 2!")
-        self.conv_layers = []
+
+        self.expand = tf.keras.layers.Reshape([-1, 1])
+        conv_layers = []
         for i in range(self.conv_blocks):
-            self.conv_layers += [
-                tf.keras.Sequential(
-                    [
-                        tf.keras.layers.Reshape([-1, 1]),
-                        ConvolutionBlock(self.filters, self.kernel_size),
-                        tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
-                    ],
-                    name=f"block_{i}",
-                )
+            conv_layers += [
+                tf.keras.Sequential([ConvolutionBlock(self.filters, self.kernel_size)])
             ]
+        self.conv = tf.keras.Sequential(conv_layers)
+        self.compress = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
 
         if self.conv_dropout_rate > 0.0:
             self.conv_dropout = tf.keras.layers.Dropout(self.conv_dropout_rate)
@@ -60,12 +57,6 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         if self.ff_dropout_rate > 0.0:
             self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
 
-        self._conv_rezero = self.add_weight(
-            name="conv_rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
-        )
         self._ff_rezero = self.add_weight(
             name="ff_rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -74,15 +65,10 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        conv_output = inputs
-        for i in range(self.conv_blocks):
-            conv_input = conv_output
-            conv_output = self.conv_layers[i](conv_input)
-            if self.conv_dropout_rate > 0.0:
-                conv_output = self.conv_dropout(conv_output, training=training)
-            conv_output = conv_input + self._conv_rezero * conv_output
+        conv_input = self.expand(inputs)
+        conv_output = self.conv(conv_input)
+        ff_input = self.compress(conv_output)
 
-        ff_input = conv_output
         ff_output = self.ff(ff_input)
         if self.ff_dropout_rate > 0.0:
             ff_output = self.ff_dropout(ff_output, training=training)
