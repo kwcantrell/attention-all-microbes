@@ -15,7 +15,7 @@ class UnifracEncoderV2(tf.keras.Model):
         num_encoder_layers=12,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=1,
+        conv_blocks_per_layer=8,
         **kwargs,
     ):
         super(UnifracEncoderV2, self).__init__(**kwargs)

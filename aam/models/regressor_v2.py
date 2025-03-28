@@ -12,21 +12,18 @@ from aam.models.convolution_block import ConvolutionBlock
 class RegressorV2(tf.keras.Model):
     def __init__(
         self,
-        base_model,
         shift,
         scale,
         num_encoder_layers=8,
         num_filters=32,
         kernel_size=3,
-        conv_blocks_per_layer=2,
+        conv_blocks_per_layer=8,
         **kwargs,
     ):
         super(RegressorV2, self).__init__(**kwargs)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.mae_tracker = tf.keras.metrics.Mean(name="mae")
 
-        # base_model.trainable = False
-        # self.base_model = base_model
         self.shift = shift
         self.scale = scale
         self.num_encoder_layers = num_encoder_layers
@@ -43,7 +40,9 @@ class RegressorV2(tf.keras.Model):
         count_layers = [tf.keras.layers.Reshape([-1, 1])]
         for _ in range(3):
             count_layers += [
-                ConvolutionBlock(asv_dim, self.kernel_size, num_blocks=1, pool=True)
+                ConvolutionBlock(asv_dim, self.kernel_size, num_blocks=1),
+                ConvolutionBlock(asv_dim, self.kernel_size, num_blocks=1),
+                ConvolutionBlock(asv_dim, self.kernel_size, num_blocks=1, pool=True),
             ]
         self.count_encoder = tf.keras.Sequential(
             count_layers

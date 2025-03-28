@@ -46,14 +46,23 @@ class ASVEncoderV3(tf.keras.Model):
             num_tokens, self.filters, input_length=input_shape[-1]
         )
 
-        nuc_block = []
-        for _ in range(self.num_nuc_layers):
-            nuc_block += [
-                ConvolutionBlock(filters=self.filters, kernel_size=self.kernel_size)
+        self.nuc_blocks = []
+        for i in range(self.num_nuc_layers):
+            self.nuc_blocks += [
+                tf.keras.Sequential(
+                    [
+                        ConvolutionBlock(
+                            filters=self.filters, kernel_size=self.kernel_size
+                        )
+                    ],
+                    name=f"nuc_block_{i}",
+                )
             ]
-        self.nuc_block = tf.keras.Sequential(
-            nuc_block + [tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1))],
-            name="nuc_block",
+        self._rezero = self.add_weight(
+            name="rezero_alpha",
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+            dtype=tf.float32,
         )
 
         asv_layers = []
@@ -65,7 +74,7 @@ class ASVEncoderV3(tf.keras.Model):
                     conv_blocks=self.conv_blocks_per_layers,
                 )
             ]
-        self.asv_encoder = tf.keras.Sequential(asv_layers)
+        self.asv_encoder = tf.keras.Sequential(asv_layers, name="sequence_encoder")
         super(ASVEncoderV3, self).build(input_shape)
 
     def predict_step(self, data):
@@ -114,7 +123,12 @@ class ASVEncoderV3(tf.keras.Model):
         inputs = tf.cast(inputs, dtype=tf.int32)
         inputs += self.nucleotide_position
         inputs = self.emb_layer(inputs)
-        nuc_output = self.nuc_block(inputs)
+
+        nuc_output = inputs
+        for i in range(self.num_nuc_layers):
+            nuc_input = nuc_output
+            nuc_output = self.nuc_blocks[i](nuc_input)
+            nuc_output = nuc_input + self._rezero * nuc_output
         return self.asv_encoder(nuc_output)
 
     def get_config(self):

@@ -28,18 +28,20 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
     def build(self, input_shape):
         units = input_shape[-1]
 
-        if len(input_shape) == 2:
-            conv_layers = [tf.keras.layers.Reshape([-1, 1])]
-        else:
-            conv_layers = []
-        for _ in range(self.conv_blocks):
-            conv_layers += [ConvolutionBlock(self.filters, self.kernel_size)]
-        conv_layers += [
-            tf.keras.layers.Lambda(
-                lambda x: tf.reduce_mean(x, axis=-1, keepdims=len(input_shape) != 2)
-            )
-        ]
-        self.conv_layers = tf.keras.Sequential(conv_layers, name="conv_layers")
+        if len(input_shape) != 2:
+            raise Exception("Must be rank 2!")
+        self.conv_layers = []
+        for i in range(self.conv_blocks):
+            self.conv_layers += [
+                tf.keras.Sequential(
+                    [
+                        tf.keras.layers.Reshape([-1, 1]),
+                        ConvolutionBlock(self.filters, self.kernel_size),
+                        tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1)),
+                    ],
+                    name=f"block_{i}",
+                )
+            ]
 
         if self.conv_dropout_rate > 0.0:
             self.conv_dropout = tf.keras.layers.Dropout(self.conv_dropout_rate)
@@ -72,11 +74,15 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        conv_output = self.conv_layers(inputs)
-        if self.conv_dropout_rate > 0.0:
-            conv_output = self.conv_dropout(conv_output, training=training)
-        ff_input = inputs + self._conv_rezero * conv_output
+        conv_output = inputs
+        for i in range(self.conv_blocks):
+            conv_input = conv_output
+            conv_output = self.conv_layers[i](conv_input)
+            if self.conv_dropout_rate > 0.0:
+                conv_output = self.conv_dropout(conv_output, training=training)
+            conv_output = conv_input + self._conv_rezero * conv_output
 
+        ff_input = conv_output
         ff_output = self.ff(ff_input)
         if self.ff_dropout_rate > 0.0:
             ff_output = self.ff_dropout(ff_output, training=training)

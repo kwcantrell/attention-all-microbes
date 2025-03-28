@@ -142,8 +142,8 @@ def fit_asv_encoder(
     # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.9,
-        patience=1,
+        factor=0.5,
+        patience=5,
         verbose=0,
         mode="auto",
         min_delta=0.000,
@@ -316,12 +316,12 @@ def fit_unifrac_regressor(
     )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.9,
-        patience=5,
+        factor=0.1,
+        patience=10,
         verbose=0,
         mode="auto",
         min_delta=0.000,
-        cooldown=0,
+        cooldown=10,
         min_lr=0.0,
     )
 
@@ -497,8 +497,8 @@ def fit_new_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        base_model = tf.keras.models.load_model(i_base_model, compile=False)
-        model = RegressorV2(base_model, train_gen.shift, train_gen.scale)
+        # base_model = tf.keras.models.load_model(i_base_model, compile=False)
+        model = RegressorV2(train_gen.shift, train_gen.scale)
 
     token_shape = tf.TensorShape(
         [None, train_gen.sample_embeddings.embeddings.shape[-1]]
@@ -506,8 +506,18 @@ def fit_new_regressor(
     dense_count = tf.TensorShape([None, train_gen.num_asvs])
     model.build([token_shape, dense_count])
     model.summary()
-    lr_scheduler = LAMBLRScheduler(
-        cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    # lr_scheduler = LAMBLRScheduler(
+    #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
+    # )
+    plateau = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="loss",
+        factor=0.5,
+        patience=5,
+        verbose=0,
+        mode="auto",
+        min_delta=0.000,
+        cooldown=0,
+        min_lr=0.0,
     )
 
     optimizer = tfa.optimizers.LAMB(
@@ -557,7 +567,7 @@ def fit_new_regressor(
         #     patience=p_patience,
         #     start_from_epoch=p_early_stop_warmup,
         # ),
-        lr_scheduler,
+        plateau,
         model_saver,
         MeanAbsoluteError(
             val_gen,
