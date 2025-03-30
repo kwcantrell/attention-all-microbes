@@ -12,20 +12,25 @@ class PoolingBlock(tf.keras.layers.Layer):
         if len(input_shape) != 3:
             raise Exception("Must be rank 3!")
 
-        conv_block = [
-            tf.keras.layers.Conv1D(
-                filters=self.filters,
-                kernel_size=self.kernel_size,
-                strides=self.kernel_size,
-                padding="same",
-            ),
-            tf.keras.layers.Activation("gelu"),
-            tf.keras.layers.Dense(units=self.filters),
-            tf.keras.layers.Activation("gelu"),
-        ]
-        self.conv_block = tf.keras.Sequential(conv_block, name="conv_block")
+        self.conv_block = tf.keras.Sequential(
+            [
+                tf.keras.layers.Conv1D(
+                    filters=self.filters,
+                    kernel_size=self.kernel_size,
+                    strides=self.kernel_size,
+                    padding="same",
+                ),
+                tf.keras.layers.Activation("gelu"),
+                tf.keras.layers.Dense(units=self.filters),
+                tf.keras.layers.Activation("gelu"),
+            ],
+            name="conv_block",
+        )
         self.res_pool = tf.keras.layers.MaxPool1D(
-            pool_size=self.kernel_size, strides=self.kernel_size, padding="same"
+            pool_size=self.kernel_size,
+            strides=self.kernel_size,
+            padding="same",
+            name="res_pool",
         )
         self._rezero = self.add_weight(
             name="rezero",
@@ -35,9 +40,8 @@ class PoolingBlock(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        output = self.conv_block(inputs)
-        inputs = self.res_pool(inputs)
-        output = inputs + self._rezero * output
+        pooled_inputs = self.res_pool(inputs)
+        output = pooled_inputs + self.conv_block(inputs)
         return output
 
     def get_config(self):

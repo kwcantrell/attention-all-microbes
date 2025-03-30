@@ -18,7 +18,7 @@ class RegressorV2(tf.keras.Model):
         base_mode,
         num_filters=256,
         kernel_size=3,
-        pooling_size=1024,
+        pooling_size=256,
         **kwargs,
     ):
         super(RegressorV2, self).__init__(**kwargs)
@@ -134,12 +134,13 @@ class RegressorV2(tf.keras.Model):
         sample_embeddings = self.base_model(
             [sparse_indices, sample_embeddings], training=training
         )
-
-        dense_counts = tf.math.log1p(
-            dense_counts / tf.reduce_sum(dense_counts, axis=-1, keepdims=True)
+        dense_counts = tf.cast(dense_counts, dtype=tf.float32)
+        dense_counts = tf.math.log1p(dense_counts) - tf.math.log1p(
+            tf.reduce_sum(dense_counts, axis=-1, keepdims=True)
         )
+        dense_counts = tf.cast(dense_counts, dtype=self.compute_dtype)
+
         extractor_output = self.count_extractor(dense_counts, training=training)
-        sample_embeddings /= tf.cast(tf.shape(extractor_output)[1], dtype=tf.float32)
         sample_embeddings = tf.expand_dims(sample_embeddings, axis=1)
         encoder_input = sample_embeddings + self._rezero * extractor_output
 

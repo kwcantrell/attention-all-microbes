@@ -610,7 +610,7 @@ def fit_new_regressor(
         metadata=train_df,
         shuffle=True,
         gen_new_tables=True,
-        gen_new_table_frequency=1,
+        gen_new_table_frequency=3,
         epochs=p_epochs,
         batch_size=p_batch_size,
         **common_kwargs,
