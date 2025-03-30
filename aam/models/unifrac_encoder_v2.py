@@ -5,6 +5,7 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
+from aam.models.feedforward import FeedForward
 
 # from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
 from aam.models.transformers import TransformerEncoder
@@ -42,16 +43,7 @@ class UnifracEncoderV2(tf.keras.Model):
             use_linear_bias=True,
         )
         self.ff = tf.keras.Sequential(
-            [
-                tf.keras.layers.Dense(embeddings[-1], activation="gelu"),
-                tf.keras.layers.Dense(embeddings[-1]),
-            ]
-        )
-        self._rezero = self.add_weight(
-            name="rezero",
-            dtype=tf.float32,
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
+            [FeedForward(), tf.keras.layers.Dense(embeddings[-1])]
         )
         self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(UnifracEncoderV2, self).build(input_shape)
@@ -134,9 +126,7 @@ class UnifracEncoderV2(tf.keras.Model):
         encoder_output = self.encoder(dense_embeddings, mask=mask, training=training)
         ff_input = tf.reduce_sum(encoder_output, axis=1) / tf.reduce_sum(mask, axis=1)
 
-        output = ff_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.ff(
-            ff_input
-        )
+        output = self.ff(ff_input)
 
         print("UnifracEncoderV2 exit...")
         return self.output_activation(output)

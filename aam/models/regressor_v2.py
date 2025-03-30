@@ -37,7 +37,6 @@ class RegressorV2(tf.keras.Model):
         if self.built:
             print("RegressorV2 is already built")
             return
-        self.sample_norm = tf.keras.layers.LayerNormalization()
         self.count_encoder_1 = tf.keras.Sequential(
             [
                 tf.keras.layers.Reshape([-1, 1]),
@@ -52,8 +51,14 @@ class RegressorV2(tf.keras.Model):
             ],
             name="count_encoder",
         )
-        self._rezero = self.add_weight(
-            name="rezero",
+        self._count_rezero = self.add_weight(
+            name="count_rezero",
+            dtype=tf.float32,
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+        )
+        self._ff_rezero = self.add_weight(
+            name="ff_rezero",
             dtype=tf.float32,
             initializer=tf.keras.initializers.Zeros(),
             trainable=True,
@@ -137,16 +142,16 @@ class RegressorV2(tf.keras.Model):
         sample_embeddings = self.base_model(
             [sparse_indices, sample_embeddings], training=training
         )
-        sample_embeddings = self.sample_norm(sample_embeddings)
 
         dense_counts = tf.math.log1p(
             dense_counts / tf.reduce_sum(dense_counts, axis=-1, keepdims=True)
         )
+        count_output_1 = self.count_encoder_1(dense_counts, training=training)
+
+        sample_embeddings /= tf.cast(tf.shape(count_output_1)[1], dtype=tf.float32)
         sample_embeddings = tf.expand_dims(sample_embeddings, axis=1)
-        count_output_1 = sample_embeddings + self._rezero * self.count_encoder_1(
-            dense_counts, training=training
-        )
-        count_output_2 = self.count_encoder_2(count_output_1)
+        count_input_2 = sample_embeddings + self._count_rezero * count_output_1
+        count_output_2 = self.count_encoder_2(count_input_2)
         output_embeddings = self.regressor(count_output_2)
         print("RegressorV2 exit...")
         return output_embeddings
