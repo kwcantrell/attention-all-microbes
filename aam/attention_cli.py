@@ -482,7 +482,7 @@ def fit_unifrac_regressor(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha"],
-        # exclude_from_layer_adaptation=["rezero_alpha"],
+        exclude_from_layer_adaptation=["bias", "rezero_alpha"],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     model.compile(optimizer=optimizer, run_eagerly=False)

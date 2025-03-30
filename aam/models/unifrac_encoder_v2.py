@@ -44,6 +44,7 @@ class UnifracEncoderV2(tf.keras.Model):
         self.ff = tf.keras.Sequential(
             [
                 tf.keras.layers.Dense(embeddings[-1], activation="gelu"),
+                tf.keras.layers.Dense(embeddings[-1]),
             ]
         )
         self._rezero = self.add_weight(
