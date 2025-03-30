@@ -54,16 +54,11 @@ class NucleotideEncoderV5(tf.keras.Model):
 
         self.asv_ff = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(self.embedding_dim, activation="gelu"),
+                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1)),
+                FeedForward(),
                 tf.keras.layers.Dense(self.embedding_dim),
             ],
             name="asv_ff",
-        )
-        self._rezero = self.add_weight(
-            name="rezero_alpha",
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-            dtype=tf.float32,
         )
 
     def build(self, input_shape):

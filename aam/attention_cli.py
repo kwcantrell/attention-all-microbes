@@ -112,7 +112,7 @@ def fit_asv_encoder(
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
-    from aam.models.nucleotide_encoder_v5 import NucleotideEncoderV5
+    from aam.models.nucleotide_encoder_v6 import NucleotideEncoderV6
     from aam.models.utils import cos_decay_with_warmup
 
     # launch datasets first so they can begin to preprocess
@@ -139,7 +139,7 @@ def fit_asv_encoder(
         print("loading existing model...")
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model: tf.keras.Model = NucleotideEncoderV5(
+        model: tf.keras.Model = NucleotideEncoderV6(
             p_embedding_dim,
             p_max_bp,
             dropout_rate=p_dropout,
