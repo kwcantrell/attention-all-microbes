@@ -5,7 +5,9 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
-from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
+
+# from aam.models.conv_feedforward_v2 import ConvFeedForwardV2
+from aam.models.transformers import TransformerEncoder
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracEncoderV2")
@@ -32,20 +34,25 @@ class UnifracEncoderV2(tf.keras.Model):
         if self.built:
             print("UnifracEncoderV2 is already built")
             return
-
-        encoder_layers = []
-        for _ in range(self.num_encoder_layers):
-            encoder_layers += [
-                ConvFeedForwardV2(
-                    self.num_filters,
-                    self.kernel_size,
-                    conv_blocks=self.conv_blocks_per_layer,
-                )
+        sparse_indices, embeddings = input_shape
+        self.encoder = TransformerEncoder(
+            num_layers=8,
+            num_attention_heads=4,
+            intermediate_size=1024,
+            use_linear_bias=True,
+        )
+        self.ff = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(embeddings[-1], activation="gelu"),
             ]
-        # encoder_layers.append(
-        #     tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=-1))
-        # )
-        self.encoder = tf.keras.Sequential(encoder_layers, name="encoder")
+        )
+        self._rezero = self.add_weight(
+            name="rezero",
+            dtype=tf.float32,
+            initializer=tf.keras.initializers.Zeros(),
+            trainable=True,
+        )
+        self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(UnifracEncoderV2, self).build(input_shape)
 
     def predict_step(
@@ -73,11 +80,17 @@ class UnifracEncoderV2(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             output_embeddings = self(inputs, training=True)
-            loss = self._compute_loss(y, output_embeddings)
+            unscaled_loss = self._compute_loss(y, output_embeddings)
+            if self.compute_dtype == "float16":
+                loss = self.optimizer.get_scaled_loss(unscaled_loss)
+            else:
+                loss = unscaled_loss
         gradients = tape.gradient(loss, self.trainable_variables)
+        if self.compute_dtype == "float16":
+            gradients = self.optimizer.get_unscaled_gradients(gradients)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(loss)
+        self.loss_tracker.update_state(unscaled_loss)
         return {"loss": self.loss_tracker.result()}
 
     def test_step(
@@ -94,12 +107,38 @@ class UnifracEncoderV2(tf.keras.Model):
         self.loss_tracker.update_state(loss)
         return {"loss": self.loss_tracker.result()}
 
+    def _get_dense_embeddings(self, inputs):
+        sparse_indices, embeddings = inputs
+        sparse_indices = tf.cast(sparse_indices, dtype=tf.int32)
+        batch_dim = tf.reduce_max(sparse_indices[:, 0]) + 1
+        seq_dim = tf.reduce_max(sparse_indices[:, 1]) + 1
+        dense_embeddings = tf.scatter_nd(
+            sparse_indices,
+            embeddings,
+            [batch_dim, seq_dim, tf.shape(embeddings)[-1]],
+        )
+        mask = tf.scatter_nd(
+            sparse_indices,
+            tf.ones([tf.shape(sparse_indices)[0], 1], dtype=self.compute_dtype),
+            [batch_dim, seq_dim, 1],
+        )
+        return dense_embeddings, mask
+
     def call(
         self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        output_embeddings = self.encoder(inputs)
+        dense_embeddings, mask = self._get_dense_embeddings(inputs)
+        dense_embeddings = tf.cast(dense_embeddings, dtype=self.compute_dtype)
+
+        encoder_output = self.encoder(dense_embeddings, mask=mask, training=training)
+        ff_input = tf.reduce_sum(encoder_output, axis=1) / tf.reduce_sum(mask, axis=1)
+
+        output = ff_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.ff(
+            ff_input
+        )
+
         print("UnifracEncoderV2 exit...")
-        return output_embeddings
+        return self.output_activation(output)
 
     def get_config(self):
         config = super(UnifracEncoderV2, self).get_config()

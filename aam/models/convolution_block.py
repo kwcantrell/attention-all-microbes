@@ -44,6 +44,7 @@ class ConvolutionBlock(tf.keras.layers.Layer):
                     strides=self.kernel_size,
                     padding="same",
                 ),
+                tf.keras.layers.Activation("gelu"),
             ]
             self.res_pool = tf.keras.layers.MaxPool1D(
                 pool_size=self.kernel_size, strides=self.kernel_size, padding="same"
@@ -51,6 +52,12 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         self.conv_blocks = tf.keras.Sequential(conv_blocks, name="conv_blocks")
         if self.dropout_rate > 0.0:
             self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
+        # self._rezero = self.add_weight(
+        #     name="ff_rezero_alpha",
+        #     initializer=tf.keras.initializers.Zeros(),
+        #     trainable=True,
+        #     dtype=tf.float32,
+        # )
 
     def call(self, inputs, training=False):
         output = self.conv_blocks(inputs)
@@ -64,6 +71,9 @@ class ConvolutionBlock(tf.keras.layers.Layer):
         if self.pool:
             inputs = self.res_pool(inputs)
         output = inputs + output
+
+        if self.dropout_rate > 0.0:
+            output = self.dropout(output, training=training)
         return output
 
     def get_config(self):

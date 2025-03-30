@@ -122,21 +122,23 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end], 1.0)
 
     def _batch_data(self, batch_sample_ids, weights):
-        embeddings = []
+        sparse_indices, embeddings = [], []
         for batch_i, s_id in enumerate(batch_sample_ids):
             sample_data = self.rarefied_table.data(s_id, dense=False).tocoo()
             (obs_indices, _), sample_counts = sample_data.coords, sample_data.data
 
             count_mask = sample_counts > 0
             obs_indices = obs_indices[count_mask]
-            embeddings.append(np.mean(self.sequence_embeddings[obs_indices], axis=0))
+            sparse_indices.append([[batch_i, i] for i in range(len(obs_indices))])
+            embeddings.append(self.sequence_embeddings[obs_indices])
 
+        sparse_indices = np.vstack(sparse_indices, dtype=np.int32)
         embeddings = np.vstack(embeddings, dtype=np.float32)
         y_true = self.distances.filter(batch_sample_ids).data
         if self.return_sample_ids:
-            return embeddings, batch_sample_ids
+            return (sparse_indices, embeddings), batch_sample_ids
 
-        return embeddings, y_true
+        return (sparse_indices, embeddings), y_true
 
     def on_epoch_end(self):
         if (
@@ -145,7 +147,7 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         ):
             print("resampling dataset...")
             self.rarefied_table = self.table.subsample(self.rarefy_depth)
-            self.epochs_since_last_table = 0
+            self.epochs_since_last_table = 1
 
         if self.shuffle:
             np.random.shuffle(self.sample_ids)
@@ -161,8 +163,8 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         print("computing weighted unifrac distances...")
         self.distances = weighted_normalized(rarefied_table, self.tree)
 
-        print("finishing processing rarefied table...")
-        self._metadata = self._metadata.loc[rarefied_table.ids()]
+        # print("finishing processing rarefied table...")
+        # self._metadata = self._metadata.loc[rarefied_table.ids()]
         self.sample_ids = rarefied_table.ids()
         self.sample_indices = np.arange(len(self.sample_ids))
 
@@ -213,10 +215,10 @@ if __name__ == "__main__":
         return_sample_ids=False,
         drop_remainder=False,
     )
-    # model = UnifracEncoderV2(ug.sequence_embeddings.embeddings.shape[0])
-    # sparse_indicies = tf.TensorShape([None, 2])
-    # embeddings = tf.TensorShape([None, ug.sequence_embeddings.embeddings.shape[-1]])
-    # model.build([sparse_indicies, embeddings])
+    model = UnifracEncoderV2()
+    sparse_indicies = tf.TensorShape([None, 2])
+    embeddings = tf.TensorShape([None, ug.sequence_embeddings.embeddings.shape[-1]])
+    model.build([sparse_indicies, embeddings])
     x, y = ug[0]
-    # print(model(x))
-    print(x.shape)
+    e1 = model(x)
+    print(e1[0])

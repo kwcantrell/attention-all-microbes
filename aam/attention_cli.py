@@ -396,6 +396,7 @@ def fit_unifrac_regressor(
 ):
     import tensorflow_addons as tfa
 
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.unifrac_generator_v2 import UnifracGeneratorV2
     from aam.models.unifrac_encoder_v2 import UnifracEncoderV2
@@ -424,9 +425,9 @@ def fit_unifrac_regressor(
         "sequence_embeddings": i_sequence_embeddings,
         "sequence_labels": i_sequence_labels,
         "batch_size": p_batch_size,
-        "drop_remainder": False,
+        "drop_remainder": True,
         "normalize_sequence_embeddings": p_normalize_sequence_embeddings,
-        "gen_new_table_frequency": 3,
+        "gen_new_table_frequency": 1,
     }
 
     train_gen = UnifracGeneratorV2(
@@ -457,45 +458,33 @@ def fit_unifrac_regressor(
     else:
         model = UnifracEncoderV2()
 
+    sparse_indicies = tf.TensorShape([None, 2])
     embeddings = tf.TensorShape(
         [None, train_gen.sequence_embeddings.embeddings.shape[-1]]
     )
-    model.build(embeddings)
+    model.build([sparse_indicies, embeddings])
     model.summary()
     lr_scheduler = LAMBLRScheduler(
         cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps, 0.1)
     )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.9,
+        factor=0.5,
         patience=10,
         verbose=0,
         mode="auto",
         min_delta=0.000,
         cooldown=5,
-        min_lr=0.0,
+        min_lr=1e-6,
     )
 
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
-        # exclude_from_weight_decay=[
-        #     "bias",
-        #     "rezero_alpha",
-        #     "layer_norm",
-        #     "LayerNorm",
-        #     "batch_norm",
-        #     "BatchNorm",
-        # ],
-        # exclude_from_layer_adaptation=[
-        #     "bias",
-        #     "rezero_alpha",
-        #     "layer_norm",
-        #     "LayerNorm",
-        #     "batch_norm",
-        #     "BatchNorm",
-        # ],
+        exclude_from_weight_decay=["bias", "rezero_alpha"],
+        # exclude_from_layer_adaptation=["rezero_alpha"],
     )
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     model.compile(optimizer=optimizer, run_eagerly=False)
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
@@ -511,7 +500,7 @@ def fit_unifrac_regressor(
         #     start_from_epoch=p_early_stop_warmup,
         # ),
         # lr_scheduler,
-        plateau,
+        # plateau,
         model_saver,
     ]
     model.fit(
@@ -621,7 +610,7 @@ def fit_new_regressor(
         metadata=train_df,
         shuffle=True,
         gen_new_tables=True,
-        gen_new_table_frequency=3,
+        gen_new_table_frequency=1,
         epochs=p_epochs,
         batch_size=p_batch_size,
         **common_kwargs,
@@ -648,14 +637,15 @@ def fit_new_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        # base_model = tf.keras.models.load_model(i_base_model, compile=False)
-        model = RegressorV2(train_gen.shift, train_gen.scale)
+        base_model = tf.keras.models.load_model(i_base_model, compile=False)
+        model = RegressorV2(train_gen.shift, train_gen.scale, base_model)
 
+    sparse_indices = tf.TensorShape([None, 2])
     token_shape = tf.TensorShape(
         [None, train_gen.sample_embeddings.embeddings.shape[-1]]
     )
     dense_count = tf.TensorShape([None, train_gen.num_asvs])
-    model.build([token_shape, dense_count])
+    model.build([sparse_indices, token_shape, dense_count])
     model.summary()
     # lr_scheduler = LAMBLRScheduler(
     #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps)
@@ -674,22 +664,7 @@ def fit_new_regressor(
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
-        exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "batch_norm",
-            "BatchNorm",
-        ],
-        exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-            "batch_norm",
-            "BatchNorm",
-        ],
+        # exclude_from_weight_decay=["bias", "rezero_alpha"],
     )
     # optimizer = tf.keras.optimizers.AdamW(
     #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
@@ -718,7 +693,7 @@ def fit_new_regressor(
         #     patience=p_patience,
         #     start_from_epoch=p_early_stop_warmup,
         # ),
-        plateau,
+        # plateau,
         model_saver,
         MeanAbsoluteError(
             val_gen,

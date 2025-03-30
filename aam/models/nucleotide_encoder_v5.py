@@ -141,6 +141,11 @@ class NucleotideEncoderV5(tf.keras.Model):
         }
         return output_trackers
 
+    def reset_rezero(self):
+        print("NucleotideEncoderV5 rezero reset")
+        self.asv_encoder.reset_rezero()
+        self._rezero.assign(tf.cast(0.0, dtype=tf.float32))
+
     def call(
         self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:

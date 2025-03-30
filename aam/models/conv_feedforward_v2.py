@@ -34,7 +34,11 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         else:
             conv_layers = []
         for i in range(self.conv_blocks):
-            conv_layers += [ConvolutionBlock(self.filters, self.kernel_size)]
+            conv_layers += [
+                ConvolutionBlock(
+                    self.filters, self.kernel_size, dropout_rate=self.conv_dropout_rate
+                )
+            ]
         self.conv = tf.keras.Sequential(conv_layers, name="conv")
 
         ff_layers = [FeedForward(self.pool)]
@@ -51,6 +55,8 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         elif self.outdim is not None:
             self.res_pool = tf.keras.layers.Dense(self.outdim)
 
+        if self.ff_dropout_rate > 0.0:
+            self.ff_dropout = tf.keras.layers.Dropout(self.ff_dropout_rate)
         self._rezero = self.add_weight(
             name="ff_rezero_alpha",
             initializer=tf.keras.initializers.Zeros(),
@@ -59,8 +65,11 @@ class ConvFeedForwardV2(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        ff_input = self.conv(inputs)
-        return inputs + self._rezero * self.ff(ff_input)
+        ff_input = self.conv(inputs, training=training)
+        ff_output = self.ff(ff_input, training=training)
+        if self.ff_dropout_rate > 0:
+            ff_output = self.ff_dropout(ff_output, training=training)
+        return inputs + self._rezero * ff_output
 
     def get_config(self):
         return (
