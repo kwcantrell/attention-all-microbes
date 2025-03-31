@@ -469,12 +469,12 @@ def fit_unifrac_regressor(
     )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.5,
+        factor=0.9,
         patience=10,
         verbose=0,
         mode="auto",
         min_delta=0.000,
-        cooldown=5,
+        cooldown=0,
         min_lr=1e-6,
     )
 
@@ -500,7 +500,7 @@ def fit_unifrac_regressor(
         #     start_from_epoch=p_early_stop_warmup,
         # ),
         # lr_scheduler,
-        # plateau,
+        plateau,
         model_saver,
     ]
     model.fit(
@@ -610,7 +610,7 @@ def fit_new_regressor(
         metadata=train_df,
         shuffle=True,
         gen_new_tables=True,
-        gen_new_table_frequency=3,
+        gen_new_table_frequency=1,
         epochs=p_epochs,
         batch_size=p_batch_size,
         **common_kwargs,

@@ -42,7 +42,7 @@ class PoolingBlock(tf.keras.layers.Layer):
     def call(self, inputs, training=False):
         pooled_inputs = self.res_pool(inputs)
         output = pooled_inputs + self.conv_block(inputs)
-        return output
+        return tf.reduce_mean(output, axis=-1, keepdims=True)
 
     def get_config(self):
         config = super(PoolingBlock, self).get_config()

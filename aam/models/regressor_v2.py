@@ -18,7 +18,7 @@ class RegressorV2(tf.keras.Model):
         base_mode,
         num_filters=256,
         kernel_size=3,
-        pooling_size=256,
+        pooling_size=512,
         **kwargs,
     ):
         super(RegressorV2, self).__init__(**kwargs)
