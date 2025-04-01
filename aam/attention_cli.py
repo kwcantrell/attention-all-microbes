@@ -168,12 +168,7 @@ def fit_asv_encoder(
             "layer_norm",
             "LayerNorm",
         ],
-        exclude_from_layer_adaptation=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-        ],
+        exclude_from_layer_adaptation=["rezero_alpha"],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
@@ -482,7 +477,7 @@ def fit_unifrac_regressor(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha"],
-        exclude_from_layer_adaptation=["bias", "rezero_alpha"],
+        exclude_from_layer_adaptation=["rezero_alpha"],
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     model.compile(optimizer=optimizer, run_eagerly=False)
@@ -652,11 +647,11 @@ def fit_new_regressor(
     # )
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
-        factor=0.5,
-        patience=5,
+        factor=0.9,
+        patience=10,
         verbose=0,
         mode="auto",
-        min_delta=0.000,
+        min_delta=1e-6,
         cooldown=0,
         min_lr=0.0,
     )
@@ -664,7 +659,8 @@ def fit_new_regressor(
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
-        # exclude_from_weight_decay=["bias", "rezero_alpha"],
+        exclude_from_weight_decay=["bias", "rezero_alpha"],
+        exclude_from_layer_adaptation=["bias", "rezero_alpha"],
     )
     # optimizer = tf.keras.optimizers.AdamW(
     #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),

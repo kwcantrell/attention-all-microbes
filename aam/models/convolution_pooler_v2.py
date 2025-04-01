@@ -15,13 +15,25 @@ class PoolingBlock(tf.keras.layers.Layer):
         self.conv_block = tf.keras.Sequential(
             [
                 tf.keras.layers.Conv1D(
+                    filters=8,
+                    kernel_size=3,
+                    strides=1,
+                    padding="same",
+                ),
+                tf.keras.layers.Activation("gelu"),
+                tf.keras.layers.Conv1D(
+                    filters=8,
+                    kernel_size=3,
+                    strides=1,
+                    padding="same",
+                ),
+                tf.keras.layers.Activation("gelu"),
+                tf.keras.layers.Conv1D(
                     filters=self.filters,
                     kernel_size=self.kernel_size,
                     strides=self.kernel_size,
                     padding="same",
                 ),
-                tf.keras.layers.Activation("gelu"),
-                tf.keras.layers.Dense(units=self.filters),
                 tf.keras.layers.Activation("gelu"),
             ],
             name="conv_block",
@@ -41,8 +53,8 @@ class PoolingBlock(tf.keras.layers.Layer):
 
     def call(self, inputs, training=False):
         pooled_inputs = self.res_pool(inputs)
-        output = pooled_inputs + self.conv_block(inputs)
-        return tf.reduce_mean(output, axis=-1, keepdims=True)
+        output = pooled_inputs + self._rezero * self.conv_block(inputs)
+        return output
 
     def get_config(self):
         config = super(PoolingBlock, self).get_config()
