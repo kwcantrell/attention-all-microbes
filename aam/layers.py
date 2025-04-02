@@ -144,7 +144,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        loss = self._compute_nuc_loss(positions, output)
+        loss = self._compute_nuc_loss(positions[observe_mask], output[observe_mask])
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
 

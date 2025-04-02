@@ -422,7 +422,7 @@ def fit_unifrac_regressor(
         "batch_size": p_batch_size,
         "drop_remainder": True,
         "normalize_sequence_embeddings": p_normalize_sequence_embeddings,
-        "gen_new_table_frequency": 1,
+        "gen_new_table_frequency": 3,
     }
 
     train_gen = UnifracGeneratorV2(
@@ -465,7 +465,7 @@ def fit_unifrac_regressor(
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
         factor=0.9,
-        patience=10,
+        patience=5,
         verbose=0,
         mode="auto",
         min_delta=0.000,
