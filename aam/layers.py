@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow_models as tfm
 
 from aam.losses import global_embedding_l2_regulization
+from aam.models.feedforward import FeedForward
 from aam.models.transformers import TransformerEncoder
 from aam.utils import create_random_mask, float_mask
 
@@ -94,79 +95,53 @@ class ASVEncoder(tf.keras.layers.Layer):
             use_linear_bias=self.use_linear_bias,
         )
 
-        self.nuc_pred = tf.keras.layers.Dense(
-            self.num_tokens, use_bias=True, dtype=tf.float32
+        self.nuc_pred = tf.keras.Sequential(
+            [
+                FeedForward(),
+                tf.keras.layers.Dense(self.num_tokens, use_bias=True, dtype=tf.float32),
+            ]
         )
         super().build(input_shape)
+
+    def randomize_nucleotides(self, nucleotides):
+        num_nuc = tf.shape(nucleotides)[0]
+        nuc_indices = tf.range(num_nuc, dtype=tf.int32)
+        random_indices = tf.random.shuffle(nuc_indices)
+
+        # mark 20 percent of the nucleotides as randomized
+        randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.1, dtype=tf.int32)
+        random_mask = (
+            create_random_mask([num_nuc], percent=0.03, dtype=tf.int32)
+            * randomize_sequence
+        )
+
+        # zero out  the randomized bloxks
+        output_indices = nuc_indices * (1 - random_mask)
+
+        # add the randomized indices
+        output_indices = output_indices + random_indices * random_mask
+        return tf.gather(nucleotides, output_indices), output_indices
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
-        inputs_shape = tf.shape(inputs)
 
-        # mask for non-pad tokens (used during the creation of random_mask)
-        valid_mask = tf.cast(inputs > 0, dtype=tf.int32)
-
-        # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
-        masked_inputs = inputs
-
-        # the percentage of nucleotides per asv to mark
-        mark_percent = 0.5
-
-        # of the marked nucleotides, how much to either remain the same or randomize
-        mask_percent = 0.05
-
-        # # of the percenage of non_mask to remain the same
-        # change_mask_percent = 0.5
-        marked_mask = (
-            create_random_mask(inputs_shape, percent=mark_percent, dtype=tf.int32)
-            * valid_mask
+        shuffled_input, random_mask = tf.map_fn(
+            self.randomize_nucleotides,
+            inputs,
+            fn_output_signature=(
+                tf.TensorSpec([None], dtype=tf.int32),
+                tf.TensorSpec([None], dtype=tf.int32),
+            ),
         )
-        if include_bert_random_mask and training and self.trainable:
-            print("applying bert mask")
-            # of the masked tokens, select the ones to either keep or change to
-            # random token
-            mask = (
-                create_random_mask(inputs_shape, percent=mask_percent, dtype=tf.int32)
-                * marked_mask
-            )
 
-            # # of the 20% of masked tokens to either keep or change, select 50%  to keep
-            # # and 50% to change
-            # random_change = create_random_mask(
-            #     inputs_shape, percent=change_mask_percent, dtype=tf.int32
-            # )
-
-            # # tokens to keep the same
-            # random_keep = random_non_mask * random_change
-
-            # # tokens to randomly change
-            # random_change = (1 - random_keep) * valid_mask * random_non_mask
-
-            # step 1: change all marked_mask positions to <MASK> token
-            masked_input = masked_inputs * (1 - mask)
-
-            # # step 2: change 10% of <MASK> tokens back to original token
-            # masked_input = (
-            #     masked_input + masked_inputs * random_keep * marked_mask * valid_mask
-            # )
-
-            # # step 3: change 10% of <MASK> tokens to random token
-            # random_tokens = tf.random.uniform(
-            #     tf.shape(masked_inputs), minval=1, maxval=5, dtype=tf.int32
-            # )
-
-            # # step 4: create masked input
-            # masked_input = (
-            #     masked_input + random_tokens * random_change * marked_mask * valid_mask
-            # )
-            masked_inputs = masked_input
-
-        # convert random_mask to boolean mask
-        random_mask = marked_mask > 0
+        if training:
+            emb_inputs = shuffled_input
+        else:
+            emb_inputs = inputs
 
         # get nucleotides embeddigns
-        asv_input = self.emb_layer(masked_inputs)
+        asv_input = self.emb_layer(emb_inputs)
 
         # only add positional embeddings if using vanilla Transforer
         if not self.use_linear_bias:
@@ -178,17 +153,14 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        asv_tokens = inputs
-        loss = self._compute_nuc_loss(asv_tokens, output, random_mask)
+        loss = self._compute_nuc_loss(inputs, output)
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
 
         print("ASVEncoder exit...", self.trainable)
         return output
 
-    def _compute_nuc_loss(self, tokens, embeddings, mask):
-        tokens = tokens[mask]
-        embeddings = embeddings[mask]
+    def _compute_nuc_loss(self, tokens, embeddings):
         nuc_pred = self.nuc_pred(embeddings)
         return self.nuc_loss(tokens, nuc_pred)
 

@@ -55,8 +55,13 @@ class RegressorV2(tf.keras.Model):
         count_extractor_output_shape = self.count_extractor.compute_output_shape(
             dense_counts
         )
-        self.block_pred = tf.keras.layers.Dense(
-            count_extractor_output_shape[1], activation="softmax"
+        self.block_pred = tf.keras.Sequential(
+            [
+                FeedForward(),
+                tf.keras.layers.Dense(
+                    count_extractor_output_shape[1], activation="softmax"
+                ),
+            ]
         )
 
         self.encoder = TransformerEncoder(intermediate_size=1024, name="encoder")
@@ -92,7 +97,7 @@ class RegressorV2(tf.keras.Model):
     def _compute_loss(self, y, output):
         output, block, mask, block_prob = output
         mse = tf.reduce_mean(tf.abs(y - output))
-        block = tf.reduce_mean(self.block_entropy(block[mask], block_prob[mask]))
+        block = tf.reduce_mean(self.block_entropy(block, block_prob))
         return mse, block
 
     def _compute_metric(self, y, output):
@@ -158,18 +163,18 @@ class RegressorV2(tf.keras.Model):
         random_indices = tf.random.shuffle(block_indices)
 
         # mark 20 percent of the blocks as randomized
-        random_mask = create_random_mask([num_blocks], percent=0.25, dtype=tf.int32)
-
-        # of the randomized blocks, do not change 10 percent
-        random_unchange = create_random_mask([num_blocks], percent=0.9, dtype=tf.int32)
-        random_change = random_mask * random_unchange
+        randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.1, dtype=tf.int32)
+        random_mask = (
+            create_random_mask([num_blocks], percent=0.1, dtype=tf.int32)
+            * randomize_sequence
+        )
 
         # zero out  the randomized bloxks
-        output_indices = block_indices * (1 - random_change)
+        output_indices = block_indices * (1 - random_mask)
 
         # add the randomized indices
-        output_indices = output_indices + random_indices * random_change
-        return tf.gather(blocks, random_indices), random_mask > 0
+        output_indices = output_indices + random_indices * random_mask
+        return tf.gather(blocks, output_indices), output_indices
 
     def call(
         self, inputs, training: bool = False
@@ -194,22 +199,24 @@ class RegressorV2(tf.keras.Model):
         encoder_shape = tf.shape(encoder_input)
         batch_dim = encoder_shape[0]
         num_blocks = encoder_shape[1]
-        rand_indices = tf.range(num_blocks, dtype=tf.int32)
-        rand_indices = tf.repeat(
-            tf.expand_dims(rand_indices, axis=0),
+        indices = tf.range(num_blocks, dtype=tf.int32)
+        indices = tf.repeat(
+            tf.expand_dims(indices, axis=0),
             repeats=batch_dim,
             axis=0,
         )
-        shuffled_input, random_mask = tf.map_fn(
+        shuffled_input, output_indices = tf.map_fn(
             self.randomize_blocks,
             encoder_input,
             fn_output_signature=(
                 tf.TensorSpec([None, 256], dtype=tf.float32),
-                tf.TensorSpec([None], dtype=tf.bool),
+                tf.TensorSpec([None], dtype=tf.int32),
             ),
         )
         if training:
             encoder_input = shuffled_input
+        else:
+            output_indices = indices
 
         encoder_output = self.encoder(encoder_input)
         block_pred = self.block_pred(encoder_output)
@@ -218,8 +225,8 @@ class RegressorV2(tf.keras.Model):
         print("RegressorV2 exit...")
         return (
             output,
-            rand_indices,
-            random_mask,
+            indices,
+            tf.cast(indices == output_indices, dtype=tf.float32),
             block_pred,
         )
 
