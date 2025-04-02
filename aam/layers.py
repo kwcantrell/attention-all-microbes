@@ -103,29 +103,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
         super().build(input_shape)
 
-    def randomize_nucleotides(self, nucleotides):
-        num_nuc = tf.shape(nucleotides)[0]
-        nuc_indices = tf.range(num_nuc, dtype=tf.int32)
-        random_indices = tf.random.shuffle(nuc_indices)
-
-        # mark 20 percent of the nucleotides as randomized
-        randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.1, dtype=tf.int32)
-        random_mask = (
-            create_random_mask([num_nuc], percent=0.03, dtype=tf.int32)
-            * randomize_sequence
-        )
-
-        observe_mask = (
-            create_random_mask([num_nuc], percent=0.15, dtype=tf.int32) + random_mask
-        )
-        observe_mask = observe_mask > 0
-        # zero out  the randomized bloxks
-        output_indices = nuc_indices * (1 - random_mask)
-
-        # add the randomized indices
-        output_indices = output_indices + random_indices * random_mask
-        return tf.gather(nucleotides, output_indices), observe_mask
-
     def call(self, inputs, include_bert_random_mask=True, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
@@ -138,6 +115,27 @@ class ASVEncoder(tf.keras.layers.Layer):
                 tf.TensorSpec([None], dtype=tf.bool),
             ),
         )
+
+        num_nuc = tf.shape(inputs)[0]
+        random_indices = tf.random.shuffle(inputs)
+
+        # mark 20 percent of the nucleotides as randomized
+        randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.1, dtype=tf.int32)
+        random_mask = (
+            create_random_mask([num_nuc], percent=0.03, dtype=tf.int32)
+            * randomize_sequence
+        )
+
+        observe_mask = (
+            create_random_mask([num_nuc], percent=0.15, dtype=tf.int32) + random_mask
+        )
+        observe_mask = observe_mask > 0
+
+        # zero out  the randomized bloxks
+        shuffled_input = inputs * (1 - random_mask)
+
+        # add the randomized indices
+        shuffled_input = shuffled_input + random_indices * random_mask
 
         if training:
             emb_inputs = shuffled_input
