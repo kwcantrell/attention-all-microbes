@@ -120,8 +120,8 @@ class RegressorGeneratorV2(tf.keras.utils.Sequence):
 
             obs_indices = np.squeeze(np.argwhere(counts > 0), axis=-1)
             sparse_indices.append([[batch_i, i] for i in range(len(obs_indices))])
-            # embeddings.append(self.sequence_embeddings[obs_indices])
-            embeddings.append(np.mean(self.sequence_embeddings[obs_indices], axis=0))
+            embeddings.append(self.sequence_embeddings[obs_indices])
+            # embeddings.append(np.mean(self.sequence_embeddings[obs_indices], axis=0))
             dense_counts.append(counts)
 
         dense_counts = np.vstack(dense_counts)

@@ -176,12 +176,12 @@ class RegressorV2(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         sparse_indices, sample_embeddings, dense_counts = inputs
 
-        # sample_embeddings = self.base_model(
-        #     [sparse_indices, sample_embeddings], training=training
-        # )
-        # sample_embeddings = sample_embeddings / tf.norm(
-        #     sample_embeddings, axis=-1, keepdims=True
-        # )
+        sample_embeddings = self.base_model(
+            [sparse_indices, sample_embeddings], training=training
+        )
+        sample_embeddings = sample_embeddings / tf.norm(
+            sample_embeddings, axis=-1, keepdims=True
+        )
         dense_counts = tf.cast(dense_counts, dtype=tf.float32)
         dense_counts = tf.math.log1p(
             dense_counts / tf.reduce_sum(dense_counts, axis=-1, keepdims=True)

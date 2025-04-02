@@ -114,7 +114,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         mask_percent = 0.05
 
         # of the marked nucleotides, how much to either remain the same or randomize
-        non_mask_percent = 0.5
+        non_mask_percent = 0.99
 
         # of the percenage of non_mask to remain the same
         change_mask_percent = 0.5
