@@ -114,7 +114,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
 
         observe_mask = (
-            create_random_mask(input_shape, percent=0.15, dtype=tf.int32) + random_mask
+            create_random_mask(input_shape, percent=0.1, dtype=tf.int32) + random_mask
         )
         observe_mask = observe_mask > 0
 
