@@ -107,15 +107,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
-        shuffled_input, observe_mask = tf.map_fn(
-            self.randomize_nucleotides,
-            inputs,
-            fn_output_signature=(
-                tf.TensorSpec([None], dtype=tf.int32),
-                tf.TensorSpec([None], dtype=tf.bool),
-            ),
-        )
-
         num_nuc = tf.shape(inputs)[0]
         random_indices = tf.random.shuffle(inputs)
 
