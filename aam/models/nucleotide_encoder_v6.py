@@ -89,15 +89,17 @@ class NucleotideEncoderV6(tf.keras.Model):
         inputs, y_true = data
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
-            loss, asv_loss = self._compute_loss(y_true, embeddings)
+            unscaled_loss, asv_loss = self._compute_loss(y_true, embeddings)
             if self.include_bert_loss:
                 nuc_loss = tf.reduce_sum(self.losses)
             else:
                 nuc_loss = 0.0
-            loss += nuc_loss
+            unscaled_loss += nuc_loss
 
             if self.compute_dtype == "float16":
-                loss = self.optimizer.get_scaled_loss(loss)
+                loss = self.optimizer.get_scaled_loss(unscaled_loss)
+            else:
+                loss = unscaled_loss
 
         gradients = tape.gradient(loss, self.trainable_variables)
         if self.compute_dtype == "float16":
