@@ -93,10 +93,10 @@ class ASVEncoder(tf.keras.layers.Layer):
             use_linear_bias=self.use_linear_bias,
         )
 
-        self.nuc_pred = tf.keras.Sequential(
-            [FeedForward(), tf.keras.layers.Dense(2, dtype=tf.float32)]
+        self.nuc_pred = tf.keras.Sequential([FeedForward(), tf.keras.layers.Dense(2)])
+        self.nuc_output_activation = tf.keras.layers.Activation(
+            "softmax", dtype=tf.float32
         )
-        self.nuc_output_activation = tf.keras.layers.Activation("softmax")
         super().build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
