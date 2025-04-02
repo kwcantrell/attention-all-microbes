@@ -63,9 +63,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
-        self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy(
-            ignore_class=0, from_logits=True, reduction="none"
-        )
+        self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy()
 
     def build(self, input_shape):
         if self.built:
@@ -98,6 +96,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.nuc_pred = tf.keras.Sequential(
             [FeedForward(), tf.keras.layers.Dense(2, dtype=tf.float32)]
         )
+        self.nuc_output_activation = tf.keras.layers.Activation("softmax")
         super().build(input_shape)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
@@ -153,7 +152,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         return output
 
     def _compute_nuc_loss(self, tokens, embeddings):
-        nuc_pred = self.nuc_pred(embeddings)
+        nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
         return self.nuc_loss(tokens, nuc_pred)
 
     def get_config(self):
