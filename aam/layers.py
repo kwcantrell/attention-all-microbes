@@ -120,19 +120,16 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # add the randomized indices
         output_indices = output_indices + random_indices * random_mask
-        return tf.gather(nucleotides, output_indices), output_indices
+        return tf.gather(nucleotides, output_indices)
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
-        shuffled_input, random_mask = tf.map_fn(
+        shuffled_input = tf.map_fn(
             self.randomize_nucleotides,
             inputs,
-            fn_output_signature=(
-                tf.TensorSpec([None], dtype=tf.int32),
-                tf.TensorSpec([None], dtype=tf.int32),
-            ),
+            fn_output_signature=tf.TensorSpec([None], dtype=tf.int32),
         )
 
         if training:
