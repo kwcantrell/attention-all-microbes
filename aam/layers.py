@@ -109,22 +109,34 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # select 15% of tokens to "mask" i.e. tokens to use to compute nuc_loss
         masked_inputs = inputs
+
+        # the percentage of nucleotides per asv to mark
+        mask_percent = 0.05
+
+        # of the marked nucleotides, how much to either remain the same or randomize
+        non_mask_percent = 0.5
+
+        # of the percenage of non_mask to remain the same
+        change_mask_percent = 0.5
         random_mask = (
-            create_random_mask(inputs_shape, percent=0.15, dtype=tf.int32) * valid_mask
+            create_random_mask(inputs_shape, percent=mask_percent, dtype=tf.int32)
+            * valid_mask
         )
         if include_bert_random_mask and training and self.trainable:
             print("applying bert mask")
-            # of the masked tokens, select 20% to either keep or change to
+            # of the masked tokens, select the ones to either keep or change to
             # random token
             random_non_mask = (
-                create_random_mask(inputs_shape, percent=0.2, dtype=tf.int32)
+                create_random_mask(
+                    inputs_shape, percent=non_mask_percent, dtype=tf.int32
+                )
                 * random_mask
             )
 
             # of the 20% of masked tokens to either keep or change, select 50%  to keep
             # and 50% to change
             random_change = create_random_mask(
-                inputs_shape, percent=0.5, dtype=tf.int32
+                inputs_shape, percent=change_mask_percent, dtype=tf.int32
             )
 
             # tokens to keep the same

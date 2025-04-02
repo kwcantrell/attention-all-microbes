@@ -27,7 +27,6 @@ class PoolingBlock(tf.keras.layers.Layer):
                     strides=1,
                     padding="same",
                 ),
-                tf.keras.layers.Activation("gelu"),
                 tf.keras.layers.Conv1D(
                     filters=self.filters,
                     kernel_size=self.kernel_size,

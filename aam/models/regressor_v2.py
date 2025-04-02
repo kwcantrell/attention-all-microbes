@@ -8,6 +8,7 @@ from aam.losses import PairwiseLoss
 from aam.models.convolution_pooler_v2 import NonPoolingBlock, PoolingBlock
 from aam.models.feedforward import FeedForward
 from aam.models.transformers import TransformerEncoder
+from aam.utils import create_random_mask
 
 
 @tf.keras.saving.register_keras_serializable(package="RegressorV2")
@@ -19,7 +20,7 @@ class RegressorV2(tf.keras.Model):
         base_model,
         num_filters=256,
         kernel_size=3,
-        pooling_size=512,
+        pooling_size=2048,
         **kwargs,
     ):
         super(RegressorV2, self).__init__(**kwargs)
@@ -47,9 +48,6 @@ class RegressorV2(tf.keras.Model):
             [
                 tf.keras.layers.Reshape([-1, 1]),
                 PoolingBlock(self.num_filters, self.pooling_size),
-                # tf.keras.layers.Lambda(
-                #     lambda x: tf.reduce_mean(x, axis=-1, keepdims=True)
-                # ),
             ],
             name="count_extractor",
         )
@@ -86,19 +84,19 @@ class RegressorV2(tf.keras.Model):
         ],
     ):
         inputs, y = data
-        output, _, _ = self(inputs, training=False)
+        output, _, _, _ = self(inputs, training=False)
         y = y * self.scale + self.shift
         output = output * self.scale + self.shift
         return output, y
 
     def _compute_loss(self, y, output):
-        output, block, block_prob = output
+        output, block, mask, block_prob = output
         mse = tf.reduce_mean(tf.abs(y - output))
         block = tf.reduce_mean(self.block_entropy(block, block_prob))
         return mse, block
 
     def _compute_metric(self, y, output):
-        output, block, block_pred = output
+        output, block, mask, block_pred = output
         y = y * self.scale + self.shift
         output = output * self.scale + self.shift
         mae = tf.reduce_mean(tf.abs(y - output))
@@ -154,43 +152,74 @@ class RegressorV2(tf.keras.Model):
             "learning_rate": self.optimizer.learning_rate,
         }
 
+    def randomize_blocks(self, blocks):
+        num_blocks = tf.shape(blocks)[0]
+        block_indices = tf.range(num_blocks, dtype=tf.int32)
+        random_indices = tf.random.shuffle(block_indices)
+
+        # # mark 20 percent of the blocks as randomized
+        # random_mask = create_random_mask([num_blocks], percent=0.25, dtype=tf.int32)
+
+        # # of the randomized blocks, do not change 10 percent
+        # random_unchange = create_random_mask([num_blocks], percent=0.9, dtype=tf.int32)
+        # random_change = random_mask * random_unchange
+
+        # # zero out  the randomized bloxks
+        # output_indices = block_indices * (1 - random_change)
+
+        # # add the randomized indices
+        # output_indices = output_indices + random_indices * random_change
+        return tf.gather(blocks, random_indices), random_indices > 0
+
     def call(
         self, inputs, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         sparse_indices, sample_embeddings, dense_counts = inputs
-        sample_embeddings = self.base_model(
-            [sparse_indices, sample_embeddings], training=training
-        )
-        sample_embeddings = sample_embeddings / tf.norm(
-            sample_embeddings, axis=-1, keepdims=True
-        )
+
+        # sample_embeddings = self.base_model(
+        #     [sparse_indices, sample_embeddings], training=training
+        # )
+        # sample_embeddings = sample_embeddings / tf.norm(
+        #     sample_embeddings, axis=-1, keepdims=True
+        # )
         dense_counts = tf.cast(dense_counts, dtype=tf.float32)
-        dense_counts = tf.math.log1p(dense_counts) - tf.math.log1p(
-            tf.reduce_sum(dense_counts, axis=-1, keepdims=True)
+        dense_counts = tf.math.log1p(
+            dense_counts / tf.reduce_sum(dense_counts, axis=-1, keepdims=True)
         )
         dense_counts = tf.cast(dense_counts, dtype=self.compute_dtype)
 
         extractor_output = self.count_extractor(dense_counts, training=training)
         sample_embeddings = tf.expand_dims(sample_embeddings, axis=1)
-        encoder_input = sample_embeddings + self._rezero * extractor_output
-
+        encoder_input = sample_embeddings + extractor_output
         encoder_shape = tf.shape(encoder_input)
         batch_dim = encoder_shape[0]
         num_blocks = encoder_shape[1]
         rand_indices = tf.range(num_blocks, dtype=tf.int32)
-        if training:
-            rand_indices = tf.random.shuffle(rand_indices)
-        shuffled_input = tf.map_fn(
-            lambda x: tf.gather(x, rand_indices), encoder_input, dtype=tf.float32
+        rand_indices = tf.repeat(
+            tf.expand_dims(rand_indices, axis=0),
+            repeats=batch_dim,
+            axis=0,
         )
-        encoder_output = self.encoder(shuffled_input)
+        shuffled_input, random_mask = tf.map_fn(
+            self.randomize_blocks,
+            encoder_input,
+            fn_output_signature=(
+                tf.TensorSpec([None, 256], dtype=tf.float32),
+                tf.TensorSpec([None], dtype=tf.bool),
+            ),
+        )
+        if training:
+            encoder_input = shuffled_input
+
+        encoder_output = self.encoder(encoder_input)
         block_pred = self.block_pred(encoder_output)
 
         output = self.regressor(encoder_output)
         print("RegressorV2 exit...")
         return (
             output,
-            tf.repeat(tf.expand_dims(rand_indices, axis=0), repeats=batch_dim, axis=0),
+            rand_indices,
+            random_mask,
             block_pred,
         )
 
