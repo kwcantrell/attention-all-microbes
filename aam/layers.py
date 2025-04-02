@@ -111,61 +111,59 @@ class ASVEncoder(tf.keras.layers.Layer):
         masked_inputs = inputs
 
         # the percentage of nucleotides per asv to mark
-        mask_percent = 0.05
+        mark_percent = 0.5
 
         # of the marked nucleotides, how much to either remain the same or randomize
-        non_mask_percent = 0.99
+        mask_percent = 0.05
 
-        # of the percenage of non_mask to remain the same
-        change_mask_percent = 0.5
-        random_mask = (
-            create_random_mask(inputs_shape, percent=mask_percent, dtype=tf.int32)
+        # # of the percenage of non_mask to remain the same
+        # change_mask_percent = 0.5
+        marked_mask = (
+            create_random_mask(inputs_shape, percent=mark_percent, dtype=tf.int32)
             * valid_mask
         )
         if include_bert_random_mask and training and self.trainable:
             print("applying bert mask")
             # of the masked tokens, select the ones to either keep or change to
             # random token
-            random_non_mask = (
-                create_random_mask(
-                    inputs_shape, percent=non_mask_percent, dtype=tf.int32
-                )
-                * random_mask
+            mask = (
+                create_random_mask(inputs_shape, percent=mask_percent, dtype=tf.int32)
+                * marked_mask
             )
 
-            # of the 20% of masked tokens to either keep or change, select 50%  to keep
-            # and 50% to change
-            random_change = create_random_mask(
-                inputs_shape, percent=change_mask_percent, dtype=tf.int32
-            )
+            # # of the 20% of masked tokens to either keep or change, select 50%  to keep
+            # # and 50% to change
+            # random_change = create_random_mask(
+            #     inputs_shape, percent=change_mask_percent, dtype=tf.int32
+            # )
 
-            # tokens to keep the same
-            random_keep = random_non_mask * random_change
+            # # tokens to keep the same
+            # random_keep = random_non_mask * random_change
 
-            # tokens to randomly change
-            random_change = (1 - random_keep) * valid_mask * random_non_mask
+            # # tokens to randomly change
+            # random_change = (1 - random_keep) * valid_mask * random_non_mask
 
-            # step 1: change all random_mask positions to <MASK> token
-            masked_input = masked_inputs * (1 - random_mask)
+            # step 1: change all marked_mask positions to <MASK> token
+            masked_input = masked_inputs * (1 - mask)
 
-            # step 2: change 10% of <MASK> tokens back to original token
-            masked_input = (
-                masked_input + masked_inputs * random_keep * random_mask * valid_mask
-            )
+            # # step 2: change 10% of <MASK> tokens back to original token
+            # masked_input = (
+            #     masked_input + masked_inputs * random_keep * marked_mask * valid_mask
+            # )
 
-            # step 3: change 10% of <MASK> tokens to random token
-            random_tokens = tf.random.uniform(
-                tf.shape(masked_inputs), minval=1, maxval=5, dtype=tf.int32
-            )
+            # # step 3: change 10% of <MASK> tokens to random token
+            # random_tokens = tf.random.uniform(
+            #     tf.shape(masked_inputs), minval=1, maxval=5, dtype=tf.int32
+            # )
 
-            # step 4: create masked input
-            masked_input = (
-                masked_input + random_tokens * random_change * random_mask * valid_mask
-            )
+            # # step 4: create masked input
+            # masked_input = (
+            #     masked_input + random_tokens * random_change * marked_mask * valid_mask
+            # )
             masked_inputs = masked_input
 
         # convert random_mask to boolean mask
-        random_mask = random_mask > 0
+        random_mask = marked_mask > 0
 
         # get nucleotides embeddigns
         asv_input = self.emb_layer(masked_inputs)

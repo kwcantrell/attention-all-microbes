@@ -92,7 +92,7 @@ class RegressorV2(tf.keras.Model):
     def _compute_loss(self, y, output):
         output, block, mask, block_prob = output
         mse = tf.reduce_mean(tf.abs(y - output))
-        block = tf.reduce_mean(self.block_entropy(block, block_prob))
+        block = tf.reduce_mean(self.block_entropy(block[mask], block_prob[mask]))
         return mse, block
 
     def _compute_metric(self, y, output):
@@ -157,19 +157,19 @@ class RegressorV2(tf.keras.Model):
         block_indices = tf.range(num_blocks, dtype=tf.int32)
         random_indices = tf.random.shuffle(block_indices)
 
-        # # mark 20 percent of the blocks as randomized
-        # random_mask = create_random_mask([num_blocks], percent=0.25, dtype=tf.int32)
+        # mark 20 percent of the blocks as randomized
+        random_mask = create_random_mask([num_blocks], percent=0.25, dtype=tf.int32)
 
-        # # of the randomized blocks, do not change 10 percent
-        # random_unchange = create_random_mask([num_blocks], percent=0.9, dtype=tf.int32)
-        # random_change = random_mask * random_unchange
+        # of the randomized blocks, do not change 10 percent
+        random_unchange = create_random_mask([num_blocks], percent=0.9, dtype=tf.int32)
+        random_change = random_mask * random_unchange
 
-        # # zero out  the randomized bloxks
-        # output_indices = block_indices * (1 - random_change)
+        # zero out  the randomized bloxks
+        output_indices = block_indices * (1 - random_change)
 
-        # # add the randomized indices
-        # output_indices = output_indices + random_indices * random_change
-        return tf.gather(blocks, random_indices), random_indices > 0
+        # add the randomized indices
+        output_indices = output_indices + random_indices * random_change
+        return tf.gather(blocks, random_indices), random_mask > 0
 
     def call(
         self, inputs, training: bool = False
