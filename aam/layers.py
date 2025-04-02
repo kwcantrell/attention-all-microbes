@@ -115,21 +115,28 @@ class ASVEncoder(tf.keras.layers.Layer):
             * randomize_sequence
         )
 
+        observe_mask = (
+            create_random_mask([num_nuc], percent=0.15, dtype=tf.int32) + random_mask
+        )
+        observe_mask = observe_mask > 0
         # zero out  the randomized bloxks
         output_indices = nuc_indices * (1 - random_mask)
 
         # add the randomized indices
         output_indices = output_indices + random_indices * random_mask
-        return tf.gather(nucleotides, output_indices)
+        return tf.gather(nucleotides, output_indices), observe_mask
 
     def call(self, inputs, include_bert_random_mask=True, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
-        shuffled_input = tf.map_fn(
+        shuffled_input, observe_mask = tf.map_fn(
             self.randomize_nucleotides,
             inputs,
-            fn_output_signature=tf.TensorSpec([None], dtype=tf.int32),
+            fn_output_signature=(
+                tf.TensorSpec([None], dtype=tf.int32),
+                tf.TensorSpec([None], dtype=tf.bool),
+            ),
         )
 
         if training:
@@ -150,7 +157,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        loss = self._compute_nuc_loss(inputs, output)
+        loss = self._compute_nuc_loss(inputs[observe_mask], output[observe_mask])
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
 
