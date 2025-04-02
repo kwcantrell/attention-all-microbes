@@ -107,18 +107,18 @@ class ASVEncoder(tf.keras.layers.Layer):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
-        num_nuc = tf.shape(inputs)[0]
+        input_shape = tf.shape(inputs)
         random_indices = tf.random.shuffle(inputs)
 
         # mark 20 percent of the nucleotides as randomized
-        randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.1, dtype=tf.int32)
+        randomize_sequence = tf.cast(tf.random.uniform([1, 1]) > 0.1, dtype=tf.int32)
         random_mask = (
-            create_random_mask([num_nuc], percent=0.03, dtype=tf.int32)
+            create_random_mask(input_shape, percent=0.03, dtype=tf.int32)
             * randomize_sequence
         )
 
         observe_mask = (
-            create_random_mask([num_nuc], percent=0.15, dtype=tf.int32) + random_mask
+            create_random_mask(input_shape, percent=0.15, dtype=tf.int32) + random_mask
         )
         observe_mask = observe_mask > 0
 
