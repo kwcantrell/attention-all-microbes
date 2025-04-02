@@ -96,10 +96,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
 
         self.nuc_pred = tf.keras.Sequential(
-            [
-                FeedForward(),
-                tf.keras.layers.Dense(self.num_tokens, use_bias=True, dtype=tf.float32),
-            ]
+            [FeedForward(), tf.keras.layers.Dense(2, dtype=tf.float32)]
         )
         super().build(input_shape)
 
@@ -133,6 +130,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         else:
             emb_inputs = inputs
 
+        positions = tf.cast(emb_inputs == inputs, dtype=tf.int32)
+
         # get nucleotides embeddigns
         asv_input = self.emb_layer(emb_inputs)
 
@@ -146,7 +145,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        loss = self._compute_nuc_loss(inputs[observe_mask], output[observe_mask])
+        loss = self._compute_nuc_loss(positions, output)
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
 

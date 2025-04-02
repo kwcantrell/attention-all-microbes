@@ -106,7 +106,7 @@ class NucleotideEncoderV6(tf.keras.Model):
             gradients = self.optimizer.get_unscaled_gradients(gradients)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(loss)
+        self.loss_tracker.update_state(unscaled_loss)
         self.nuc_tracker.update_state(nuc_loss)
         self.asv_tracker.update_state(asv_loss)
         output_trackers = {

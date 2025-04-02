@@ -5,9 +5,9 @@ from biom import Table
 class SequenceEmbeddings:
     def __init__(self, embeddings_fp, labels_fp, normalize=False):
         self.embeddings = np.load(embeddings_fp)
-        emb_mean = np.mean(self.embeddings, axis=0)
-        emb_std = np.std(self.embeddings, axis=0)
-        self.embeddings = (self.embeddings - emb_mean) / emb_std
+        # emb_mean = np.mean(self.embeddings, axis=0)
+        # emb_std = np.std(self.embeddings, axis=0)
+        # self.embeddings = (self.embeddings - emb_mean) / emb_std
 
         self.labels = labels_fp
         print(len(self.labels))

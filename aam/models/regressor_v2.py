@@ -20,7 +20,7 @@ class RegressorV2(tf.keras.Model):
         base_model,
         num_filters=256,
         kernel_size=3,
-        pooling_size=2048,
+        pooling_size=512,
         **kwargs,
     ):
         super(RegressorV2, self).__init__(**kwargs)
@@ -165,7 +165,7 @@ class RegressorV2(tf.keras.Model):
         # mark 20 percent of the blocks as randomized
         randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.1, dtype=tf.int32)
         random_mask = (
-            create_random_mask([num_blocks], percent=0.1, dtype=tf.int32)
+            create_random_mask([num_blocks], percent=0.5, dtype=tf.int32)
             * randomize_sequence
         )
 
@@ -195,8 +195,8 @@ class RegressorV2(tf.keras.Model):
 
         extractor_output = self.count_extractor(dense_counts, training=training)
         sample_embeddings = tf.expand_dims(sample_embeddings, axis=1)
-        encoder_input = sample_embeddings + extractor_output
-        encoder_shape = tf.shape(encoder_input)
+
+        encoder_shape = tf.shape(extractor_output)
         batch_dim = encoder_shape[0]
         num_blocks = encoder_shape[1]
         indices = tf.range(num_blocks, dtype=tf.int32)
@@ -205,19 +205,20 @@ class RegressorV2(tf.keras.Model):
             repeats=batch_dim,
             axis=0,
         )
-        shuffled_input, output_indices = tf.map_fn(
+        shuffled_extractor, output_indices = tf.map_fn(
             self.randomize_blocks,
-            encoder_input,
+            extractor_output,
             fn_output_signature=(
                 tf.TensorSpec([None, 256], dtype=tf.float32),
                 tf.TensorSpec([None], dtype=tf.int32),
             ),
         )
         if training:
-            encoder_input = shuffled_input
+            extractor_output = shuffled_extractor
         else:
             output_indices = indices
 
+        encoder_input = sample_embeddings + extractor_output
         encoder_output = self.encoder(encoder_input)
         block_pred = self.block_pred(encoder_output)
 

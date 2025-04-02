@@ -394,7 +394,7 @@ def fit_unifrac_regressor(
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.unifrac_generator_v2 import UnifracGeneratorV2
-    from aam.models.unifrac_encoder_v2 import UnifracEncoderV2
+    from aam.models.unifrac_encoder_v3 import UnifracEncoderV3
     from aam.models.utils import cos_decay_with_warmup
 
     # start pre processing dataset
@@ -451,7 +451,7 @@ def fit_unifrac_regressor(
     if i_model is not None:
         model = tf.keras.models.load_model(i_model, compile=False)
     else:
-        model = UnifracEncoderV2()
+        model = UnifracEncoderV3()
 
     sparse_indicies = tf.TensorShape([None, 2])
     embeddings = tf.TensorShape(

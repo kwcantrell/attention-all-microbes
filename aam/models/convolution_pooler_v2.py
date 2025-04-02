@@ -27,6 +27,7 @@ class PoolingBlock(tf.keras.layers.Layer):
                     strides=1,
                     padding="same",
                 ),
+                tf.keras.layers.Activation("gelu"),
                 tf.keras.layers.Conv1D(
                     filters=self.filters,
                     kernel_size=self.kernel_size,
@@ -37,22 +38,22 @@ class PoolingBlock(tf.keras.layers.Layer):
             ],
             name="conv_block",
         )
-        self.res_pool = tf.keras.layers.MaxPool1D(
-            pool_size=self.kernel_size,
-            strides=self.kernel_size,
-            padding="same",
-            name="res_pool",
-        )
-        self._rezero = self.add_weight(
-            name="rezero",
-            dtype=tf.float32,
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-        )
+        # self.res_pool = tf.keras.layers.MaxPool1D(
+        #     pool_size=self.kernel_size,
+        #     strides=self.kernel_size,
+        #     padding="same",
+        #     name="res_pool",
+        # )
+        # self._rezero = self.add_weight(
+        #     name="rezero",
+        #     dtype=tf.float32,
+        #     initializer=tf.keras.initializers.Zeros(),
+        #     trainable=True,
+        # )
 
     def call(self, inputs, training=False):
-        pooled_inputs = self.res_pool(inputs)
-        output = pooled_inputs + self._rezero * self.conv_block(inputs)
+        # pooled_inputs = self.res_pool(inputs)
+        output = self.conv_block(inputs)
         return output
 
     def get_config(self):
