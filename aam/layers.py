@@ -108,15 +108,27 @@ class ASVEncoder(tf.keras.layers.Layer):
         input_shape = tf.shape(inputs)
         random_indices = tf.random.shuffle(inputs)
 
-        # mark 20 percent of the nucleotides as randomized
+        # 10 percent chance not to randomize sequence
         randomize_sequence = tf.cast(tf.random.uniform([1, 1]) > 0.1, dtype=tf.int32)
+
+        # mark upto 10 percent of the nucleotides to be randomized
         random_mask = (
-            create_random_mask(input_shape, percent=0.03, dtype=tf.int32)
+            create_random_mask(
+                input_shape,
+                percent=tf.random.uniform([], minval=0.0, maxval=0.1),
+                dtype=tf.int32,
+            )
             * randomize_sequence
         )
 
+        # compute cross entropy on 10-20 percent
         observe_mask = (
-            create_random_mask(input_shape, percent=0.1, dtype=tf.int32) + random_mask
+            create_random_mask(
+                input_shape,
+                percent=tf.random.uniform([], minval=0.1, maxval=0.2),
+                dtype=tf.int32,
+            )
+            + random_mask
         )
         observe_mask = observe_mask > 0
 
@@ -146,26 +158,32 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        loss = self._compute_nuc_loss(positions[observe_mask], output[observe_mask])
+        loss = self._compute_nuc_loss(positions, output, observe_mask)
 
-        output_shape = tf.shape(output)
-        batch_dim = output_shape[0]
-        seq_dim = output_shape[1]
-        loss = tf.scatter_nd(tf.where(observe_mask), loss, [batch_dim, seq_dim])
-        loss = tf.math.divide_no_nan(
-            tf.reduce_sum(loss, axis=-1),
-            tf.reduce_sum(tf.cast(observe_mask, dtype=tf.float32), axis=-1),
-        )
         if include_bert_random_mask and self.trainable:
-            self.add_loss(tf.reduce_mean(loss))
+            self.add_loss(loss)
 
         print("ASVEncoder exit...", self.trainable)
         return output
 
-    def _compute_nuc_loss(self, tokens, embeddings):
+    def _compute_nuc_loss(self, tokens, embeddings, mask):
+        emb_shape = tf.shape(embeddings)
+        batch_dim = emb_shape[0]
+        seq_dim = emb_shape[1]
+        depth = emb_shape[2]
+
+        tokens = tokens[mask]
+        embeddings = embeddings[mask]
         nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
-        tokens = tf.one_hot(tokens, depth=tf.shape(embeddings)[-1])
-        return self.nuc_loss(tokens, nuc_pred)
+        tokens = tf.one_hot(tokens, depth=depth)
+        loss = self.nuc_loss(tokens, nuc_pred)
+
+        loss = tf.scatter_nd(tf.where(mask), loss, [batch_dim, seq_dim])
+        loss = tf.math.divide_no_nan(
+            tf.reduce_sum(loss, axis=-1),
+            tf.reduce_sum(tf.cast(mask, dtype=tf.float32), axis=-1),
+        )
+        return tf.reduce_mean(loss)
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()
