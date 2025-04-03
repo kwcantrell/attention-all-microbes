@@ -10,36 +10,33 @@ class PoolingBlock(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         if isinstance(input_shape, tuple):
-            input_shape, _ = input_shape
+            input_shape, _, _, _ = input_shape
         if len(input_shape) != 3:
             raise Exception("Must be rank 3!")
 
-        self.conv_block = tf.keras.Sequential(
+        self.pool = tf.keras.Sequential(
             [
                 tf.keras.layers.Conv1D(
-                    filters=8,
-                    kernel_size=3,
-                    strides=1,
-                    padding="same",
-                ),
-                tf.keras.layers.Activation("gelu"),
-                tf.keras.layers.Conv1D(
-                    filters=8,
-                    kernel_size=3,
-                    strides=1,
-                    padding="same",
-                ),
-                tf.keras.layers.Activation("gelu"),
-                tf.keras.layers.Conv1D(
-                    filters=self.filters,
+                    filters=1,
                     kernel_size=self.kernel_size,
                     strides=self.kernel_size,
                     padding="same",
                 ),
-                tf.keras.layers.Activation("gelu"),
+                tf.keras.layers.Conv1D(
+                    filters=self.filters, kernel_size=1, strides=1, padding="same"
+                ),
             ],
-            name="conv_block",
+            name="pool",
         )
+
+        self.conv_blocks = tf.keras.Sequential(
+            [
+                NonPoolingBlock(filters=self.filters, kernel_size=3, strides=1),
+                NonPoolingBlock(filters=self.filters, kernel_size=3, strides=1),
+            ],
+            name="conv_blocks",
+        )
+
         self.res_pool = tf.keras.layers.MaxPool1D(
             pool_size=self.kernel_size,
             strides=self.kernel_size,
@@ -48,14 +45,20 @@ class PoolingBlock(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, training=False):
-        if isinstance(inputs, (tuple, list)):
-            inputs, shifted_mask = inputs
-            modified_blocks = self.res_pool(shifted_mask)
-            output = self.conv_block(inputs)
-            return output, modified_blocks
+        dense_counts, modified_counts, embeddings, shifted_mask = inputs
 
-        output = self.conv_block(inputs)
-        return output
+        # pool non modified counts for reconstruction later
+        pooled_counts = self.pool(dense_counts)
+
+        pooled_mod_counts = self.pool(modified_counts)
+        pooled_embeddings = pooled_mod_counts + embeddings
+        output = self.conv_blocks(pooled_embeddings)
+
+        # used to identify which blocks were altered
+        modified_blocks = self.res_pool(shifted_mask)
+        modified_blocks = tf.squeeze(modified_blocks, axis=-1)
+
+        return pooled_counts, output, modified_blocks
 
     def get_config(self):
         config = super(PoolingBlock, self).get_config()
@@ -80,16 +83,23 @@ class NonPoolingBlock(tf.keras.layers.Layer):
         if len(input_shape) != 3:
             raise Exception("Must be rank 3!")
 
-        conv_block = [
-            tf.keras.layers.Conv1D(
-                filters=self.filters,
-                kernel_size=self.kernel_size,
-                strides=1,
-                padding="same",
-            ),
-            tf.keras.layers.Activation("gelu"),
-        ]
-        self.conv_block = tf.keras.Sequential(conv_block, name="conv_block")
+        self.conv_block = tf.keras.Sequential(
+            [
+                tf.keras.layers.Conv1D(
+                    filters=1,
+                    kernel_size=self.kernel_size,
+                    strides=1,
+                    padding="same",
+                ),
+                tf.keras.layers.Conv1D(
+                    filters=self.filters,
+                    kernel_size=1,
+                    strides=1,
+                    padding="same",
+                ),
+                tf.keras.layers.Activation("gelu"),
+            ]
+        )
         self._rezero = self.add_weight(
             name="rezero",
             dtype=tf.float32,
@@ -99,7 +109,7 @@ class NonPoolingBlock(tf.keras.layers.Layer):
 
     def call(self, inputs, training=False):
         output = self.conv_block(inputs)
-        output = inputs + self._rezero * output
+        output = inputs + tf.cast(self._rezero, dtype=self.compute_dtype) * output
         return output
 
     def get_config(self):

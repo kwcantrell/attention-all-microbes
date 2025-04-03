@@ -64,7 +64,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
         self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(
-            reduction=tf.keras.losses.Reduction.NONE, label_smoothing=0.05
+            reduction=tf.keras.losses.Reduction.NONE
         )
 
     def build(self, input_shape):
@@ -95,7 +95,9 @@ class ASVEncoder(tf.keras.layers.Layer):
             use_linear_bias=self.use_linear_bias,
         )
 
-        self.nuc_pred = tf.keras.Sequential([FeedForward(), tf.keras.layers.Dense(2)])
+        self.nuc_pred = tf.keras.Sequential(
+            [FeedForward(), tf.keras.layers.Dense(self.num_tokens)]
+        )
         self.nuc_output_activation = tf.keras.layers.Activation(
             "softmax", dtype=tf.float32
         )
@@ -111,13 +113,9 @@ class ASVEncoder(tf.keras.layers.Layer):
         # 10 percent chance not to randomize sequence
         randomize_sequence = tf.cast(tf.random.uniform([1, 1]) > 0.1, dtype=tf.int32)
 
-        # mark upto 10 percent of the nucleotides to be randomized
+        # mark upto 3 percent of the nucleotides to be randomized
         random_mask = (
-            create_random_mask(
-                input_shape,
-                percent=tf.random.uniform([], minval=0.0, maxval=0.1),
-                dtype=tf.int32,
-            )
+            create_random_mask(input_shape, percent=0.03, dtype=tf.int32)
             * randomize_sequence
         )
 
@@ -143,8 +141,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         else:
             emb_inputs = inputs
 
-        positions = tf.cast(emb_inputs == inputs, dtype=tf.int32)
-
         # get nucleotides embeddigns
         asv_input = self.emb_layer(emb_inputs)
 
@@ -158,7 +154,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         # generate training loss
-        loss = self._compute_nuc_loss(positions, output, observe_mask)
+        loss = self._compute_nuc_loss(inputs, output, observe_mask)
 
         if include_bert_random_mask and self.trainable:
             self.add_loss(loss)
@@ -167,21 +163,9 @@ class ASVEncoder(tf.keras.layers.Layer):
         return output
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
-        emb_shape = tf.shape(embeddings)
-        batch_dim = emb_shape[0]
-        seq_dim = emb_shape[1]
-
-        tokens = tokens[mask]
-        embeddings = embeddings[mask]
         nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
         tokens = tf.one_hot(tokens, depth=tf.shape(nuc_pred)[-1])
-        loss = self.nuc_loss(tokens, nuc_pred)
-
-        loss = tf.scatter_nd(tf.where(mask), loss, [batch_dim, seq_dim])
-        loss = tf.math.divide_no_nan(
-            tf.reduce_sum(loss, axis=-1),
-            tf.reduce_sum(tf.cast(mask, dtype=tf.float32), axis=-1),
-        )
+        loss = tf.reduce_mean(self.nuc_loss(tokens, nuc_pred), axis=-1)
         return tf.reduce_mean(loss)
 
     def get_config(self):

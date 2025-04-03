@@ -78,23 +78,19 @@ class NucleotideEncoderV6(tf.keras.Model):
         return self(inputs, training=False), asv_ids
 
     def _compute_loss(self, y_true, embeddings):
-        loss = 0.0
-        num_pairs = tf.shape(y_true)[-1]
-        embeddings = embeddings[:num_pairs]
         asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
-        loss += asv_loss
-        return loss, asv_loss
+        return asv_loss, asv_loss
 
     def train_step(self, data):
         inputs, y_true = data
         with tf.GradientTape() as tape:
             embeddings = self(inputs, training=True)
-            unscaled_loss, asv_loss = self._compute_loss(y_true, embeddings)
+            asv_loss = self._compute_loss(y_true, embeddings)
             if self.include_bert_loss:
                 nuc_loss = tf.reduce_sum(self.losses)
             else:
                 nuc_loss = 0.0
-            unscaled_loss += nuc_loss
+            unscaled_loss = asv_loss + nuc_loss
 
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(unscaled_loss)
@@ -121,12 +117,12 @@ class NucleotideEncoderV6(tf.keras.Model):
         inputs, y_true = data
 
         embeddings = self(inputs, training=False)
-        loss, asv_loss = self._compute_loss(y_true, embeddings)
+        asv_loss = self._compute_loss(y_true, embeddings)
         if self.include_bert_loss:
-            nuc_loss = tf.reduce_sum(self.losses) * 0.1
+            nuc_loss = tf.reduce_sum(self.losses)
         else:
             nuc_loss = 0.0
-        loss += nuc_loss
+        loss = asv_loss + nuc_loss
         self.loss_tracker.update_state(loss)
         self.nuc_tracker.update_state(nuc_loss)
         self.asv_tracker.update_state(asv_loss)

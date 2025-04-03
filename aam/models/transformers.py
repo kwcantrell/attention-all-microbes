@@ -20,7 +20,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         norm_first=True,
         norm_epsilon=1e-6,
         use_residual_connections=False,
-        use_linear_bias=False,
+        use_linear_bias=True,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)

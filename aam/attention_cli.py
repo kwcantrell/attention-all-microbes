@@ -162,13 +162,7 @@ def fit_asv_encoder(
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
-        exclude_from_weight_decay=[
-            "bias",
-            "rezero_alpha",
-            "layer_norm",
-            "LayerNorm",
-        ],
-        exclude_from_layer_adaptation=["rezero_alpha"],
+        exclude_from_weight_decay=["bias", "rezero_alpha", "layer_norm", "LayerNorm"],
     )
     # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
@@ -569,6 +563,7 @@ def fit_new_regressor(
 ):
     import tensorflow_addons as tfa
 
+    # tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler, MeanAbsoluteError
     from aam.data_handlers.regressor_generator_v2 import RegressorGeneratorV2
     from aam.models.regressor_v2 import RegressorV2
@@ -660,8 +655,8 @@ def fit_new_regressor(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha"],
-        exclude_from_layer_adaptation=["bias", "rezero_alpha"],
     )
+    # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
     # optimizer = tf.keras.optimizers.AdamW(
     #     cos_decay_with_warmup(p_lr, p_warmup_steps, p_decay_steps),
     #     weight_decay=p_weight_decay,
