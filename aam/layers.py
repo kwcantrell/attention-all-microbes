@@ -153,7 +153,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         seq_dim = output_shape[1]
         loss = tf.scatter_nd(tf.where(observe_mask), loss, [batch_dim, seq_dim])
         loss = tf.math.divide_no_nan(
-            tf.reduce_sum(loss, axis=-1), tf.reduce_sum(observe_mask, axis=-1)
+            tf.reduce_sum(loss, axis=-1),
+            tf.reduce_sum(tf.cast(observe_mask, dtype=tf.float32), axis=-1),
         )
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
