@@ -170,12 +170,11 @@ class ASVEncoder(tf.keras.layers.Layer):
         emb_shape = tf.shape(embeddings)
         batch_dim = emb_shape[0]
         seq_dim = emb_shape[1]
-        depth = emb_shape[2]
 
         tokens = tokens[mask]
         embeddings = embeddings[mask]
         nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
-        tokens = tf.one_hot(tokens, depth=depth)
+        tokens = tf.one_hot(tokens, depth=tf.shape(nuc_pred)[-1])
         loss = self.nuc_loss(tokens, nuc_pred)
 
         loss = tf.scatter_nd(tf.where(mask), loss, [batch_dim, seq_dim])
