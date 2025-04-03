@@ -63,7 +63,9 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
-        self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(
+            reduction=tf.keras.losses.Reduction.NONE, label_smoothing=0.05
+        )
 
     def build(self, input_shape):
         if self.built:
@@ -145,6 +147,14 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # generate training loss
         loss = self._compute_nuc_loss(positions[observe_mask], output[observe_mask])
+
+        output_shape = tf.shape(output)
+        batch_dim = output_shape[0]
+        seq_dim = output_shape[1]
+        loss = tf.scatter_nd(tf.where(observe_mask), loss, [batch_dim, seq_dim])
+        loss = tf.math.divide_no_nan(
+            tf.reduce_sum(loss, axis=-1), tf.reduce_sum(observe_mask, axis=-1)
+        )
         if include_bert_random_mask and self.trainable:
             self.add_loss(tf.reduce_mean(loss))
 
@@ -153,6 +163,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
     def _compute_nuc_loss(self, tokens, embeddings):
         nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
+        tokens = tf.one_hot(tokens, depth=tf.shape(embeddings)[-1])
         return self.nuc_loss(tokens, nuc_pred)
 
     def get_config(self):
