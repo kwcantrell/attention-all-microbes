@@ -9,6 +9,8 @@ class PoolingBlock(tf.keras.layers.Layer):
         self.strides = strides
 
     def build(self, input_shape):
+        if isinstance(input_shape, tuple):
+            input_shape, _ = input_shape
         if len(input_shape) != 3:
             raise Exception("Must be rank 3!")
 
@@ -38,21 +40,20 @@ class PoolingBlock(tf.keras.layers.Layer):
             ],
             name="conv_block",
         )
-        # self.res_pool = tf.keras.layers.MaxPool1D(
-        #     pool_size=self.kernel_size,
-        #     strides=self.kernel_size,
-        #     padding="same",
-        #     name="res_pool",
-        # )
-        # self._rezero = self.add_weight(
-        #     name="rezero",
-        #     dtype=tf.float32,
-        #     initializer=tf.keras.initializers.Zeros(),
-        #     trainable=True,
-        # )
+        self.res_pool = tf.keras.layers.MaxPool1D(
+            pool_size=self.kernel_size,
+            strides=self.kernel_size,
+            padding="same",
+            name="res_pool",
+        )
 
     def call(self, inputs, training=False):
-        # pooled_inputs = self.res_pool(inputs)
+        if isinstance(inputs, (tuple, list)):
+            inputs, shifted_mask = inputs
+            modified_blocks = self.res_pool(shifted_mask)
+            output = self.conv_block(inputs)
+            return output, modified_blocks
+
         output = self.conv_block(inputs)
         return output
 

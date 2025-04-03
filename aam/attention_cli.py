@@ -109,7 +109,7 @@ def fit_asv_encoder(
 ):
     import tensorflow_addons as tfa
 
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    # tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
     from aam.models.nucleotide_encoder_v6 import NucleotideEncoderV6
@@ -170,7 +170,7 @@ def fit_asv_encoder(
         ],
         exclude_from_layer_adaptation=["rezero_alpha"],
     )
-    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
     token_shape = tf.TensorShape([None, 150])
     model.build(token_shape)
@@ -422,7 +422,7 @@ def fit_unifrac_regressor(
         "batch_size": p_batch_size,
         "drop_remainder": True,
         "normalize_sequence_embeddings": p_normalize_sequence_embeddings,
-        "gen_new_table_frequency": 3,
+        "gen_new_table_frequency": 1,
     }
 
     train_gen = UnifracGeneratorV2(
@@ -465,7 +465,7 @@ def fit_unifrac_regressor(
     plateau = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="loss",
         factor=0.9,
-        patience=5,
+        patience=15,
         verbose=0,
         mode="auto",
         min_delta=0.000,
