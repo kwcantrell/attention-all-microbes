@@ -33,6 +33,8 @@ class PoolingBlock(tf.keras.layers.Layer):
             [
                 NonPoolingBlock(filters=self.filters, kernel_size=3, strides=1),
                 NonPoolingBlock(filters=self.filters, kernel_size=3, strides=1),
+                NonPoolingBlock(filters=self.filters, kernel_size=3, strides=1),
+                NonPoolingBlock(filters=self.filters, kernel_size=3, strides=1),
             ],
             name="conv_blocks",
         )
@@ -48,17 +50,17 @@ class PoolingBlock(tf.keras.layers.Layer):
         dense_counts, modified_counts, embeddings, shifted_mask = inputs
 
         # pool non modified counts for reconstruction later
-        pooled_counts = self.pool(dense_counts)
+        pooled_counts = self.pool(dense_counts) + embeddings
+        pooled_counts = self.conv_blocks(pooled_counts)
 
-        pooled_mod_counts = self.pool(modified_counts)
-        pooled_embeddings = pooled_mod_counts + embeddings
-        output = self.conv_blocks(pooled_embeddings)
+        pooled_mod_counts = self.pool(modified_counts) + embeddings
+        pooled_mod_counts = self.conv_blocks(pooled_mod_counts)
 
         # used to identify which blocks were altered
         modified_blocks = self.res_pool(shifted_mask)
         modified_blocks = tf.squeeze(modified_blocks, axis=-1)
 
-        return pooled_counts, output, modified_blocks
+        return pooled_counts, pooled_mod_counts, modified_blocks
 
     def get_config(self):
         config = super(PoolingBlock, self).get_config()

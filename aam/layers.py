@@ -63,8 +63,8 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
-        self.nuc_loss = tf.keras.losses.CategoricalCrossentropy(
-            reduction=tf.keras.losses.Reduction.NONE
+        self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy(
+            ignore_class=0, reduction=tf.keras.losses.Reduction.NONE
         )
 
     def build(self, input_shape):
@@ -119,22 +119,17 @@ class ASVEncoder(tf.keras.layers.Layer):
             * randomize_sequence
         )
 
-        # compute cross entropy on 10-20 percent
+        # compute cross entropy on 25 percent
         observe_mask = (
-            create_random_mask(
-                input_shape,
-                percent=tf.random.uniform([], minval=0.1, maxval=0.2),
-                dtype=tf.int32,
-            )
-            + random_mask
+            create_random_mask(input_shape, percent=0.25, dtype=tf.int32) + random_mask
         )
         observe_mask = observe_mask > 0
 
         # zero out  the randomized bloxks
         shuffled_input = inputs * (1 - random_mask)
 
-        # add the randomized indices
-        shuffled_input = shuffled_input + random_indices * random_mask
+        # # add the randomized indices
+        # shuffled_input = shuffled_input + random_indices * random_mask
 
         if training:
             emb_inputs = shuffled_input
@@ -164,8 +159,11 @@ class ASVEncoder(tf.keras.layers.Layer):
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
         nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
-        tokens = tf.one_hot(tokens, depth=tf.shape(nuc_pred)[-1])
-        loss = tf.reduce_mean(self.nuc_loss(tokens, nuc_pred), axis=-1)
+        loss = self.nuc_loss(tokens[mask], nuc_pred[mask])
+        loss = tf.scatter_nd(tf.where(mask), loss, tf.shape(mask))
+        loss = tf.reduce_sum(loss, axis=-1) / tf.reduce_sum(
+            tf.cast(mask, dtype=tf.float32), axis=-1
+        )
         return tf.reduce_mean(loss)
 
     def get_config(self):

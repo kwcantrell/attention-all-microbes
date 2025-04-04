@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Union
 
 import tensorflow as tf
@@ -20,7 +21,7 @@ class RegressorV2(tf.keras.Model):
         base_model,
         num_filters=256,
         kernel_size=3,
-        pooling_size=512,
+        pooling_size=2048,
         **kwargs,
     ):
         super(RegressorV2, self).__init__(**kwargs)
@@ -47,6 +48,7 @@ class RegressorV2(tf.keras.Model):
             return
 
         sparse_indices, sample_embeddings, dense_counts = input_shape
+        self.num_blocks = math.ceil(dense_counts[-1] / self.pooling_size)
         self.count_extractor = tf.keras.Sequential(
             [
                 PoolingBlock(self.num_filters, self.pooling_size),
@@ -56,7 +58,9 @@ class RegressorV2(tf.keras.Model):
         self.block_pred = tf.keras.Sequential(
             [
                 FeedForward(),
-                tf.keras.layers.Dense(2, dtype=tf.float32, activation="softmax"),
+                tf.keras.layers.Dense(
+                    self.num_blocks, dtype=tf.float32, activation="softmax"
+                ),
             ],
             name="block_pred",
         )
@@ -69,7 +73,7 @@ class RegressorV2(tf.keras.Model):
             name="reconstruct_counts",
         )
         self.encoder = TransformerEncoder(
-            num_layers=4,
+            num_layers=8,
             num_attention_heads=8,
             intermediate_size=1024,
             use_linear_bias=True,
@@ -195,7 +199,7 @@ class RegressorV2(tf.keras.Model):
         randomize_sequence = tf.cast(tf.random.uniform([1]) > 0.01, dtype=tf.int32)
 
         # mark upto 5 percent of the blocks as randomized
-        random_mask = create_random_mask([num_blocks], percent=0.1, dtype=tf.int32)
+        random_mask = create_random_mask([num_blocks], percent=0.03, dtype=tf.int32)
 
         # zero out and swap randomized bloxks
         output_indices = block_indices * (1 - random_mask * randomize_sequence)
@@ -208,7 +212,7 @@ class RegressorV2(tf.keras.Model):
         original_block_indices = tf.cast(tf.where(block_mask), dtype=tf.int32)
         non_block_indices = tf.cast(tf.where(~block_mask), dtype=tf.int32)
         non_block_indices = tf.random.shuffle(non_block_indices)[:num_blocks]
-        moved_masked = create_random_mask([num_blocks, 1], percent=0.1, dtype=tf.int32)
+        moved_masked = create_random_mask([num_blocks, 1], percent=0.01, dtype=tf.int32)
 
         # zero out and replace block indices with non block indices
         new_block_indices = original_block_indices * (
@@ -232,9 +236,10 @@ class RegressorV2(tf.keras.Model):
         sample_embeddings = self.base_model(
             [sparse_indices, sample_embeddings], training=False
         )
-        sample_embeddings = sample_embeddings / tf.norm(
-            sample_embeddings, axis=-1, keepdims=True
-        )
+        # sample_embeddings = sample_embeddings / tf.norm(
+        #     sample_embeddings, axis=-1, keepdims=True
+        # )
+        sample_embeddings = sample_embeddings / self.num_blocks
 
         modified_counts, positions = tf.map_fn(
             lambda x: self.randomize_blocks(x, training=training),
@@ -253,9 +258,13 @@ class RegressorV2(tf.keras.Model):
             (dense_counts, modified_counts, sample_embeddings, positions)
         )
 
+        # predict true block
+        pooled_counts = tf.cast(pooled_counts, dtype=tf.float32)
+        block_pred = self.block_pred(pooled_counts)
+        pooled_counts = tf.stop_gradient(pooled_counts)
+
         encoder_output = self.encoder(extractor_output)
         counts_pred = self.reconstruct_counts(encoder_output)
-        block_pred = self.block_pred(encoder_output)
         output = self.regressor(encoder_output)
 
         # in addition to marked blocks, set an additional 10 percent as observers
@@ -266,7 +275,6 @@ class RegressorV2(tf.keras.Model):
         )
         observe_mask = observe_mask | (positions > 0)
         positions = tf.cast(positions, dtype=tf.int32)
-        pooled_counts = tf.stop_gradient(tf.cast(pooled_counts, dtype=tf.float32))
 
         if compute_transormer_loss:
             counts_loss = tf.reduce_mean(
@@ -275,7 +283,15 @@ class RegressorV2(tf.keras.Model):
             )
             self.add_loss(tf.reduce_mean(counts_loss, axis=-1))
 
-            positions = tf.one_hot(positions, depth=tf.shape(block_pred)[-1])
+            block_shape = tf.shape(block_pred)
+            batch_dim = block_shape[0]
+            num_blocks = block_shape[-1]
+            positions = tf.repeat(
+                tf.expand_dims(tf.range(num_blocks), axis=0),
+                repeats=batch_dim,
+                axis=0,
+            )
+            positions = tf.one_hot(positions, depth=num_blocks)
             position_loss = self.block_entropy(positions, block_pred)
             position_loss = tf.reduce_mean(position_loss, axis=-1)
             self.add_loss(tf.reduce_mean(position_loss))
