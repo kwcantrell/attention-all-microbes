@@ -1,13 +1,13 @@
 import tensorflow as tf
 
 
-def _construct_bias(inputs):
-    shape = tf.shape(inputs)
-    query_len = shape[2]
-    key_len = shape[3]
-    num_heads = shape[1]
+@tf.function
+def _construct_bias(input_shape):
+    query_len = input_shape[2]
+    key_len = input_shape[3]
+    num_heads = input_shape[1]
 
-    largest_len = tf.where(query_len > key_len, query_len, key_len)
+    largest_len = tf.reduce_max([query_len, key_len])
 
     bias = tf.repeat(
         tf.expand_dims(tf.range(0, largest_len, 1, dtype=tf.float32), axis=0),
@@ -21,25 +21,17 @@ def _construct_bias(inputs):
     bias = -1 * tf.sort(bias * bias_mask, direction="DESCENDING")
     bias = tf.expand_dims(bias, axis=0)
     bias = tf.expand_dims(bias, axis=0)
-
-    start = tf.math.log(tf.cast(num_heads, dtype=tf.float32)) / tf.math.log(2.0)
-    start = 2 ** (-(2 ** -(start - 3)))
+    bias = bias + tf.transpose(bias, perm=[0, 1, 3, 2])
+    bias = bias[:, :, :query_len, :key_len]
     m = tf.map_fn(
-        lambda i: start * tf.pow(start, i),
+        lambda i: tf.pow(tf.constant(2, dtype=tf.float32), -(i + 1)),
         tf.range(num_heads, dtype=tf.float32),
-        fn_output_signature=tf.TensorSpec(shape=(), dtype=tf.float32),
     )
 
     m = tf.expand_dims(m, axis=0)
     m = tf.expand_dims(m, axis=-1)
     m = tf.expand_dims(m, axis=-1)
-    alibi = bias * m
-    alibi = tf.cast(
-        alibi + tf.transpose(alibi, perm=[0, 1, 3, 2]),
-        dtype=tf.keras.mixed_precision.global_policy().compute_dtype,
-    )
-    alibi = alibi[:, :, :query_len, :key_len]
-    return alibi
+    return m, bias
 
 
 def _large_compatible_negative(tensor_type):
@@ -97,13 +89,24 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         Softmaxed output with the same shape as `inputs`.
     """
 
-    def __init__(self, axis=-1, **kwargs):
+    def __init__(self, fix_bias_shape, axis=-1, **kwargs):
         super().__init__(**kwargs)
         self.axis = axis
+        self.fix_bias_shape = fix_bias_shape
+
+    def build(self, input_shape):
+        if self.fix_bias_shape:
+            print("fixing bias shape:", input_shape)
+            input_shape = tf.TensorShape(input_shape)
+            self.m, self.bias = _construct_bias(input_shape)
 
     def construct_bias(self, inputs):
-        t = tf.ones_like(inputs)
-        return _construct_bias(t)
+        if not self.fix_bias_shape:
+            m, bias = _construct_bias(tf.shape(inputs))
+            alibi = m * bias
+        else:
+            alibi = self.m * self.bias
+        return tf.cast(alibi, dtype=self.compute_dtype)
 
     def call(self, inputs, mask=None):
         if mask is not None:
@@ -117,10 +120,11 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
             # Since we are adding it to the raw scores before the softmax, this
             # is effectively the same as removing these entirely.
             inputs += adder
-        inputs += self.construct_bias(inputs)
+        alibi = self.construct_bias(inputs)
+        inputs += alibi
         return tf.keras.backend.softmax(inputs, axis=self.axis)
 
     def get_config(self):
-        config = {"axis": self.axis}
+        config = {"fix_bias_shape": self.fix_bias_shape, "axis": self.axis}
         base_config = super().get_config()
         return dict(list(base_config.items()) + list(config.items()))
