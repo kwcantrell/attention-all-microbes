@@ -109,7 +109,7 @@ def fit_asv_encoder(
 ):
     import tensorflow_addons as tfa
 
-    # tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
     from aam.models.nucleotide_encoder_v6 import NucleotideEncoderV6
@@ -164,14 +164,11 @@ def fit_asv_encoder(
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha", "layer_norm", "LayerNorm"],
     )
-    # optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+    optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    token_shape = tf.TensorShape([None, 150])
-    model.build(token_shape)
-    model.compile(
-        include_bert_loss=p_include_bert_loss, optimizer=optimizer, run_eagerly=False
-    )
-    model.summary()
+    token_shape = (150,)
+    model.build_graph(token_shape).summary()
+    model.compile(optimizer=optimizer, run_eagerly=False)
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)

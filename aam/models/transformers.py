@@ -16,11 +16,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
         activation="gelu",
         dropout_rate=0.0,
         attention_dropout_rate=0.0,
-        use_bias=False,
-        norm_first=True,
-        norm_epsilon=1e-6,
-        use_residual_connections=False,
-        use_linear_bias=True,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -30,25 +25,15 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._activation = activation
         self._dropout_rate = dropout_rate
         self._attention_dropout_rate = attention_dropout_rate
-        self._use_bias = use_bias
-        self._norm_first = norm_first
-        self._norm_epsilon = norm_epsilon
-        self.use_residual_connections = use_residual_connections
-        self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
+        print("Building TransformerEncoder...")
+        self._build_input_shape = input_shape
         if isinstance(input_shape, (list, tuple)):
             shape = input_shape[0]
         else:
             shape = input_shape
         self.hidden_dim = shape[-1]
-        if self.use_residual_connections:
-            self._rezero = self.add_weight(
-                name="rezero_alpha",
-                initializer=tf.keras.initializers.Zeros(),
-                trainable=True,
-                dtype=tf.float32,
-            )
         linear_bias_softmax = LinearBiasSoftmax()
         print("Using linear bias")
 
@@ -58,21 +43,23 @@ class TransformerEncoder(tf.keras.layers.Layer):
                 inner_dim=self._intermediate_size,
                 inner_activation=self._activation,
                 dropout_rate=self._dropout_rate,
-                attention_dropout_rate=0.0,
-                share_rezero=True,
+                attention_dropout_rate=self._attention_dropout_rate,
                 name=("layer_%d" % i),
             )
             transformer.build(shape)
             transformer._attention_layer._build_from_signature(shape, shape)
 
-            if self.use_linear_bias:
-                setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
+            setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
             return transformer
 
         self.encoder_layers = []
         for i in range(self.num_layers):
             self.encoder_layers.append(get_transformer(i))
-        super(TransformerEncoder, self).build(input_shape)
+        self.built = True
+        print("TransformerEncoder built!")
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
     def get_config(self):
         config = {
@@ -82,11 +69,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "activation": self._activation,
             "dropout_rate": self._dropout_rate,
             "attention_dropout_rate": self._attention_dropout_rate,
-            "use_bias": self._use_bias,
-            "norm_first": self._norm_first,
-            "norm_epsilon": self._norm_epsilon,
-            "use_residual_connections": self.use_residual_connections,
-            "use_linear_bias": self.use_linear_bias,
         }
         base_config = super(TransformerEncoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -128,10 +110,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
                     ),
                     dtype=self.compute_dtype,
                 )
-
-        if self.use_residual_connections:
-            print("Encoder residual connection...")
-            output_tensor = inputs + self._rezero * output_tensor
 
         if self.compute_dtype == "float16":
             # output_tensor will always be float32

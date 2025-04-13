@@ -43,8 +43,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         intermediate_activation="gelu",
         add_token=True,
         embedding_dim=128,
-        use_residual_connections=False,
-        use_linear_bias=True,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -56,10 +54,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.intermediate_ff = intermediate_ff
         self.intermediate_activation = intermediate_activation
         self.add_token = add_token
-        self.base_tokens = 5
-        self.num_tokens = self.base_tokens
-        self.use_residual_connections = use_residual_connections
-        self.use_linear_bias = use_linear_bias
+        self.num_tokens = 5
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
@@ -67,104 +62,123 @@ class ASVEncoder(tf.keras.layers.Layer):
             ignore_class=0, reduction=tf.keras.losses.Reduction.NONE
         )
 
-    def build(self, input_shape):
-        if self.built:
-            print("ASVEncoder is already built")
-            return
+        self.rand_nucs = 0.03
+        self.nucs_to_obs = 0.15
 
+    def build(self, input_shape):
+        print("Building ASVEncoder...")
+        self._build_input_shape = input_shape
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens, self.embedding_dim, input_length=self.max_bp
         )
+        self.emb_layer.build(input_shape)
 
-        if not self.use_linear_bias:
-            self._rezero = self.add_weight(
-                name="rezero_alpha",
-                initializer="zeros",
-                trainable=True,
-                dtype=tf.float32,
-            )
-            self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp + 1, seq_axis=1)
-
+        input_shape = self.emb_layer.compute_output_shape(input_shape)
         self.asv_attention = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
-            dropout_rate=0.0,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
-            use_residual_connections=self.use_residual_connections,
-            use_linear_bias=self.use_linear_bias,
         )
+        self.asv_attention.build(input_shape)
 
+        input_shape = self.asv_attention.compute_output_shape(input_shape)
         self.nuc_pred = tf.keras.Sequential(
-            [FeedForward(), tf.keras.layers.Dense(self.num_tokens)]
+            [
+                FeedForward(),
+                tf.keras.layers.Dense(self.num_tokens),
+                tf.keras.layers.Activation("softmax", dtype=tf.float32),
+            ]
         )
-        self.nuc_output_activation = tf.keras.layers.Activation(
-            "softmax", dtype=tf.float32
-        )
-        super().build(input_shape)
+        self.nuc_pred.build(input_shape)
+        self.built = True
+        print("ASVEncoder built!")
 
-    def call(self, inputs, include_bert_random_mask=True, training=False):
+    def compute_output_shape(self, input_shape):
+        return input_shape + (self.embedding_dim,)
+
+    def _mask_nucs(self, inputs, random_mask):
+        return inputs * (1 - random_mask)
+
+    def _random_nucs(self, inputs, random_mask):
+        shape = tf.shape(inputs)
+        random_nucs = tf.random.uniform(shape, minval=0, maxval=5, dtype=tf.int32)
+        masked_inputs = self._mask_nucs(inputs, random_mask)
+        return masked_inputs + random_nucs * random_mask
+
+    def _tokens_to_sequence(self, tokens, num_tokens):
+        """Converts nucleotide tokens into sequence tokens. Sequence tokens encodes
+        the relative position of each nucleotide by adding num_tokens * len(tokens) * i to
+        each position i in tokens. For example if tokens=[1, 2, 3, 4] and num_tokens=5
+        then _tokens_to_sequence(tokens) will return [ 1,  7, 13, 19]"""
+        num_bp = tf.shape(tokens)[-1]
+        seq_shifts = tf.range(0, num_tokens * num_bp, num_tokens, dtype=tf.int32)
+        return tokens + seq_shifts
+
+    def _observe_first_and_last_positions(self, obs_mask):
+        """Sets the first and last position of each sequence in obs_mask to 1."""
+        shape = tf.shape(obs_mask)
+        batch_dim = shape[0]
+        last_i = shape[-1] - 1
+        batch = tf.expand_dims(tf.range(batch_dim, dtype=tf.int32), axis=-1)
+        first_pos = tf.expand_dims(tf.zeros(batch_dim, dtype=tf.int32), axis=-1)
+        last_pos = tf.expand_dims(tf.ones(batch_dim, dtype=tf.int32) * last_i, axis=-1)
+        first_indices = tf.concat([batch, first_pos], axis=-1)
+        last_indices = tf.concat([batch, last_pos], axis=-1)
+        indices = tf.concat([first_indices, last_indices], axis=0)
+        mask = tf.scatter_nd(indices, tf.ones(2 * batch_dim, dtype=tf.int32), shape)
+        obs_mask = tf.cast(obs_mask, dtype=tf.int32)
+        return (obs_mask + mask) > 0
+
+    def call(self, inputs, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
         input_shape = tf.shape(inputs)
-        random_indices = tf.random.shuffle(inputs)
 
-        # 10 percent chance not to randomize sequence
-        randomize_sequence = tf.cast(tf.random.uniform([1, 1]) > 0.1, dtype=tf.int32)
+        # randomize tokens
+        random_mask = create_random_mask(input_shape, self.rand_nucs, dtype=tf.int32)
+        random_tokens = self._random_nucs(inputs, random_mask)
 
-        # mark upto 3 percent of the nucleotides to be randomized
-        random_mask = (
-            create_random_mask(input_shape, percent=0.03, dtype=tf.int32)
-            * randomize_sequence
-        )
-
-        # compute cross entropy on 25 percent
-        observe_mask = (
-            create_random_mask(input_shape, percent=0.25, dtype=tf.int32) + random_mask
-        )
-        observe_mask = observe_mask > 0
-
-        # zero out  the randomized bloxks
-        shuffled_input = inputs * (1 - random_mask)
-
-        # # add the randomized indices
-        # shuffled_input = shuffled_input + random_indices * random_mask
+        original_sequence = self._tokens_to_sequence(inputs, self.num_tokens)
+        randomize_sequence = self._tokens_to_sequence(random_tokens, self.num_tokens)
 
         if training:
-            emb_inputs = shuffled_input
+            emb_inputs = randomize_sequence
         else:
-            emb_inputs = inputs
+            emb_inputs = original_sequence
 
-        # get nucleotides embeddigns
+        # compute embeddings
         asv_input = self.emb_layer(emb_inputs)
-
-        # only add positional embeddings if using vanilla Transforer
-        if not self.use_linear_bias:
-            asv_input = asv_input + tf.cast(
-                self._rezero, dtype=self.compute_dtype
-            ) * self.pos_emb(asv_input)
-
-        # pass embeddings through Transformer
         output = self.asv_attention(asv_input, training=training)
 
-        # generate training loss
-        loss = self._compute_nuc_loss(inputs, output, observe_mask)
-
-        if include_bert_random_mask and self.trainable:
+        if self.trainable:
+            # compute cross entropy on 10 percent of nucleotides
+            obs_mask = create_random_mask(input_shape, self.nucs_to_obs, dtype=tf.int32)
+            obs_mask = obs_mask + random_mask
+            obs_mask = self._observe_first_and_last_positions(obs_mask)
+            loss = self._compute_nuc_loss(inputs, output, obs_mask)
             self.add_loss(loss)
 
         print("ASVEncoder exit...", self.trainable)
         return output
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
-        nuc_pred = self.nuc_output_activation(self.nuc_pred(embeddings))
-        loss = self.nuc_loss(tokens[mask], nuc_pred[mask])
-        loss = tf.scatter_nd(tf.where(mask), loss, tf.shape(mask))
-        loss = tf.reduce_sum(loss, axis=-1) / tf.reduce_sum(
-            tf.cast(mask, dtype=tf.float32), axis=-1
-        )
-        return tf.reduce_mean(loss)
+        shape = tf.shape(mask)
+        batch_dim = shape[0]
+        seq_dim = shape[-1]
+
+        counts = tf.reduce_sum(tf.cast(mask, dtype=tf.float32), axis=-1, keepdims=True)
+        counts = tf.repeat(counts, repeats=seq_dim, axis=-1)
+        counts = counts * tf.cast(batch_dim, dtype=tf.float32)
+
+        tokens = tokens[mask]
+        counts = counts[mask]
+        embeddings = embeddings[mask]
+
+        nuc_preds = self.nuc_pred(embeddings)
+        loss = self.nuc_loss(tokens, nuc_preds) / counts
+        return tf.reduce_sum(loss)
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()
@@ -178,8 +192,6 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "intermediate_activation": self.intermediate_activation,
                 "add_token": self.add_token,
                 "embedding_dim": self.embedding_dim,
-                "use_residual_connections": self.use_residual_connections,
-                "use_linear_bias": self.use_linear_bias,
             }
         )
         return config
