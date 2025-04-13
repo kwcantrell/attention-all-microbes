@@ -64,25 +64,15 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         self.rand_nucs = 0.03
         self.nucs_to_obs = 0.15
-
-    def build(self, input_shape):
-        print("Building ASVEncoder...")
-        self._build_input_shape = input_shape
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens, self.embedding_dim, input_length=self.max_bp
         )
-        self.emb_layer.build(input_shape)
-
-        input_shape = self.emb_layer.compute_output_shape(input_shape)
         self.asv_attention = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
             intermediate_size=self.intermediate_ff,
             activation=self.intermediate_activation,
         )
-        self.asv_attention.build(input_shape)
-
-        input_shape = self.asv_attention.compute_output_shape(input_shape)
         self.nuc_pred = tf.keras.Sequential(
             [
                 FeedForward(),
@@ -90,6 +80,17 @@ class ASVEncoder(tf.keras.layers.Layer):
                 tf.keras.layers.Activation("softmax", dtype=tf.float32),
             ]
         )
+
+    def build(self, input_shape):
+        print("Building ASVEncoder...")
+        self._build_input_shape = input_shape
+
+        self.emb_layer.build(input_shape)
+
+        input_shape = self.emb_layer.compute_output_shape(input_shape)
+        self.asv_attention.build(input_shape)
+
+        input_shape = self.asv_attention.compute_output_shape(input_shape)
         self.nuc_pred.build(input_shape)
         self.built = True
         print("ASVEncoder built!")

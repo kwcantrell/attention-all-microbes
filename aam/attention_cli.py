@@ -65,11 +65,11 @@ GLOBAL_CONFIGURATIONS = {}
     "--p-pairwise-batch-size", default=128, show_default=True, required=False, type=int
 )
 @click.option("--p-epochs", default=1000, show_default=True, type=int)
-@click.option("--p-dropout", default=0.1, show_default=True, type=float)
-@click.option("--p-embedding-dim", default=512, type=int)
+@click.option("--p-dropout", default=0.0, show_default=True, type=float)
+@click.option("--p-embedding-dim", default=256, type=int)
 @click.option("--p-attention-heads", default=8, type=int)
 @click.option("--p-attention-layers", default=8, type=int)
-@click.option("--p-intermediate-size", default=2048, type=int)
+@click.option("--p-intermediate-size", default=1024, type=int)
 @click.option(
     "--p-intermediate-activation", default="gelu", show_default=True, type=str
 )
@@ -84,6 +84,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-include-bert-loss", default=True, required=False, type=bool)
 @click.option("--p-use-linear-bias", default=True, type=bool)
 @click.option("--p-filters", default=32, type=int)
+@click.option("--p-workers", default=1, type=int)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -106,14 +107,14 @@ def fit_asv_encoder(
     p_include_bert_loss: bool,
     p_use_linear_bias: bool,
     p_filters: int,
+    p_workers: int,
 ):
     import tensorflow_addons as tfa
 
     tf.keras.mixed_precision.set_global_policy("mixed_float16")
     from aam.callbacks import LAMBLRScheduler
-    from aam.data_handlers.asv_generator import ASVGenerator, get_dataset
+    from aam.data_handlers.asv_generator import ASVGenerator
     from aam.models.nucleotide_encoder_v6 import NucleotideEncoderV6
-    from aam.models.utils import cos_decay_with_warmup
 
     # launch datasets first so they can begin to preprocess
     common_kwargs = {
@@ -127,7 +128,6 @@ def fit_asv_encoder(
         shuffle=True,
         **common_kwargs,
     )
-    train_dataset = get_dataset(train_gen)
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -182,10 +182,11 @@ def fit_asv_encoder(
     ]
 
     model.fit(
-        train_dataset,
+        train_gen,
         callbacks=[*core_callbacks, plateau],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
+        workers=p_workers,
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")

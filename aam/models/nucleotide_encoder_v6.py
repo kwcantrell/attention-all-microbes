@@ -54,12 +54,22 @@ class NucleotideEncoderV6(tf.keras.Model):
             name="asv_ff",
         )
 
+    def build(self, input_shape):
+        if self.built:
+            return
+        print("Building NucleotideEncoderV6...")
+        self.asv_encoder.build(input_shape)
+        input_shape = self.asv_encoder.compute_output_shape(input_shape)
+        self.asv_ff.build(input_shape)
+        super(NucleotideEncoderV6, self).build(input_shape)
+
     def build_graph(self, input_shape):
         """Builds graph
 
         Args:
             input_shape (tuple): A shape tuple (integers), not including the batch size.
         """
+        super(NucleotideEncoderV6, self).build((None,) + input_shape)
         x = tf.keras.layers.Input(shape=(input_shape))
         return tf.keras.Model(inputs=[x], outputs=self.call(x))
 
@@ -69,7 +79,7 @@ class NucleotideEncoderV6(tf.keras.Model):
 
     def _compute_loss(self, y_true, embeddings):
         asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
-        return asv_loss, asv_loss
+        return asv_loss
 
     def train_step(self, data):
         inputs, y_true = data
@@ -78,7 +88,6 @@ class NucleotideEncoderV6(tf.keras.Model):
             asv_loss = self._compute_loss(y_true, embeddings)
             nuc_loss = tf.reduce_sum(self.losses)
             unscaled_loss = asv_loss + nuc_loss
-
             if self.compute_dtype == "float16":
                 loss = self.optimizer.get_scaled_loss(unscaled_loss)
             else:

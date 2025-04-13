@@ -30,7 +30,7 @@ def _pairwise_distances(
         # Because the gradient of sqrt is infinite when distances == 0.0
         # (ex: on the diagonal)
         # we need to add a small epsilon where distances == 0.0
-        mask = tf.cast(distances != 0.0, tf.float32)
+        mask = tf.cast(distances > 1e-6, tf.float32)
         distances = distances + 1e-6
 
         distances = tf.sqrt(distances)
@@ -103,9 +103,9 @@ class PairwiseLoss(tf.keras.losses.Loss):
         self.use_mean_pairs = use_mean_pairs
 
     def call(self, y_true, y_pred):
-        y_pred_dist = _pairwise_distances(y_pred, squared=True)
+        y_pred_dist = _pairwise_distances(y_pred, squared=False)
 
-        differences = tf.math.square(y_pred_dist - tf.square(y_true))
+        differences = tf.math.square(y_pred_dist - y_true)
         mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1) > 0
         differences = differences[mask]
         if self.use_mean_pairs:

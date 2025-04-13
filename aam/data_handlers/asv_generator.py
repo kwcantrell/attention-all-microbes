@@ -245,50 +245,6 @@ class ASVGenerator(tf.keras.utils.Sequence):
         return tokens, (dists + dists.T, tax_levels)
 
 
-def get_dataset(gen: ASVGenerator):
-    enqueuer = tf.keras.utils.OrderedEnqueuer(gen, use_multiprocessing=True)
-    enqueuer.start(workers=2, max_queue_size=gen.steps_per_epoch)
-    gen.stop = lambda: enqueuer.stop(0.1)
-
-    batch_dim = gen.samples_per_minibatch if gen.drop_remainder else None
-    pairwise_batch_size = gen.pairwise_batch_size if gen.drop_remainder else None
-    if not gen.return_asv_ids:
-        y_type = tf.TensorSpec(
-            shape=(pairwise_batch_size, pairwise_batch_size), dtype=tf.float32
-        )
-    else:
-        y_type = tf.TensorSpec(shape=(batch_dim), dtype=tf.string)
-
-    if gen.return_asv_ids or gen.taxonomy is None:
-        dataset = tf.data.Dataset.from_generator(
-            enqueuer.get,
-            output_signature=(
-                tf.TensorSpec(shape=(batch_dim, 150), dtype=tf.int32),
-                y_type,
-            ),
-        )
-    else:
-        dataset = tf.data.Dataset.from_generator(
-            enqueuer.get,
-            output_signature=(
-                tf.TensorSpec(shape=(batch_dim, 150), dtype=tf.int32),
-                (
-                    y_type,
-                    (
-                        tf.TensorSpec(shape=(batch_dim), dtype=tf.int32),
-                        tf.TensorSpec(shape=(batch_dim), dtype=tf.int32),
-                        tf.TensorSpec(shape=(batch_dim), dtype=tf.int32),
-                        tf.TensorSpec(shape=(batch_dim), dtype=tf.int32),
-                        tf.TensorSpec(shape=(batch_dim), dtype=tf.int32),
-                        tf.TensorSpec(shape=(batch_dim), dtype=tf.int32),
-                    ),
-                ),
-            ),
-        )
-
-    return dataset
-
-
 if __name__ == "__main__":
     import numpy as np
 
