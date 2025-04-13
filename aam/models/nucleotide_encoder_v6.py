@@ -63,8 +63,9 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.asv_ff.build(input_shape)
         super(NucleotideEncoderV6, self).build(input_shape)
 
-    def compile(self, rand_nucs=0.03, nucs_to_obs=0.15, **kwargs):
+    def compile(self, randomize=0.97, rand_nucs=0.03, nucs_to_obs=0.15, **kwargs):
         super().compile(**kwargs)
+        self.asv_encoder.randomize = randomize
         self.asv_encoder.rand_nucs = rand_nucs
         self.asv_encoder.nucs_to_obs = nucs_to_obs
 

@@ -62,6 +62,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             ignore_class=0, reduction=tf.keras.losses.Reduction.NONE
         )
 
+        self.randomize = 0.97
         self.rand_nucs = 0.03
         self.nucs_to_obs = 0.15
         self.emb_layer = tf.keras.layers.Embedding(
@@ -129,8 +130,11 @@ class ASVEncoder(tf.keras.layers.Layer):
         input_shape = tf.shape(inputs)
 
         # randomize tokens
+        randomize = tf.cast(
+            tf.random.uniform([input_shape[0], 1]) < self.randomize, dtype=tf.int32
+        )
         random_mask = create_random_mask(input_shape, self.rand_nucs, dtype=tf.int32)
-        random_tokens = self._random_nucs(inputs, random_mask)
+        random_tokens = self._random_nucs(inputs, random_mask * randomize)
 
         if training:
             emb_inputs = random_tokens
