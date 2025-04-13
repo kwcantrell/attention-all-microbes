@@ -107,15 +107,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         masked_inputs = self._mask_nucs(inputs, random_mask)
         return masked_inputs + random_nucs * random_mask
 
-    def _tokens_to_sequence(self, tokens, num_tokens):
-        """Converts nucleotide tokens into sequence tokens. Sequence tokens encodes
-        the relative position of each nucleotide by adding num_tokens * len(tokens) * i to
-        each position i in tokens. For example if tokens=[1, 2, 3, 4] and num_tokens=5
-        then _tokens_to_sequence(tokens) will return [ 1,  7, 13, 19]"""
-        num_bp = tf.shape(tokens)[-1]
-        seq_shifts = tf.range(0, num_tokens * num_bp, num_tokens, dtype=tf.int32)
-        return tokens + seq_shifts
-
     def _observe_first_and_last_positions(self, obs_mask):
         """Sets the first and last position of each sequence in obs_mask to 1."""
         shape = tf.shape(obs_mask)
@@ -141,13 +132,10 @@ class ASVEncoder(tf.keras.layers.Layer):
         random_mask = create_random_mask(input_shape, self.rand_nucs, dtype=tf.int32)
         random_tokens = self._random_nucs(inputs, random_mask)
 
-        original_sequence = self._tokens_to_sequence(inputs, self.num_tokens)
-        randomize_sequence = self._tokens_to_sequence(random_tokens, self.num_tokens)
-
         if training:
-            emb_inputs = randomize_sequence
+            emb_inputs = random_tokens
         else:
-            emb_inputs = original_sequence
+            emb_inputs = inputs
 
         # compute embeddings
         asv_input = self.emb_layer(emb_inputs)

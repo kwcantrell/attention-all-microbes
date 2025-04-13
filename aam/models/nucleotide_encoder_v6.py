@@ -63,6 +63,11 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.asv_ff.build(input_shape)
         super(NucleotideEncoderV6, self).build(input_shape)
 
+    def compile(self, rand_nucs=0.03, nucs_to_obs=0.15, **kwargs):
+        super().compile(**kwargs)
+        self.asv_encoder.rand_nucs = rand_nucs
+        self.asv_encoder.nucs_to_obs = nucs_to_obs
+
     def build_graph(self, input_shape):
         """Builds graph
 
@@ -161,5 +166,5 @@ class NucleotideEncoderV6(tf.keras.Model):
         model = cls(**config)
 
         if input_shape is not None:
-            model.build([None, 150])
+            model.build_graph(tuple(input_shape[1:]))
         return model

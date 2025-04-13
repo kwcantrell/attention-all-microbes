@@ -86,6 +86,8 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-filters", default=32, type=int)
 @click.option("--p-workers", default=1, type=int)
 @click.option("--p-multiprocessing", default=False, type=bool)
+@click.option("--p-rand-nucs", default=0.15, type=float)
+@click.option("--p-nucs-to-obs", default=0.03, type=float)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -110,6 +112,8 @@ def fit_asv_encoder(
     p_filters: int,
     p_workers: int,
     p_multiprocessing: bool,
+    p_rand_nucs: float,
+    p_nucs_to_obs: float,
 ):
     import tensorflow_addons as tfa
 

@@ -16,6 +16,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         activation="gelu",
         dropout_rate=0.0,
         attention_dropout_rate=0.0,
+        use_linear_bias=True,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -25,6 +26,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._activation = activation
         self._dropout_rate = dropout_rate
         self._attention_dropout_rate = attention_dropout_rate
+        self.use_linear_bias = use_linear_bias
 
     def build(self, input_shape):
         print("Building TransformerEncoder...")
@@ -35,7 +37,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
             shape = input_shape
         self.hidden_dim = shape[-1]
         linear_bias_softmax = LinearBiasSoftmax()
-        print("Using linear bias")
+
+        if self.use_linear_bias:
+            print("Using linear bias")
 
         def get_transformer(i):
             transformer = tfm.nlp.layers.ReZeroTransformer(
@@ -48,8 +52,8 @@ class TransformerEncoder(tf.keras.layers.Layer):
             )
             transformer.build(shape)
             transformer._attention_layer._build_from_signature(shape, shape)
-
-            setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
+            if self.use_linear_bias:
+                setattr(transformer._attention_layer, "_softmax", linear_bias_softmax)
             return transformer
 
         self.encoder_layers = []
@@ -69,6 +73,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "activation": self._activation,
             "dropout_rate": self._dropout_rate,
             "attention_dropout_rate": self._attention_dropout_rate,
+            "use_linear_bias": self.use_linear_bias,
         }
         base_config = super(TransformerEncoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
