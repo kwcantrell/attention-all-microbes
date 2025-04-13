@@ -85,6 +85,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-use-linear-bias", default=True, type=bool)
 @click.option("--p-filters", default=32, type=int)
 @click.option("--p-workers", default=1, type=int)
+@click.option("--p-multiprocessing", default=False, type=bool)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -108,6 +109,7 @@ def fit_asv_encoder(
     p_use_linear_bias: bool,
     p_filters: int,
     p_workers: int,
+    p_multiprocessing: bool,
 ):
     import tensorflow_addons as tfa
 
@@ -187,6 +189,7 @@ def fit_asv_encoder(
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
         workers=p_workers,
+        use_multiprocessing=p_multiprocessing,
     )
     model.set_weights(model_saver.best_weights)
     model.save(model_save_path, save_format="keras")
