@@ -18,6 +18,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         attention_heads: int = 4,
         attention_layers: int = 4,
         intermediate_size: int = 256,
+        include_pos_emb: bool = False,
         **kwargs,
     ):
         super(NucleotideEncoderV6, self).__init__(**kwargs)
@@ -34,7 +35,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.nuc_tracker = tf.keras.metrics.Mean()
         self.asv_loss = PairwiseLoss(use_mean_pairs=False)
         self.asv_tracker = tf.keras.metrics.Mean()
-
+        self.include_pos_emb = include_pos_emb
         self.asv_encoder = ASVEncoder(
             self.max_bp,
             self.attention_heads,
@@ -43,6 +44,7 @@ class NucleotideEncoderV6(tf.keras.Model):
             self.intermediate_size,
             intermediate_activation=self.intermediate_activation,
             embedding_dim=self.embedding_dim,
+            include_pos_emb=self.include_pos_emb,
             name="asv_encoder",
         )
         self.asv_ff = tf.keras.Sequential(
@@ -152,6 +154,7 @@ class NucleotideEncoderV6(tf.keras.Model):
                 "attention_heads": self.attention_heads,
                 "attention_layers": self.attention_layers,
                 "intermediate_size": self.intermediate_size,
+                "include_pos_emb": self.include_pos_emb,
                 "build_input_shape": self.get_build_config(),
             }
         )

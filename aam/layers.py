@@ -43,6 +43,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         intermediate_activation="gelu",
         add_token=True,
         embedding_dim=128,
+        include_pos_emb=False,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -68,6 +69,17 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.emb_layer = tf.keras.layers.Embedding(
             self.num_tokens, self.embedding_dim, input_length=self.max_bp
         )
+        self.include_pos_emb = include_pos_emb
+        if self.include_pos_emb:
+            print("including pos embeddings")
+            self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp)
+            self._rezero = self.add_weight(
+                "_rezero",
+                dtype=tf.float32,
+                trainable=True,
+                initializer=tf.keras.initializers.Zeros(),
+            )
+
         self.asv_attention = TransformerEncoder(
             num_layers=self.attention_layers,
             num_attention_heads=self.attention_heads,
@@ -143,6 +155,10 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         # compute embeddings
         asv_input = self.emb_layer(emb_inputs)
+        if self.include_pos_emb:
+            pos_emb = self.pos_emb(asv_input)
+            asv_input = asv_input + tf.cast(self._rezero, self.compute_dtype) * pos_emb
+
         output = self.asv_attention(asv_input, training=training)
 
         if self.trainable:
@@ -185,6 +201,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "intermediate_activation": self.intermediate_activation,
                 "add_token": self.add_token,
                 "embedding_dim": self.embedding_dim,
+                "include_pos_emb": self.include_pos_emb,
             }
         )
         return config

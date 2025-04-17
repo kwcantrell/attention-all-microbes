@@ -88,6 +88,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-multiprocessing", default=False, type=bool)
 @click.option("--p-rand-nucs", default=0.15, type=float)
 @click.option("--p-nucs-to-obs", default=0.03, type=float)
+@click.option("--p-include-pos-emb", default=True, type=bool)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -114,6 +115,7 @@ def fit_asv_encoder(
     p_multiprocessing: bool,
     p_rand_nucs: float,
     p_nucs_to_obs: float,
+    p_include_pos_emb: bool,
 ):
     import tensorflow_addons as tfa
 
@@ -152,6 +154,7 @@ def fit_asv_encoder(
             attention_heads=p_attention_heads,
             attention_layers=p_attention_layers,
             intermediate_size=p_intermediate_size,
+            include_pos_emb=p_include_pos_emb,
         )
 
     # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
@@ -174,7 +177,12 @@ def fit_asv_encoder(
 
     token_shape = (150,)
     model.build_graph(token_shape).summary()
-    model.compile(optimizer=optimizer, run_eagerly=False)
+    model.compile(
+        rand_nucs=p_rand_nucs,
+        nucs_to_obs=p_nucs_to_obs,
+        optimizer=optimizer,
+        run_eagerly=False,
+    )
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
