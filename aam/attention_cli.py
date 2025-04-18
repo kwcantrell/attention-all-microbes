@@ -86,6 +86,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-filters", default=32, type=int)
 @click.option("--p-workers", default=1, type=int)
 @click.option("--p-multiprocessing", default=False, type=bool)
+@click.option("--p-randomize", default=0.97, type=float)
 @click.option("--p-rand-nucs", default=0.15, type=float)
 @click.option("--p-nucs-to-obs", default=0.03, type=float)
 @click.option("--p-include-pos-emb", default=True, type=bool)
@@ -113,6 +114,7 @@ def fit_asv_encoder(
     p_filters: int,
     p_workers: int,
     p_multiprocessing: bool,
+    p_randomize: float,
     p_rand_nucs: float,
     p_nucs_to_obs: float,
     p_include_pos_emb: bool,
@@ -178,6 +180,7 @@ def fit_asv_encoder(
     token_shape = (150,)
     model.build_graph(token_shape).summary()
     model.compile(
+        randomize=p_randomize,
         rand_nucs=p_rand_nucs,
         nucs_to_obs=p_nucs_to_obs,
         optimizer=optimizer,
