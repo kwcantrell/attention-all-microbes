@@ -72,12 +72,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.include_pos_emb = include_pos_emb
         if self.include_pos_emb:
             print("including pos embeddings")
-            self.pos_emb = tfm.nlp.layers.PositionEmbedding(self.max_bp)
-            self._rezero = self.add_weight(
-                "_rezero",
-                dtype=tf.float32,
-                trainable=True,
-                initializer=tf.keras.initializers.Zeros(),
+            self.pos_emb = tfm.nlp.layers.PositionEmbedding(
+                self.max_bp, initializer="uniform"
             )
 
         self.asv_attention = TransformerEncoder(
@@ -147,7 +143,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         )
         random_mask = create_random_mask(input_shape, self.rand_nucs, dtype=tf.int32)
         random_tokens = self._random_nucs(inputs, random_mask * randomize)
-
         if training:
             emb_inputs = random_tokens
         else:
@@ -156,8 +151,8 @@ class ASVEncoder(tf.keras.layers.Layer):
         # compute embeddings
         asv_input = self.emb_layer(emb_inputs)
         if self.include_pos_emb:
-            pos_emb = self.pos_emb(asv_input)
-            asv_input = asv_input + tf.cast(self._rezero, self.compute_dtype) * pos_emb
+            asv_input = asv_input + self.pos_emb(asv_input)
+            asv_input = asv_input * tf.cast(0.5, dtype=self.compute_dtype)
 
         output = self.asv_attention(asv_input, training=training)
 
@@ -180,13 +175,14 @@ class ASVEncoder(tf.keras.layers.Layer):
         counts = tf.reduce_sum(tf.cast(mask, dtype=tf.float32), axis=-1, keepdims=True)
         counts = tf.repeat(counts, repeats=seq_dim, axis=-1)
         counts = counts * tf.cast(batch_dim, dtype=tf.float32)
+        counts = tf.cast(1.0, dtype=tf.float32) / counts
 
         tokens = tokens[mask]
         counts = counts[mask]
         embeddings = embeddings[mask]
 
         nuc_preds = self.nuc_pred(embeddings)
-        loss = self.nuc_loss(tokens, nuc_preds) / counts
+        loss = self.nuc_loss(tokens, nuc_preds) * counts
         return tf.reduce_sum(loss)
 
     def get_config(self):
