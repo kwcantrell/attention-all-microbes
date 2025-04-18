@@ -5,6 +5,7 @@ from typing import Union
 import tensorflow as tf
 
 
+@tf.function
 def _pairwise_distances(
     x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False
 ) -> tf.Tensor:

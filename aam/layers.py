@@ -131,7 +131,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         obs_mask = tf.cast(obs_mask, dtype=tf.int32)
         return (obs_mask + mask) > 0
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, return_randomize=False, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
@@ -165,7 +165,11 @@ class ASVEncoder(tf.keras.layers.Layer):
             self.add_loss(loss)
 
         print("ASVEncoder exit...", self.trainable)
-        return output
+        if not return_randomize:
+            return output
+        else:
+            randomize = tf.where(tf.squeeze(randomize, axis=-1) < 1)
+            return output, randomize
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
         shape = tf.shape(mask)

@@ -85,15 +85,19 @@ class NucleotideEncoderV6(tf.keras.Model):
         inputs, asv_ids = data
         return self(inputs, training=False), asv_ids
 
-    def _compute_loss(self, y_true, embeddings):
+    def _compute_loss(self, y_true, output):
+        embeddings, randomize = output
+        embeddings = tf.gather_nd(embeddings, randomize)
+        y_true = tf.gather_nd(y_true, randomize)
+        y_true = tf.gather(y_true, tf.squeeze(randomize, axis=-1), axis=1)
         asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
         return asv_loss
 
     def train_step(self, data):
         inputs, y_true = data
         with tf.GradientTape() as tape:
-            embeddings = self(inputs, training=True)
-            asv_loss = self._compute_loss(y_true, embeddings)
+            output = self(inputs, return_randomize=True, training=True)
+            asv_loss = self._compute_loss(y_true, output)
             nuc_loss = tf.reduce_sum(self.losses)
             unscaled_loss = asv_loss + nuc_loss
             if self.compute_dtype == "float16":
@@ -120,8 +124,8 @@ class NucleotideEncoderV6(tf.keras.Model):
     def test_step(self, data):
         inputs, y_true = data
 
-        embeddings = self(inputs, training=False)
-        asv_loss = self._compute_loss(y_true, embeddings)
+        output = self(inputs, return_randomize=True, training=False)
+        asv_loss = self._compute_loss(y_true, output)
         nuc_loss = tf.reduce_sum(self.losses)
         loss = asv_loss + nuc_loss
         self.loss_tracker.update_state(loss)
@@ -136,12 +140,20 @@ class NucleotideEncoderV6(tf.keras.Model):
         return output_trackers
 
     def call(
-        self, inputs: tuple[tf.Tensor, tf.Tensor], training: bool = False
+        self, inputs, return_randomize=False, training: bool = False
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
-        embeddings = self.asv_encoder(inputs, training=training)
+
+        if not return_randomize:
+            embeddings = self.asv_encoder(inputs, training=training)
+            asv_embeddings = self.asv_ff(embeddings)
+            return asv_embeddings
+
+        embeddings, randomize = self.asv_encoder(
+            inputs, return_randomize=return_randomize, training=training
+        )
         asv_embeddings = self.asv_ff(embeddings)
-        return asv_embeddings
+        return asv_embeddings, randomize
 
     def get_config(self):
         config = super(NucleotideEncoderV6, self).get_config()
