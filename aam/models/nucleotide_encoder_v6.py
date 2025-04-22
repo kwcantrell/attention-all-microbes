@@ -19,6 +19,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         attention_layers: int = 4,
         intermediate_size: int = 256,
         include_pos_emb: bool = False,
+        use_cls_tkn=False,
         **kwargs,
     ):
         super(NucleotideEncoderV6, self).__init__(**kwargs)
@@ -36,6 +37,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.asv_loss = PairwiseLoss(use_mean_pairs=False)
         self.asv_tracker = tf.keras.metrics.Mean()
         self.include_pos_emb = include_pos_emb
+        self.use_cls_tkn = use_cls_tkn
         self.asv_encoder = ASVEncoder(
             self.max_bp,
             self.attention_heads,
@@ -45,11 +47,19 @@ class NucleotideEncoderV6(tf.keras.Model):
             intermediate_activation=self.intermediate_activation,
             embedding_dim=self.embedding_dim,
             include_pos_emb=self.include_pos_emb,
+            use_cls_tkn=self.use_cls_tkn,
             name="asv_encoder",
         )
+
+        def extract_asv_embedding(x):
+            if self.use_cls_tkn:
+                return x[:, 0]
+
+            return tf.reduce_mean(x, axis=1)
+
         self.asv_ff = tf.keras.Sequential(
             [
-                tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=1)),
+                tf.keras.layers.Lambda(extract_asv_embedding),
                 FeedForward(),
                 tf.keras.layers.Dense(self.embedding_dim, dtype=tf.float32),
             ],
@@ -86,10 +96,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         return self(inputs, training=False), asv_ids
 
     def _compute_loss(self, y_true, output):
-        embeddings, randomize = output
-        embeddings = tf.gather_nd(embeddings, randomize)
-        y_true = tf.gather_nd(y_true, randomize)
-        y_true = tf.gather(y_true, tf.squeeze(randomize, axis=-1), axis=1)
+        embeddings = output
         asv_loss = tf.reduce_mean(self.asv_loss(y_true, embeddings))
         return asv_loss
 
@@ -144,16 +151,9 @@ class NucleotideEncoderV6(tf.keras.Model):
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
-        if not return_randomize:
-            embeddings = self.asv_encoder(inputs, training=training)
-            asv_embeddings = self.asv_ff(embeddings)
-            return asv_embeddings
-
-        embeddings, randomize = self.asv_encoder(
-            inputs, return_randomize=return_randomize, training=training
-        )
+        embeddings = self.asv_encoder(inputs, training=training)
         asv_embeddings = self.asv_ff(embeddings)
-        return asv_embeddings, randomize
+        return asv_embeddings
 
     def get_config(self):
         config = super(NucleotideEncoderV6, self).get_config()
@@ -167,6 +167,7 @@ class NucleotideEncoderV6(tf.keras.Model):
                 "attention_layers": self.attention_layers,
                 "intermediate_size": self.intermediate_size,
                 "include_pos_emb": self.include_pos_emb,
+                "use_cls_tkn": self.use_cls_tkn,
                 "build_input_shape": self.get_build_config(),
             }
         )

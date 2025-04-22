@@ -44,6 +44,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         add_token=True,
         embedding_dim=128,
         include_pos_emb=False,
+        use_cls_tkn=False,
         **kwargs,
     ):
         super(ASVEncoder, self).__init__(**kwargs)
@@ -55,7 +56,12 @@ class ASVEncoder(tf.keras.layers.Layer):
         self.intermediate_ff = intermediate_ff
         self.intermediate_activation = intermediate_activation
         self.add_token = add_token
+        self.use_cls_tkn = use_cls_tkn
         self.num_tokens = 5
+        if self.use_cls_tkn:
+            print("Using cls token!")
+            self.max_bp += 1
+            self.num_tokens += 1
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
@@ -92,8 +98,9 @@ class ASVEncoder(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         print("Building ASVEncoder...")
+        if self.use_cls_tkn:
+            input_shape = (input_shape[0], input_shape[1] + 1)
         self._build_input_shape = input_shape
-
         self.emb_layer.build(input_shape)
 
         input_shape = self.emb_layer.compute_output_shape(input_shape)
@@ -105,6 +112,12 @@ class ASVEncoder(tf.keras.layers.Layer):
         print("ASVEncoder built!")
 
     def compute_output_shape(self, input_shape):
+        if self.use_cls_tkn:
+            if isinstance(input_shape, tuple):
+                input_shape = (input_shape[0], input_shape[1] + 1)
+            elif isinstance(input_shape, list):
+                input_shape[1] += 1
+
         return input_shape + (self.embedding_dim,)
 
     def _mask_nucs(self, inputs, random_mask):
@@ -131,7 +144,7 @@ class ASVEncoder(tf.keras.layers.Layer):
         obs_mask = tf.cast(obs_mask, dtype=tf.int32)
         return (obs_mask + mask) > 0
 
-    def call(self, inputs, return_randomize=False, training=False):
+    def call(self, inputs, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
@@ -149,6 +162,10 @@ class ASVEncoder(tf.keras.layers.Layer):
             emb_inputs = inputs
 
         # compute embeddings
+        if self.use_cls_tkn:
+            emb_inputs = tf.pad(
+                emb_inputs, [[0, 0], [1, 0]], constant_values=self.num_tokens - 1
+            )
         asv_input = self.emb_layer(emb_inputs)
         if self.include_pos_emb:
             asv_input = asv_input + self.pos_emb(asv_input)
@@ -157,19 +174,19 @@ class ASVEncoder(tf.keras.layers.Layer):
         output = self.asv_attention(asv_input, training=training)
 
         if self.trainable:
+            token_pred = output
+            if self.use_cls_tkn:
+                token_pred = token_pred[:, 1:]
+
             # compute cross entropy on 10 percent of nucleotides
             obs_mask = create_random_mask(input_shape, self.nucs_to_obs, dtype=tf.int32)
             obs_mask = obs_mask + random_mask
             obs_mask = self._observe_first_and_last_positions(obs_mask)
-            loss = self._compute_nuc_loss(inputs, output, obs_mask)
+            loss = self._compute_nuc_loss(inputs, token_pred, obs_mask)
             self.add_loss(loss)
 
         print("ASVEncoder exit...", self.trainable)
-        if not return_randomize:
-            return output
-        else:
-            randomize = tf.where(tf.squeeze(randomize, axis=-1) < 1)
-            return output, randomize
+        return output
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
         shape = tf.shape(mask)
@@ -202,6 +219,7 @@ class ASVEncoder(tf.keras.layers.Layer):
                 "add_token": self.add_token,
                 "embedding_dim": self.embedding_dim,
                 "include_pos_emb": self.include_pos_emb,
+                "use_cls_tkn": self.use_cls_tkn,
             }
         )
         return config
