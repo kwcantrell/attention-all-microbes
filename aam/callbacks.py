@@ -137,10 +137,9 @@ class ConfusionMatrx(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir, report_back, monitor="val_loss", **kwargs):
+    def __init__(self, output_dir, monitor="val_loss", **kwargs):
         super().__init__(**kwargs)
         self.output_dir = output_dir
-        self.report_back = report_back
         self.best_weights = None
         self.best_metric = None
         self.monitor = monitor
@@ -153,9 +152,9 @@ class SaveModel(tf.keras.callbacks.Callback):
         if self.best_weights is None or self.best_metric > metric:
             self.best_metric = metric
             self.best_weights = self.model.get_weights()
-        self.model.save(
-            self.output_dir,
-            save_format="keras",
-        )
+            self.model.save(
+                self.output_dir,
+                save_format="keras",
+            )
 
         logs["best_metric"] = self.best_metric
