@@ -117,14 +117,28 @@ class ASVGenerator(tf.keras.utils.Sequence):
     def _lca(self, left_parents, right_parents):
         l_size = len(left_parents)
         r_size = len(right_parents)
+        min_size = min(l_size, r_size)
+        left_parents = left_parents[:min_size]
+        right_parents = right_parents[:min_size]
+        cur_size = min_size
+        left_indx = 0
+        right_indx = cur_size - 1
 
-        current_lca = left_parents[0]
-        for i in range(1, min(l_size, r_size), 1):
-            if left_parents[i] != right_parents[i]:
-                return current_lca
-            current_lca = left_parents[i]
-
-        return current_lca
+        while cur_size > 1:
+            mid_idx = (right_indx - left_indx) // 2 + left_indx
+            if left_parents[mid_idx] == right_parents[mid_idx]:
+                if (
+                    mid_idx == right_indx
+                    or left_parents[mid_idx + 1] != right_parents[mid_idx + 1]
+                ):
+                    return left_parents[mid_idx]
+                left_indx = mid_idx + 1
+            else:
+                if left_parents[mid_idx - 1] == right_parents[mid_idx - 1]:
+                    return left_parents[mid_idx - 1]
+                right_indx = mid_idx - 1
+            cur_size = right_indx - left_indx + 1
+        return left_parents[left_indx]
 
     def _sample_data(self, asvs):
         if self.return_asv_ids:
@@ -138,38 +152,23 @@ class ASVGenerator(tf.keras.utils.Sequence):
         nodes = [self.postorder_nodes[i] for i in sorted_asvs]
         tokens = self.obs_encodings[sorted_asvs]
 
-        # initialize distance matrix
         dists = np.zeros((num_asvs, num_asvs))
-        asv_0_dist = nodes[0].length
-        dists[0, 1:] += asv_0_dist
-        asv_n_dist = nodes[-1].length
-        dists[: num_asvs - 1, num_asvs - 1] += asv_n_dist
-        for i in range(1, num_asvs - 1, 1):
-            asv_i = nodes[i]
-            dist_to_root = asv_i.length
-            dists[i, i + 1 :] += dist_to_root
-            dists[:i, i] += dist_to_root
-
         for i in range(num_asvs):
             # get leaf i
             leaf_i = nodes[i]
+            i_to_root = leaf_i.length
 
+            cur_lca = leaf_i
             for j in range(i + 1, num_asvs, 1):
                 leaf_j = nodes[j]
+                j_to_root = leaf_j.length
 
-                if j == i + 1:
+                if j == i + 1 or cur_lca.postorder_pos < leaf_j.postorder_pos:
                     cur_lca = self._lca(leaf_i.parents, leaf_j.parents)
-                    starting_lca_pos = j
-
-                if cur_lca.postorder_pos < leaf_j.postorder_pos:
-                    dists[i, starting_lca_pos:j] -= 2 * cur_lca.length
-                    cur_lca = self._lca(leaf_i.parents, leaf_j.parents)
-                    starting_lca_pos = j
-
-                if j == num_asvs - 1:
-                    dists[i, starting_lca_pos:] -= 2 * cur_lca.length
-
-        return tokens, dists * (1 / self.max_dist_to_root)
+                dists[i, j] = (
+                    i_to_root + j_to_root - 2 * cur_lca.length
+                ) / self.max_dist_to_root
+        return tokens, dists
 
 
 if __name__ == "__main__":
@@ -183,7 +182,7 @@ if __name__ == "__main__":
         sequence_batch_size=4,
         pairwise_batch_size=4,
         shuffle=False,
-        return_asv_ids=True,
+        return_asv_ids=False,
     )
     print(ug[0])
     # dataset = get_dataset(ug)

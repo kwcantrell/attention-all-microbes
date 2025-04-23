@@ -129,21 +129,6 @@ class ASVEncoder(tf.keras.layers.Layer):
         masked_inputs = self._mask_nucs(inputs, random_mask)
         return masked_inputs + random_nucs * random_mask
 
-    def _observe_first_and_last_positions(self, obs_mask):
-        """Sets the first and last position of each sequence in obs_mask to 1."""
-        shape = tf.shape(obs_mask)
-        batch_dim = shape[0]
-        last_i = shape[-1] - 1
-        batch = tf.expand_dims(tf.range(batch_dim, dtype=tf.int32), axis=-1)
-        first_pos = tf.expand_dims(tf.zeros(batch_dim, dtype=tf.int32), axis=-1)
-        last_pos = tf.expand_dims(tf.ones(batch_dim, dtype=tf.int32) * last_i, axis=-1)
-        first_indices = tf.concat([batch, first_pos], axis=-1)
-        last_indices = tf.concat([batch, last_pos], axis=-1)
-        indices = tf.concat([first_indices, last_indices], axis=0)
-        mask = tf.scatter_nd(indices, tf.ones(2 * batch_dim, dtype=tf.int32), shape)
-        obs_mask = tf.cast(obs_mask, dtype=tf.int32)
-        return (obs_mask + mask) > 0
-
     def call(self, inputs, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
@@ -180,8 +165,7 @@ class ASVEncoder(tf.keras.layers.Layer):
 
             # compute cross entropy on 10 percent of nucleotides
             obs_mask = create_random_mask(input_shape, self.nucs_to_obs, dtype=tf.int32)
-            obs_mask = obs_mask + random_mask
-            obs_mask = self._observe_first_and_last_positions(obs_mask)
+            obs_mask = obs_mask + random_mask > 0
             loss = self._compute_nuc_loss(inputs, token_pred, obs_mask)
             self.add_loss(loss)
 
