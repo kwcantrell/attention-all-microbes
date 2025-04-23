@@ -162,21 +162,30 @@ def fit_asv_encoder(
             use_cls_tkn=p_use_cls_tkn,
         )
 
-    # lr_scheduler = LAMBLRScheduler(cos_decay_with_warmup(p_lr, 0, p_decay_steps, 0.1))
-    plateau = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor="loss",
-        factor=0.9,
-        patience=5,
-        verbose=0,
-        mode="auto",
-        min_delta=0.000,
-        cooldown=0,
-        min_lr=0.0,
-    )
+    # plateau = tf.keras.callbacks.ReduceLROnPlateau(
+    #     monitor="loss",
+    #     factor=0.9,
+    #     patience=5,
+    #     verbose=0,
+    #     mode="auto",
+    #     min_delta=0.000,
+    #     cooldown=0,
+    #     min_lr=0.0,
+    # )
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha", "layer_norm", "LayerNorm"],
+    )
+    lr_scheduler = LAMBLRScheduler(
+        tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=p_lr,
+            warmup_target=p_lr,  # maybe change
+            warmup_steps=0,
+            alpha=0.1,
+            decay_steps=10 * train_gen.steps_per_epoch,
+        ),
+        optimizer=optimizer,
     )
     optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
@@ -203,7 +212,7 @@ def fit_asv_encoder(
 
     model.fit(
         train_gen,
-        callbacks=[*core_callbacks, plateau],
+        callbacks=[*core_callbacks, lr_scheduler],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
         workers=p_workers,

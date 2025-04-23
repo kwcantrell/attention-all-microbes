@@ -101,12 +101,15 @@ class LAMBLRScheduler(tf.keras.callbacks.Callback):
     def __init__(self, scheduler, optimizer=None):
         self.scheduler = scheduler
         self.optimizer = optimizer
+        self.cur_step = 0
 
     def on_batch_end(self, batch, logs=None):
         if self.optimizer is None:
             self.optimizer = self.model.optimizer
         step = float(tf.keras.backend.get_value(self.optimizer.iterations))
+        self.step = step
         self.optimizer.learning_rate.assign(self.scheduler(step))
+        logs["lr"] = self.scheduler(step)
 
 
 class ConfusionMatrx(tf.keras.callbacks.Callback):
