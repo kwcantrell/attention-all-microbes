@@ -120,29 +120,29 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         return input_shape + (self.embedding_dim,)
 
-    def _mask_nucs(self, inputs, random_mask):
-        return inputs * (1 - random_mask)
-
-    def _random_nucs(self, inputs, random_mask):
-        shape = tf.shape(inputs)
-        random_nucs = tf.random.uniform(shape, minval=0, maxval=5, dtype=tf.int32)
-        masked_inputs = self._mask_nucs(inputs, random_mask)
-        return masked_inputs + random_nucs * random_mask
-
     def call(self, inputs, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
         input_shape = tf.shape(inputs)
 
-        # randomize tokens
-        randomize = tf.cast(
-            tf.random.uniform([input_shape[0], 1]) < self.randomize, dtype=tf.int32
-        )
         random_mask = create_random_mask(input_shape, self.rand_nucs, dtype=tf.int32)
-        random_tokens = self._random_nucs(inputs, random_mask * randomize)
+        random_change = create_random_mask(input_shape, 0.1, dtype=tf.int32)
+        random_no_change = create_random_mask(input_shape, 0.1, dtype=tf.int32)
+
+        # randomly mask tokens
+        masked_tokens = inputs * (1 - random_mask)
+
+        # add back tokens marked as no_change
+        masked_tokens = masked_tokens + inputs * random_no_change * random_mask
+
+        # randomly modify tokens marked as change
+        random_nucs = tf.random.uniform(input_shape, minval=1, maxval=5, dtype=tf.int32)
+        random_nucs = random_nucs * random_change * (1 - random_no_change) * random_mask
+        masked_tokens = masked_tokens + random_nucs
+
         if training:
-            emb_inputs = random_tokens
+            emb_inputs = masked_tokens
         else:
             emb_inputs = inputs
 
