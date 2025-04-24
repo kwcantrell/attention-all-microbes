@@ -97,11 +97,17 @@ class PairwiseLoss(tf.keras.losses.Loss):
         self.loss_type = loss_type
         self.squared = squared
         self.use_mean_pairs = use_mean_pairs
+        if loss_type == "mse":
+            self.fn = lambda x: _pairwise_distances(x, self.squared)
+        else:
+            print("using cos distance!")
+            self.fn = _pairwise_cosine_distance
 
     def call(self, y_true, y_pred):
-        y_pred_dist = _pairwise_distances(y_pred, squared=self.squared)
+        # y_pred_dist = _pairwise_distances(y_pred, squared=self.squared)
+        y_pred_dist = self.fn(y_pred)
 
-        if self.squared:
+        if self.squared and self.loss_type == "mse":
             y_true = tf.square(y_true)
 
         differences = tf.math.square(y_true - y_pred_dist)

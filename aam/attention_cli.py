@@ -92,6 +92,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-include-pos-emb", default=False, type=bool)
 @click.option("--p-use-cls-tkn", default=False, type=bool)
 @click.option("--p-squared-pairwise-loss", default=False, type=bool)
+@click.option("--p-pairwise-type", default="mse", type=bool)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,
@@ -122,6 +123,7 @@ def fit_asv_encoder(
     p_include_pos_emb: bool,
     p_use_cls_tkn: bool,
     p_squared_pairwise_loss: bool,
+    p_pairwise_type: str,
 ):
     import tensorflow_addons as tfa
 
@@ -199,6 +201,7 @@ def fit_asv_encoder(
         rand_nucs=p_rand_nucs,
         nucs_to_obs=p_nucs_to_obs,
         squared_pairwise_loss=p_squared_pairwise_loss,
+        pairwise_type=p_pairwise_type,
         optimizer=optimizer,
         run_eagerly=False,
     )

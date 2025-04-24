@@ -20,6 +20,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         intermediate_size: int = 256,
         include_pos_emb: bool = False,
         use_cls_tkn=False,
+        pairwise_type="mse",
         **kwargs,
     ):
         super(NucleotideEncoderV6, self).__init__(**kwargs)
@@ -80,6 +81,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         randomize=0.97,
         rand_nucs=0.03,
         nucs_to_obs=0.15,
+        pairwise_type="cos",
         squared_pairwise_loss=False,
         **kwargs,
     ):
@@ -87,8 +89,11 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.asv_encoder.randomize = randomize
         self.asv_encoder.rand_nucs = rand_nucs
         self.asv_encoder.nucs_to_obs = nucs_to_obs
+        self.pairwise_type = pairwise_type
         self.asv_loss = PairwiseLoss(
-            use_mean_pairs=False, squared=squared_pairwise_loss
+            loss_type=self.pairwise_type,
+            use_mean_pairs=False,
+            squared=squared_pairwise_loss,
         )
 
     def build_graph(self, input_shape):
@@ -178,6 +183,7 @@ class NucleotideEncoderV6(tf.keras.Model):
                 "intermediate_size": self.intermediate_size,
                 "include_pos_emb": self.include_pos_emb,
                 "use_cls_tkn": self.use_cls_tkn,
+                "pairwise_type": self.pairwise_type,
                 "build_input_shape": self.get_build_config(),
             }
         )
