@@ -3,7 +3,7 @@ from __future__ import annotations
 import tensorflow as tf
 
 from aam.layers import ASVEncoder
-from aam.losses import PairwiseLoss
+from aam.losses import PairwiseLoss, _pairwise_cosine_distance, _pairwise_distances
 from aam.models.feedforward import FeedForward
 
 
@@ -33,6 +33,11 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.attention_layers = attention_layers
         self.intermediate_size = intermediate_size
 
+        self.pairwise_type = pairwise_type
+        if self.pairwise_type == "mse":
+            self.dist_fn = _pairwise_distances
+        else:
+            self.dist_fn = _pairwise_cosine_distance
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
 
@@ -109,6 +114,14 @@ class NucleotideEncoderV6(tf.keras.Model):
     def predict_step(self, data):
         inputs, asv_ids = data
         return self(inputs, training=False), asv_ids
+
+    def compute_distances(self, embeddings):
+        distances = self.dist_fn(embeddings)
+        mask = tf.linalg.band_part(tf.ones_like(distances), 0, -1)
+        mask -= tf.linalg.band_part(mask, 0, 0)
+        distances = distances * mask
+        print(distances)
+        return distances + tf.transpose(distances)
 
     def _compute_loss(self, y_true, output):
         embeddings = output

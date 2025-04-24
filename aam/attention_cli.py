@@ -92,7 +92,7 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-include-pos-emb", default=False, type=bool)
 @click.option("--p-use-cls-tkn", default=False, type=bool)
 @click.option("--p-squared-pairwise-loss", default=False, type=bool)
-@click.option("--p-pairwise-type", default="mse", type=bool)
+@click.option("--p-pairwise-type", default="mse", type=str)
 def fit_asv_encoder(
     i_tree: str,
     p_sequence_batch_size: int,

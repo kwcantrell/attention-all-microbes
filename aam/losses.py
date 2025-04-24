@@ -20,7 +20,7 @@ def _pairwise_distances(
         tf.Tensor: If y is provided returns tensor of shape [N, M]. Otherwise return tensor
         of shape [N,N].
     """
-
+    print("cos dist")
     r = tf.reduce_sum(X * X, 1)
 
     # turn r into column vector
@@ -53,6 +53,7 @@ def _pairwise_cosine_distance(
         tf.Tensor: If y is provided returns tensor of shape [N, M]. Otherwise return tensor
         of shape [N,N].
     """
+    print("cos dist")
     x = tf.linalg.l2_normalize(x, axis=-1)
     if y is None:
         y = x
@@ -112,6 +113,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
 
         differences = tf.math.square(y_true - y_pred_dist)
         mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1)
+        mask -= tf.linalg.band_part(mask, 0, 0)
         differences = differences * mask
         if self.use_mean_pairs:
             mean_mask = differences >= tf.reduce_mean(differences)
