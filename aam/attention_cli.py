@@ -185,7 +185,7 @@ def fit_asv_encoder(
             warmup_target=p_lr,  # maybe change
             warmup_steps=0,
             alpha=0.1,
-            decay_steps=10 * train_gen.steps_per_epoch,
+            decay_steps=100 * train_gen.steps_per_epoch,
         ),
         optimizer=optimizer,
     )
