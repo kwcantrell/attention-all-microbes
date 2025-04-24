@@ -55,21 +55,28 @@ class ASVGenerator(tf.keras.utils.Sequence):
 
         # step 3: cache node info
         print("step 3: cache node info")
-        self.max_dist_to_root = 0
-        for n in self.tree_node.preorder(include_self=True):
-            if n.length is None:
-                n.length = 0.0
+        dist_to_roots = []
+        print(len(self.tree_node.children))
+        self.tree_node.length = 0.0
+        for subtree in self.tree_node.children:
+            cur_max = 0
+            for n in subtree.preorder(include_self=True):
+                if n.length is None:
+                    n.length = 0.0
 
-            if not n.is_root():
-                n.length += n.parent.length
+                if not n.is_root():
+                    n.length += n.parent.length
 
-            dist_to_root = n.length
-            if dist_to_root > self.max_dist_to_root:
-                self.max_dist_to_root = dist_to_root
+                if n.is_tip():
+                    n.parents = self._node_to_root(n)
+                    if n.length > cur_max:
+                        cur_max = n.length
+            dist_to_roots.append(cur_max)
 
-            if n.is_tip():
-                n.parents = self._node_to_root(n)
-        print(f"max tip to root distance is {self.max_dist_to_root}")
+        self.max_dist = np.sum(sorted(dist_to_roots)[-2:])
+        print(
+            f"max tip to root distance is {self.max_dist}, {sorted(dist_to_roots)[-2:]}"
+        )
 
         self.shuffle = shuffle
         self.epochs = epochs
@@ -167,24 +174,25 @@ class ASVGenerator(tf.keras.utils.Sequence):
                     cur_lca = self._lca(leaf_i.parents, leaf_j.parents)
                 dists[i, j] = (
                     i_to_root + j_to_root - 2 * cur_lca.length
-                ) / self.max_dist_to_root
+                ) / self.max_dist
         return tokens, dists
 
 
 if __name__ == "__main__":
     import numpy as np
 
-    tree_path = (
-        "/home/kalen/aam-research-exam/research-exam/agp/results/reference-tree.nwk"
-    )
+    tree_path = "/home/kalen/aam-research-exam/research-exam/agp/data/agp-aligned.nwk"
     ug = ASVGenerator(
         tree=tree_path,
-        sequence_batch_size=4,
-        pairwise_batch_size=4,
+        sequence_batch_size=2048,
+        pairwise_batch_size=2048,
         shuffle=False,
         return_asv_ids=False,
+        drop_remainder=False,
     )
-    print(ug[0])
+    print(ug.steps_per_epoch)
+    for i in range(ug.steps_per_epoch):
+        print(np.max(ug[i][1]))
     # dataset = get_dataset(ug)
     # model = tf.keras.models.load_model(
     #     "/home/kalen/aam-research-exam/research-exam/healty-age-regression/asv-encoder-tax-v4/model.keras",
