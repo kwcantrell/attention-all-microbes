@@ -173,22 +173,10 @@ class ASVEncoder(tf.keras.layers.Layer):
         return output
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
-        shape = tf.shape(mask)
-        batch_dim = shape[0]
-        seq_dim = shape[-1]
-
-        counts = tf.reduce_sum(tf.cast(mask, dtype=tf.float32), axis=-1, keepdims=True)
-        counts = tf.repeat(counts, repeats=seq_dim, axis=-1)
-        counts = counts * tf.cast(batch_dim, dtype=tf.float32)
-        counts = tf.cast(1.0, dtype=tf.float32) / counts
-
-        tokens = tokens[mask]
-        counts = counts[mask]
-        embeddings = embeddings[mask]
-
+        mask = tf.cast(mask, dtype=tf.float32)
         nuc_preds = self.nuc_pred(embeddings)
-        loss = self.nuc_loss(tokens, nuc_preds) * counts
-        return tf.reduce_sum(loss)
+        loss = self.nuc_loss(tokens, nuc_preds) * mask
+        return tf.reduce_sum(loss) / tf.reduce_sum(mask)
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()

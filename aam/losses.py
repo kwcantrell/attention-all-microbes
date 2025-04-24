@@ -116,12 +116,12 @@ class PairwiseLoss(tf.keras.losses.Loss):
             y_true = tf.square(y_true)
 
         differences = tf.math.square(y_true - y_pred_dist)
-        mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1) > 0
-        differences = differences[mask]
+        mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1)
+        differences = differences * mask
         if self.use_mean_pairs:
             mean_mask = differences >= tf.reduce_mean(differences)
             differences = differences[mean_mask]
-        loss = tf.reduce_mean(differences)
+        loss = tf.reduce_sum(differences) / tf.reduce_sum(mask)
         return loss
 
 
