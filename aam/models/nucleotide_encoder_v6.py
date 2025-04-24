@@ -34,7 +34,7 @@ class NucleotideEncoderV6(tf.keras.Model):
 
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
-        self.asv_loss = PairwiseLoss(use_mean_pairs=False)
+
         self.asv_tracker = tf.keras.metrics.Mean()
         self.include_pos_emb = include_pos_emb
         self.use_cls_tkn = use_cls_tkn
@@ -75,11 +75,21 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.asv_ff.build(input_shape)
         super(NucleotideEncoderV6, self).build(input_shape)
 
-    def compile(self, randomize=0.97, rand_nucs=0.03, nucs_to_obs=0.15, **kwargs):
+    def compile(
+        self,
+        randomize=0.97,
+        rand_nucs=0.03,
+        nucs_to_obs=0.15,
+        squared_pairwise_loss=False,
+        **kwargs,
+    ):
         super().compile(**kwargs)
         self.asv_encoder.randomize = randomize
         self.asv_encoder.rand_nucs = rand_nucs
         self.asv_encoder.nucs_to_obs = nucs_to_obs
+        self.asv_loss = PairwiseLoss(
+            use_mean_pairs=False, squared=squared_pairwise_loss
+        )
 
     def build_graph(self, input_shape):
         """Builds graph

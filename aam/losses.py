@@ -97,16 +97,25 @@ def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
 
 class PairwiseLoss(tf.keras.losses.Loss):
     def __init__(
-        self, loss_type="mse", use_mean_pairs=False, reduction="none", **kwargs
+        self,
+        loss_type="mse",
+        squared=False,
+        use_mean_pairs=False,
+        reduction="none",
+        **kwargs,
     ):
         super().__init__(reduction=reduction, **kwargs)
         self.loss_type = loss_type
+        self.squared = squared
         self.use_mean_pairs = use_mean_pairs
 
     def call(self, y_true, y_pred):
-        y_pred_dist = _pairwise_distances(y_pred, squared=False)
+        y_pred_dist = _pairwise_distances(y_pred, squared=self.squared)
 
-        differences = tf.math.square(y_pred_dist - y_true)
+        if self.squared:
+            y_true = tf.square(y_true)
+
+        differences = tf.math.square(y_true - y_pred_dist)
         mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1) > 0
         differences = differences[mask]
         if self.use_mean_pairs:
