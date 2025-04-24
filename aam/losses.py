@@ -26,19 +26,9 @@ def _pairwise_distances(
     # turn r into column vector
     r = tf.reshape(r, [-1, 1])
     distances = r - 2 * tf.matmul(X, X, transpose_b=True) + tf.transpose(r)
+    distances = tf.clip_by_value(distances, 1e-6, float("inf"))
     if not squared:
-        # Because the gradient of sqrt is infinite when distances == 0.0
-        # (ex: on the diagonal)
-        # we need to add a small epsilon where distances == 0.0
-        mask = tf.cast(distances > 1e-6, tf.float32)
-        distances = distances + 1e-6
-
         distances = tf.sqrt(distances)
-
-        # Correct the epsilon added: set the distances on the mask to be
-        # exactly 0.0
-        distances = distances * mask
-
     return distances
 
 
