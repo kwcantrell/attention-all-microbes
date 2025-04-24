@@ -86,7 +86,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         randomize=0.97,
         rand_nucs=0.03,
         nucs_to_obs=0.15,
-        pairwise_type="cos",
+        pairwise_type="mse",
         squared_pairwise_loss=False,
         **kwargs,
     ):

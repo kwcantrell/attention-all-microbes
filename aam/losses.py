@@ -20,7 +20,7 @@ def _pairwise_distances(
         tf.Tensor: If y is provided returns tensor of shape [N, M]. Otherwise return tensor
         of shape [N,N].
     """
-    print("cos dist")
+    print("pairwise dist")
     r = tf.reduce_sum(X * X, 1)
 
     # turn r into column vector
@@ -98,7 +98,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         self.loss_type = loss_type
         self.squared = squared
         self.use_mean_pairs = use_mean_pairs
-        if loss_type == "mse":
+        if self.loss_type == "mse":
             self.fn = lambda x: _pairwise_distances(x, self.squared)
         else:
             print("using cos distance!")
