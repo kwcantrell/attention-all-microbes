@@ -5,9 +5,8 @@ from typing import Union
 import tensorflow as tf
 
 
-@tf.function
 def _pairwise_distances(
-    x: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False
+    X: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False
 ) -> tf.Tensor:
     """Constructs a distance matrix between embedding tensors x and y.
 
@@ -21,12 +20,12 @@ def _pairwise_distances(
         tf.Tensor: If y is provided returns tensor of shape [N, M]. Otherwise return tensor
         of shape [N,N].
     """
-    if y is None:
-        y = x
-    distances = tf.expand_dims(x, axis=0) - tf.expand_dims(y, axis=1)
-    distances = tf.multiply(distances, distances)
-    distances = tf.reduce_sum(distances, axis=-1)
 
+    r = tf.reduce_sum(X * X, 1)
+
+    # turn r into column vector
+    r = tf.reshape(r, [-1, 1])
+    distances = r - 2 * tf.matmul(X, X, transpose_b=True) + tf.transpose(r)
     if not squared:
         # Because the gradient of sqrt is infinite when distances == 0.0
         # (ex: on the diagonal)

@@ -178,7 +178,7 @@ def fit_asv_encoder(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha", "layer_norm", "LayerNorm"],
-        clipnorm=1.0,
+        global_clipnorm=1.0,
     )
     lr_scheduler = LAMBLRScheduler(
         tf.keras.optimizers.schedules.CosineDecay(
