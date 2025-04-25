@@ -18,6 +18,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         attention_dropout_rate=0.0,
         use_linear_bias=True,
         fix_bias_shape=True,
+        use_sparse_positions=False,
         **kwargs,
     ):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -29,6 +30,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self._attention_dropout_rate = attention_dropout_rate
         self.use_linear_bias = use_linear_bias
         self.fix_bias_shape = fix_bias_shape
+        self.use_sparse_positions = use_sparse_positions
 
     def build(self, input_shape):
         print("Building TransformerEncoder...")
@@ -38,7 +40,10 @@ class TransformerEncoder(tf.keras.layers.Layer):
         else:
             shape = input_shape
         self.hidden_dim = shape[-1]
-        linear_bias_softmax = LinearBiasSoftmax(fix_bias_shape=self.fix_bias_shape)
+        linear_bias_softmax = LinearBiasSoftmax(
+            fix_bias_shape=self.fix_bias_shape,
+            use_sparse_positions=self.use_sparse_positions,
+        )
 
         if self.use_linear_bias:
             print("Using linear bias")
@@ -77,11 +82,12 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "attention_dropout_rate": self._attention_dropout_rate,
             "use_linear_bias": self.use_linear_bias,
             "fix_bias_shape": self.fix_bias_shape,
+            "use_sparse_positions": self.use_sparse_positions,
         }
         base_config = super(TransformerEncoder, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-    def call(self, inputs, mask=None, training=False):
+    def call(self, inputs, mask=None, sparse_sequence=None, training=False):
         """Return the output of the encoder.
 
         Args:
@@ -94,10 +100,14 @@ class TransformerEncoder(tf.keras.layers.Layer):
           Output of encoder which is a `float32` tensor with shape
             `(batch_size, input_length, hidden_size)`.
         """
-        attention_mask = mask
-
-        if attention_mask is not None:
-            attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
+        if sparse_sequence is not None:
+            attention_mask = sparse_sequence
+        else:
+            attention_mask = mask
+            if attention_mask is not None:
+                attention_mask = tf.matmul(
+                    attention_mask, attention_mask, transpose_b=True
+                )
 
         if isinstance(inputs, (list, tuple)):
             output_tensor, key_value = inputs

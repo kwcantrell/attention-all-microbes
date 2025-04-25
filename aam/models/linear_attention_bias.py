@@ -1,26 +1,20 @@
 import tensorflow as tf
 
 
-def _construct_bias(input_shape):
+def _construct_bias(input_shape, sequence=None):
+    num_heads = input_shape[1]
     query_len = input_shape[2]
     key_len = input_shape[3]
-    num_heads = input_shape[1]
 
     largest_len = tf.reduce_max([query_len, key_len])
+    if sequence is None:
+        sequence = tf.range(0, largest_len, 1, dtype=tf.float32)
+    else:
+        sequence = tf.cast(tf.squeeze(sequence), dtype=tf.float32)
 
-    bias = tf.repeat(
-        tf.expand_dims(tf.range(0, largest_len, 1, dtype=tf.float32), axis=0),
-        repeats=largest_len,
-        axis=0,
-    )
-    bias_mask = tf.cast(
-        tf.expand_dims(tf.range(0, largest_len, 1, dtype=tf.float32), axis=-1) >= bias,
-        dtype=tf.float32,
-    )
-    bias = -1 * tf.sort(bias * bias_mask, direction="DESCENDING")
+    bias = -1 * tf.abs(tf.expand_dims(sequence, axis=-1) - tf.expand_dims(sequence, 0))
     bias = tf.expand_dims(bias, axis=0)
     bias = tf.expand_dims(bias, axis=0)
-    bias = bias + tf.transpose(bias, perm=[0, 1, 3, 2])
     bias = bias[:, :, :query_len, :key_len]
     m = tf.map_fn(
         lambda i: tf.pow(tf.constant(2, dtype=tf.float32), -(i + 1)),
@@ -88,10 +82,12 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         Softmaxed output with the same shape as `inputs`.
     """
 
-    def __init__(self, fix_bias_shape, axis=-1, **kwargs):
+    def __init__(self, fix_bias_shape, use_sparse_positions, axis=-1, **kwargs):
         super().__init__(**kwargs)
         self.axis = axis
         self.fix_bias_shape = fix_bias_shape
+        self.use_sparse_positions = use_sparse_positions
+        print("using sparse positions")
 
     def build(self, input_shape):
         if self.fix_bias_shape:
@@ -99,16 +95,20 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
             input_shape = tf.TensorShape(input_shape)
             self.m, self.bias = _construct_bias(input_shape)
 
-    def construct_bias(self, inputs):
+    def construct_bias(self, inputs, mask):
         if not self.fix_bias_shape:
-            m, bias = _construct_bias(tf.shape(inputs))
+            if self.use_sparse_positions:
+                m, bias = _construct_bias(tf.shape(inputs), mask)
+            else:
+                m, bias = _construct_bias(tf.shape(inputs))
             alibi = m * bias
         else:
             alibi = self.m * self.bias
         return tf.cast(alibi, dtype=self.compute_dtype)
 
     def call(self, inputs, mask=None):
-        if mask is not None:
+        alibi = self.construct_bias(inputs, mask)
+        if not self.use_sparse_positions and mask is not None:
             # Since mask is 1.0 for positions we want to keep and 0.0 for masked
             # positions, this operation will create a tensor which is 0.0 for
             # positions we want to attend and -1e.9 for masked positions.
@@ -119,11 +119,14 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
             # Since we are adding it to the raw scores before the softmax, this
             # is effectively the same as removing these entirely.
             inputs += adder
-        alibi = self.construct_bias(inputs)
         inputs += alibi
         return tf.keras.backend.softmax(inputs, axis=self.axis)
 
     def get_config(self):
-        config = {"fix_bias_shape": self.fix_bias_shape, "axis": self.axis}
+        config = {
+            "fix_bias_shape": self.fix_bias_shape,
+            "use_sparse_positions": self.use_sparse_positions,
+            "axis": self.axis,
+        }
         base_config = super().get_config()
         return dict(list(base_config.items()) + list(config.items()))
