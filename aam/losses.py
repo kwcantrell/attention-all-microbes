@@ -26,8 +26,9 @@ def _pairwise_distances(
     # turn r into column vector
     r = tf.reshape(r, [-1, 1])
     distances = r - 2 * tf.matmul(X, X, transpose_b=True) + tf.transpose(r)
-    distances = tf.clip_by_value(distances, 1e-6, float("inf"))
+    distances = tf.clip_by_value(distances, 0.0, float("inf"))
     if not squared:
+        distances = tf.clip_by_value(distances, 1e-6, float("inf"))
         distances = tf.sqrt(distances)
     return distances
 
@@ -60,7 +61,9 @@ def _pairwise_cosine_distance(
     else:
         y = tf.linalg.l2_normalize(y, axis=-1)
     distances = tf.matmul(x, y, transpose_b=True)
-    return 1 - distances
+    distances = 1 - distances
+    distances = tf.clip_by_value(distances, 0.0, 2.0)
+    return distances
 
 
 def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):

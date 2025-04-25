@@ -60,8 +60,8 @@ class NucleotideEncoderV6(tf.keras.Model):
         def extract_asv_embedding(x):
             if self.use_cls_tkn:
                 return x[:, 0]
-
-            return tf.reduce_mean(x, axis=1)
+            else:
+                return tf.reduce_mean(x, axis=1)
 
         self.asv_ff = tf.keras.Sequential(
             [
