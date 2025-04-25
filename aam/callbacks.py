@@ -101,15 +101,12 @@ class LAMBLRScheduler(tf.keras.callbacks.Callback):
     def __init__(self, scheduler, optimizer=None):
         self.scheduler = scheduler
         self.optimizer = optimizer
-        self.cur_step = 0
 
     def on_batch_end(self, batch, logs=None):
         if self.optimizer is None:
             self.optimizer = self.model.optimizer
         step = float(tf.keras.backend.get_value(self.optimizer.iterations))
-        self.step = step
         self.optimizer.learning_rate.assign(self.scheduler(step))
-        logs["lr"] = self.scheduler(step)
 
 
 class ConfusionMatrx(tf.keras.callbacks.Callback):
@@ -140,21 +137,28 @@ class ConfusionMatrx(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir, monitor="val_loss", **kwargs):
+    def __init__(
+        self, output_dir, monitor="val_loss", only_save_on_improvement=False, **kwargs
+    ):
         super().__init__(**kwargs)
         self.output_dir = output_dir
-        self.best_weights = None
         self.best_metric = None
         self.monitor = monitor
+        self.only_save_on_improvement = only_save_on_improvement
 
     def on_epoch_end(self, epoch, logs=None):
         iterations = float(tf.keras.backend.get_value(self.model.optimizer.iterations))
         logs["iteration"] = iterations
 
         metric = logs[self.monitor]
-        if self.best_weights is None or self.best_metric > metric:
+
+        if self.best_metric is None or metric < self.best_metric:
             self.best_metric = metric
-            self.best_weights = self.model.get_weights()
+            self.model.save(
+                self.output_dir,
+                save_format="keras",
+            )
+        elif not self.only_save_on_improvement:
             self.model.save(
                 self.output_dir,
                 save_format="keras",

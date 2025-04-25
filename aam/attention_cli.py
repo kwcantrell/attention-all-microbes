@@ -91,7 +91,6 @@ GLOBAL_CONFIGURATIONS = {}
 @click.option("--p-nucs-to-obs", default=0.03, type=float)
 @click.option("--p-include-pos-emb", default=False, type=bool)
 @click.option("--p-use-cls-tkn", default=False, type=bool)
-@click.option("--p-squared-pairwise-loss", default=False, type=bool)
 @click.option("--p-pairwise-type", default="mse", type=str)
 def fit_asv_encoder(
     i_tree: str,
@@ -122,7 +121,6 @@ def fit_asv_encoder(
     p_nucs_to_obs: float,
     p_include_pos_emb: bool,
     p_use_cls_tkn: bool,
-    p_squared_pairwise_loss: bool,
     p_pairwise_type: str,
 ):
     import tensorflow_addons as tfa
@@ -166,21 +164,10 @@ def fit_asv_encoder(
             use_cls_tkn=p_use_cls_tkn,
         )
 
-    # plateau = tf.keras.callbacks.ReduceLROnPlateau(
-    #     monitor="loss",
-    #     factor=0.9,
-    #     patience=5,
-    #     verbose=0,
-    #     mode="auto",
-    #     min_delta=0.000,
-    #     cooldown=0,
-    #     min_lr=0.0,
-    # )
     optimizer = tfa.optimizers.LAMB(
         learning_rate=p_lr,
         weight_decay=p_weight_decay,
         exclude_from_weight_decay=["bias", "rezero_alpha", "layer_norm", "LayerNorm"],
-        global_clipnorm=1.0,
     )
     lr_scheduler = LAMBLRScheduler(
         tf.keras.optimizers.schedules.CosineDecay(
@@ -200,7 +187,6 @@ def fit_asv_encoder(
         randomize=p_randomize,
         rand_nucs=p_rand_nucs,
         nucs_to_obs=p_nucs_to_obs,
-        squared_pairwise_loss=p_squared_pairwise_loss,
         pairwise_type=p_pairwise_type,
         optimizer=optimizer,
         run_eagerly=False,
@@ -215,11 +201,12 @@ def fit_asv_encoder(
     core_callbacks = [
         # tf.keras.callbacks.TensorBoard(log_dir=log_dir),
         model_saver,
+        lr_scheduler,
     ]
 
     model.fit(
         train_gen,
-        callbacks=[*core_callbacks, lr_scheduler],
+        callbacks=[*core_callbacks],
         epochs=p_epochs,
         steps_per_epoch=train_gen.steps_per_epoch,
         workers=p_workers,

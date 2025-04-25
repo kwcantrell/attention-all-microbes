@@ -89,37 +89,36 @@ class PairwiseLoss(tf.keras.losses.Loss):
     def __init__(
         self,
         loss_type="mse",
-        squared=False,
         use_mean_pairs=False,
         reduction="none",
         **kwargs,
     ):
         super().__init__(reduction=reduction, **kwargs)
         self.loss_type = loss_type
-        self.squared = squared
         self.use_mean_pairs = use_mean_pairs
         if self.loss_type == "mse":
-            self.fn = lambda x: _pairwise_distances(x, self.squared)
+            self.fn = _pairwise_distances
         else:
             print("using cos distance!")
             self.fn = _pairwise_cosine_distance
 
     def call(self, y_true, y_pred):
-        # y_pred_dist = _pairwise_distances(y_pred, squared=self.squared)
         y_pred_dist = self.fn(y_pred)
-
-        if self.squared and self.loss_type == "mse":
-            y_true = tf.square(y_true)
 
         differences = tf.math.square(y_true - y_pred_dist)
         mask = tf.linalg.band_part(tf.ones_like(differences), 0, -1)
         mask -= tf.linalg.band_part(mask, 0, 0)
         differences = differences * mask
-        if self.use_mean_pairs:
-            mean_mask = differences >= tf.reduce_mean(differences)
-            differences = differences[mean_mask]
+
         loss = tf.reduce_sum(differences) / tf.reduce_sum(mask)
-        return loss
+
+        hard_mask = tf.cast(differences > loss, dtype=tf.float32) * mask
+        hard_loss = tf.reduce_sum(differences) / tf.reduce_sum(hard_mask)
+
+        hard_flag = loss < 0.01
+
+        loss = tf.where(hard_flag, hard_loss, loss)
+        return [loss, tf.cast(hard_flag, dtype=tf.float32)]
 
 
 def triplet_loss(embeddings, groups=2, hard_margin=0.025, soft_margin=0.1):
