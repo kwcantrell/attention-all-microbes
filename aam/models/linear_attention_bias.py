@@ -87,7 +87,8 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         self.axis = axis
         self.fix_bias_shape = fix_bias_shape
         self.use_sparse_positions = use_sparse_positions
-        print("using sparse positions")
+        if self.use_sparse_positions:
+            print("using sparse positions")
 
     def build(self, input_shape):
         if self.fix_bias_shape:
