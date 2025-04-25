@@ -1,7 +1,6 @@
 import tensorflow as tf
 
 
-@tf.function
 def _construct_bias(input_shape):
     query_len = input_shape[2]
     key_len = input_shape[3]

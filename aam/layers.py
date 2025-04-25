@@ -120,26 +120,40 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         return input_shape + (self.embedding_dim,)
 
+    def _random_selection(self, elements, select_percent):
+        mask = elements > 0
+        indices = tf.random.shuffle(tf.where(mask))
+        total_indices = tf.cast(tf.shape(indices)[0], dtype=tf.float32)
+        num_selected_indices = tf.cast(
+            tf.math.floordiv(total_indices, 100 / select_percent), dtype=tf.int32
+        )
+        selected_indices = indices[:num_selected_indices]
+        selected_mask = tf.scatter_nd(
+            selected_indices,
+            tf.ones(
+                [num_selected_indices], dtype=tf.type_spec_from_value(elements).dtype
+            ),
+            tf.shape(elements, out_type=tf.int64),
+        )
+        return selected_mask
+
     def call(self, inputs, training=False):
         training = training and self.trainable
         inputs = tf.cast(inputs, dtype=tf.int32)
 
         input_shape = tf.shape(inputs)
 
-        random_mask = create_random_mask(input_shape, self.rand_nucs, dtype=tf.int32)
-        random_change = create_random_mask(input_shape, 0.1, dtype=tf.int32)
-        random_no_change = create_random_mask(input_shape, 0.1, dtype=tf.int32)
+        masked_component = self._random_selection(inputs, 15)
+        random_mask = tf.cast(masked_component > 0, dtype=tf.int32)
+        masked_tokens = inputs - inputs * masked_component
 
-        # randomly mask tokens
-        masked_tokens = inputs * (1 - random_mask)
+        non_masking_component = self._random_selection(masked_component, 20)
+        no_change_component = self._random_selection(non_masking_component, 10)
+        masked_tokens = masked_tokens + inputs * no_change_component
 
-        # add back tokens marked as no_change
-        masked_tokens = masked_tokens + inputs * random_no_change * random_mask
-
-        # randomly modify tokens marked as change
+        change_component = non_masking_component - no_change_component
         random_nucs = tf.random.uniform(input_shape, minval=1, maxval=5, dtype=tf.int32)
-        random_nucs = random_nucs * random_change * (1 - random_no_change) * random_mask
-        masked_tokens = masked_tokens + random_nucs
+        masked_tokens = masked_tokens + random_nucs * change_component
 
         if training:
             emb_inputs = masked_tokens
@@ -163,10 +177,7 @@ class ASVEncoder(tf.keras.layers.Layer):
             if self.use_cls_tkn:
                 token_pred = token_pred[:, 1:]
 
-            # compute cross entropy on 10 percent of nucleotides
-            obs_mask = create_random_mask(input_shape, self.nucs_to_obs, dtype=tf.int32)
-            obs_mask = obs_mask + random_mask > 0
-            loss = self._compute_nuc_loss(inputs, token_pred, obs_mask)
+            loss = self._compute_nuc_loss(inputs, token_pred, random_mask)
             self.add_loss(loss)
 
         print("ASVEncoder exit...", self.trainable)

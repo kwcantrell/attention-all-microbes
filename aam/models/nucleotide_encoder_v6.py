@@ -108,7 +108,11 @@ class NucleotideEncoderV6(tf.keras.Model):
 
     def predict_step(self, data):
         inputs, asv_ids = data
-        return self(inputs, training=False), asv_ids
+        asv_embeddings = self(inputs, training=False)
+        if self.pairwise_type != "mse":
+            print("normalizing embeddings!!!")
+            asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        return asv_embeddings, asv_ids
 
     def compute_distances(self, embeddings):
         distances = self.dist_fn(embeddings)
