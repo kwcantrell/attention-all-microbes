@@ -90,11 +90,11 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         if self.use_sparse_positions:
             print("using sparse positions")
 
-    def build(self, input_shape):
-        if self.fix_bias_shape:
-            print("fixing bias shape:", input_shape)
-            input_shape = tf.TensorShape(input_shape)
-            self.m, self.bias = _construct_bias(input_shape)
+    # def build(self, input_shape):
+    #     if self.fix_bias_shape:
+    #         print("fixing bias shape:", input_shape)
+    #         input_shape = tf.TensorShape(input_shape)
+    #         self.m, self.bias = _construct_bias(input_shape)
 
     def construct_bias(self, inputs, mask):
         if not self.fix_bias_shape:
@@ -108,14 +108,36 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         return tf.cast(alibi, dtype=self.compute_dtype)
 
     def call(self, inputs, mask=None):
-        alibi = self.construct_bias(inputs, mask)
+        # alibi = self.construct_bias(inputs, mask)
+        input_shape = tf.shape(inputs)
+        num_heads = input_shape[1]
+        query_len = input_shape[2]
+        key_len = input_shape[3]
+
+        largest_len = tf.reduce_max([query_len, key_len])
+        sequence = tf.range(0, largest_len, 1, dtype=tf.float32)
+        # else:
+        #     sequence = tf.cast(tf.squeeze(sequence), dtype=tf.float32)
+
+        bias = -1 * tf.abs(tf.expand_dims(sequence, axis=-1) - tf.expand_dims(sequence, 0))
+        bias = tf.expand_dims(bias, axis=0)
+        bias = tf.expand_dims(bias, axis=0)
+        bias = bias[:, :, :query_len, :key_len]
+        m = tf.map_fn(
+            lambda i: tf.pow(tf.constant(2, dtype=tf.float32), -(i + 1)),
+            tf.range(num_heads, dtype=tf.float32),
+        )
+
+        m = tf.expand_dims(m, axis=0)
+        m = tf.expand_dims(m, axis=-1)
+        m = tf.expand_dims(m, axis=-1)
+        alibi = m * bias
+        alibi = tf.cast(alibi, dtype=self.compute_dtype)
         if not self.use_sparse_positions and mask is not None:
             # Since mask is 1.0 for positions we want to keep and 0.0 for masked
             # positions, this operation will create a tensor which is 0.0 for
             # positions we want to attend and -1e.9 for masked positions.
-            adder = (1.0 - tf.cast(mask, inputs.dtype)) * (
-                _large_compatible_negative(inputs.dtype)
-            )
+            adder = (1.0 - tf.cast(mask, inputs.dtype)) * (_large_compatible_negative(inputs.dtype))
 
             # Since we are adding it to the raw scores before the softmax, this
             # is effectively the same as removing these entirely.
