@@ -109,9 +109,10 @@ class NucleotideEncoderV6(tf.keras.Model):
     def predict_step(self, data):
         inputs, asv_ids = data
         asv_embeddings = self(inputs, training=False)
-        if self.pairwise_type != "mse":
-            print("normalizing embeddings!!!")
-            asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        print("NOT NORMALIZING EMBEDDINGS")
+        # if self.pairwise_type != "mse":
+        #     print("normalizing embeddings!!!")
+        #     asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
         return asv_embeddings, asv_ids
 
     def compute_distances(self, embeddings):
@@ -176,9 +177,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         }
         return output_trackers
 
-    def call(
-        self, inputs, return_randomize=False, training: bool = False
-    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def call(self, inputs, return_randomize=False, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
         embeddings = self.asv_encoder(inputs, training=training)

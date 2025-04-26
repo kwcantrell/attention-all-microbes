@@ -105,7 +105,7 @@ class PairwiseLoss(tf.keras.losses.Loss):
         mask -= tf.linalg.band_part(mask, 0, 0)
         differences = differences * mask
 
-        loss = tf.reduce_sum(differences) / tf.reduce_sum(mask)
+        loss = tf.reduce_sum(differences)
 
         # hard_mask = tf.cast(differences > loss, dtype=tf.float32) * mask
         # hard_loss = tf.reduce_sum(differences) / tf.reduce_sum(hard_mask)
