@@ -5,9 +5,7 @@ from typing import Union
 import tensorflow as tf
 
 
-def _pairwise_distances(
-    X: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False
-) -> tf.Tensor:
+def _pairwise_distances(X: tf.Tensor, y: Union[tf.Tensor, None] = None, squared=False) -> tf.Tensor:
     """Constructs a distance matrix between embedding tensors x and y.
 
     Args:
@@ -41,9 +39,7 @@ def global_embedding_l2_regulization(sample_embeddings):
     return tf.reduce_mean(tf.square(1 - norm))
 
 
-def _pairwise_cosine_distance(
-    x: tf.Tensor, y: Union[tf.Tensor, None] = None
-) -> tf.Tensor:
+def _pairwise_cosine_distance(x: tf.Tensor, y: Union[tf.Tensor, None] = None) -> tf.Tensor:
     """Computes the cosine distance between embedding tensors x and y.
 
     Args:
@@ -74,17 +70,13 @@ def global_orthogonal_regulization(sample_embeddings, non_matching_pairs_mask):
     non_matching_pairs_mask = tf.cast(non_matching_pairs_mask, dtype=tf.float64)
     N = tf.reduce_sum(non_matching_pairs_mask)
     N = tf.maximum(tf.cast(1.0, dtype=tf.float64), N)
-    sample_inner_prod = tf.matmul(
-        sample_embeddings, sample_embeddings, transpose_b=True
-    )
+    sample_inner_prod = tf.matmul(sample_embeddings, sample_embeddings, transpose_b=True)
     sample_inner_prod = tf.abs(sample_inner_prod * non_matching_pairs_mask)
 
     # return tf.reduce_sum(sample_inner_prod, axis=-1) / N
     m1 = tf.reduce_sum(sample_inner_prod) / N
     m2 = tf.reduce_sum(tf.square(sample_inner_prod)) / N
-    ortho_loss = m1 * m1 + tf.maximum(
-        tf.cast(0.0, dtype=tf.float64), m2 - tf.cast(1.0, dtype=tf.float64) / emb_dim
-    )
+    ortho_loss = m1 * m1 + tf.maximum(tf.cast(0.0, dtype=tf.float64), m2 - tf.cast(1.0, dtype=tf.float64) / emb_dim)
     return tf.cast(ortho_loss, dtype=tf.float32)
 
 
@@ -115,12 +107,12 @@ class PairwiseLoss(tf.keras.losses.Loss):
 
         loss = tf.reduce_sum(differences) / tf.reduce_sum(mask)
 
-        hard_mask = tf.cast(differences > loss, dtype=tf.float32) * mask
-        hard_loss = tf.reduce_sum(differences) / tf.reduce_sum(hard_mask)
+        # hard_mask = tf.cast(differences > loss, dtype=tf.float32) * mask
+        # hard_loss = tf.reduce_sum(differences) / tf.reduce_sum(hard_mask)
 
         hard_flag = loss < 0.01
 
-        loss = tf.where(hard_flag, hard_loss, loss)
+        # loss = tf.where(hard_flag, hard_loss, loss)
         return [loss, tf.cast(hard_flag, dtype=tf.float32)]
 
 
@@ -161,12 +153,8 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.05):
     samples_per_group = batch_dim // num_groups
     num_pos_examples_per_sample = samples_per_group - 1
     batch_dim = num_groups * samples_per_group
-    group_matching_pairs_mask = tf.ones(
-        shape=[samples_per_group, samples_per_group], dtype=tf.int32
-    )
-    group_matching_pairs_mask = tf.pad(
-        group_matching_pairs_mask, paddings=[[0, 0], [0, batch_dim - samples_per_group]]
-    )
+    group_matching_pairs_mask = tf.ones(shape=[samples_per_group, samples_per_group], dtype=tf.int32)
+    group_matching_pairs_mask = tf.pad(group_matching_pairs_mask, paddings=[[0, 0], [0, batch_dim - samples_per_group]])
     matching_pair_mask = tf.reshape(
         tf.tile(group_matching_pairs_mask, multiples=[num_groups, 1]),
         shape=[num_groups, -1, batch_dim],
@@ -186,12 +174,8 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.05):
     distances = _pairwise_distances(embeddings)
 
     # extract all distances that are between samples of the same class
-    matching_pairs = tf.reshape(
-        distances[matching_pair_mask == 1], shape=[batch_dim, samples_per_group]
-    )
-    matching_pairs = tf.reshape(
-        matching_pairs, shape=[num_groups, samples_per_group, samples_per_group]
-    )
+    matching_pairs = tf.reshape(distances[matching_pair_mask == 1], shape=[batch_dim, samples_per_group])
+    matching_pairs = tf.reshape(matching_pairs, shape=[num_groups, samples_per_group, samples_per_group])
 
     # extrall all distances that are between samples of different classes
     non_matching_pairs = tf.reshape(
@@ -204,18 +188,14 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.05):
     )
 
     # groups should be orthogal to each other
-    ortho_loss = global_orthogonal_regulization(
-        embeddings, (1 - matching_pair_mask) == 1
-    )
+    ortho_loss = global_orthogonal_regulization(embeddings, (1 - matching_pair_mask) == 1)
 
     def _group_triplet_loss(inputs):
         """Computes all triplets for a given class."""
         group_dist, non_group_dist = inputs
 
         # remove the group distances that represent the distance from a sample to itself
-        group_pair_mask = (
-            1 - tf.linalg.diag(tf.ones(samples_per_group, dtype=tf.int32))
-        ) > 0
+        group_pair_mask = (1 - tf.linalg.diag(tf.ones(samples_per_group, dtype=tf.int32))) > 0
         group_dist = tf.reshape(
             group_dist[group_pair_mask],
             shape=[samples_per_group, samples_per_group - 1, 1],
@@ -245,9 +225,7 @@ def categorical_triplet_loss(embeddings, num_groups, soft_margin=0.05):
 
     # compute loss per positive example in group
     per_sample_loss = tf.reduce_sum(triplets * triplet_mask, axis=-1)
-    per_sample_loss = tf.math.divide_no_nan(
-        per_sample_loss, tf.reduce_sum(triplet_mask, axis=-1)
-    )
+    per_sample_loss = tf.math.divide_no_nan(per_sample_loss, tf.reduce_sum(triplet_mask, axis=-1))
 
     # compute loss across entire group for each sample
     return tf.reduce_mean(per_sample_loss, axis=-1) * 0.0, ortho_loss

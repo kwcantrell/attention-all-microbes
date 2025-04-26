@@ -133,7 +133,6 @@ class LinearBiasSoftmax(tf.keras.layers.Layer):
         m = tf.expand_dims(m, axis=-1)
         alibi = m * bias
         alibi = tf.cast(alibi, dtype=self.compute_dtype)
-        tf.print("mask", tf.shape(mask))
         if not self.use_sparse_positions and mask is not None:
             # Since mask is 1.0 for positions we want to keep and 0.0 for masked
             # positions, this operation will create a tensor which is 0.0 for
