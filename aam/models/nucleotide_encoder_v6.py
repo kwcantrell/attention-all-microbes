@@ -38,6 +38,7 @@ class NucleotideEncoderV6(tf.keras.Model):
             self.dist_fn = _pairwise_distances
         else:
             self.dist_fn = _pairwise_cosine_distance
+        self.asv_loss = tf.keras.losses.MeanSquaredError()
         self.loss_tracker = tf.keras.metrics.Mean()
         self.nuc_tracker = tf.keras.metrics.Mean()
 
@@ -83,18 +84,11 @@ class NucleotideEncoderV6(tf.keras.Model):
 
     def compile(
         self,
-        randomize=0.97,
-        rand_nucs=0.03,
-        nucs_to_obs=0.15,
         pairwise_type="mse",
         **kwargs,
     ):
         super().compile(**kwargs)
-        self.asv_encoder.randomize = randomize
-        self.asv_encoder.rand_nucs = rand_nucs
-        self.asv_encoder.nucs_to_obs = nucs_to_obs
         self.pairwise_type = pairwise_type
-        self.asv_loss = PairwiseLoss(loss_type=self.pairwise_type, use_mean_pairs=False)
 
     def build_graph(self, input_shape):
         """Builds graph
@@ -109,31 +103,31 @@ class NucleotideEncoderV6(tf.keras.Model):
     def predict_step(self, data):
         inputs, asv_ids = data
         asv_embeddings = self(inputs, training=False)
-        print("NOT NORMALIZING EMBEDDINGS")
-        # if self.pairwise_type != "mse":
-        #     print("normalizing embeddings!!!")
-        #     asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        if self.pairwise_type != "mse":
+            print("normalizing embeddings!!!")
+            asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
         return asv_embeddings, asv_ids
 
     def compute_distances(self, embeddings):
         distances = self.dist_fn(embeddings)
-        mask = tf.linalg.band_part(tf.ones_like(distances), 0, -1)
-        mask -= tf.linalg.band_part(mask, 0, 0)
+        mask = tf.linalg.band_part(tf.ones_like(distances, dtype=tf.bool), 0, 0)
         distances = distances * mask
         return distances + tf.transpose(distances)
 
-    def _compute_loss(self, y_true, output):
-        embeddings = output
-        loss_output = self.asv_loss(y_true, embeddings)
-        asv_loss = loss_output[0]
-        hard_flag = loss_output[1]
-        return asv_loss, hard_flag
+    def _compute_loss(self, y_true, embeddings):
+        distances = _pairwise_cosine_distance(embeddings)
+        y_true = tf.expand_dims(y_true, axis=-1)
+        distances = tf.expand_dims(distances, axis=-1)
+        mask = y_true > 0
+        distances._keras_mask = mask
+        loss = self.asv_loss(y_true, distances)
+        return loss
 
     def train_step(self, data):
         inputs, y_true = data
         with tf.GradientTape() as tape:
             output = self(inputs, return_randomize=True, training=True)
-            asv_loss, hard_flag = self._compute_loss(y_true, output)
+            asv_loss = self._compute_loss(y_true, output)
             nuc_loss = tf.reduce_sum(self.losses)
             unscaled_loss = asv_loss + nuc_loss
             if self.compute_dtype == "float16":
@@ -154,7 +148,6 @@ class NucleotideEncoderV6(tf.keras.Model):
             "nuc_loss": self.nuc_tracker.result(),
             "asv_loss": self.asv_tracker.result(),
             "lr": self.optimizer.lr,
-            "hard_loss": hard_flag > 0,
         }
         return output_trackers
 
@@ -162,7 +155,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         inputs, y_true = data
 
         output = self(inputs, return_randomize=True, training=False)
-        asv_loss, hard_flag = self._compute_loss(y_true, output)
+        asv_loss = self._compute_loss(y_true, output)
         nuc_loss = tf.reduce_sum(self.losses)
         loss = asv_loss + nuc_loss
         self.loss_tracker.update_state(loss)
@@ -173,7 +166,6 @@ class NucleotideEncoderV6(tf.keras.Model):
             "nuc_loss": self.nuc_tracker.result(),
             "asv_loss": self.asv_tracker.result(),
             "lr": self.optimizer.learning_rate,
-            "hard_loss": hard_flag > 0,
         }
         return output_trackers
 

@@ -7,30 +7,6 @@ from aam.models.transformers import TransformerEncoder
 from aam.utils import create_random_mask, float_mask
 
 
-@tf.keras.saving.register_keras_serializable(package="activity_regularization")
-class ActivityRegularizationLayer(tf.keras.layers.Layer):
-    def __init__(self, reg):
-        super().__init__()
-        self.reg = reg
-
-    def call(self, inputs, reg_mask=None):
-        reg = inputs
-        if reg_mask is not None:
-            reg = tf.multiply(reg, tf.expand_dims(float_mask(reg_mask), axis=-1))
-        self.add_loss(self.reg(reg))
-        return inputs
-
-
-@tf.keras.saving.register_keras_serializable(package="InputLayer")
-class InputLayer(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        super(InputLayer, self).__init__(**kwargs)
-        self.trainable = False
-
-    def call(self, inputs):
-        return inputs
-
-
 @tf.keras.saving.register_keras_serializable(package="ASVEncoder")
 class ASVEncoder(tf.keras.layers.Layer):
     def __init__(
@@ -65,11 +41,8 @@ class ASVEncoder(tf.keras.layers.Layer):
 
         print(f"create asv layer with {self.attention_heads} heads")
         self.asv_token = self.num_tokens - 1
-        self.nuc_loss = tf.nn.sparse_softmax_cross_entropy_with_logits
+        self.nuc_loss = tf.keras.losses.SparseCategoricalCrossentropy(name="nuc_loss")
 
-        self.randomize = 0.97
-        self.rand_nucs = 0.03
-        self.nucs_to_obs = 0.15
         self.emb_layer = tf.keras.layers.Embedding(self.num_tokens, self.embedding_dim, input_length=self.max_bp)
         self.include_pos_emb = include_pos_emb
         if self.include_pos_emb:
@@ -172,11 +145,11 @@ class ASVEncoder(tf.keras.layers.Layer):
         return output
 
     def _compute_nuc_loss(self, tokens, embeddings, mask):
-        mask = tf.cast(mask, dtype=tf.float32)
+        mask = tf.cast(mask, dtype=tf.bool)
         nuc_preds = self.nuc_pred(embeddings)
-        loss = self.nuc_loss(tokens, nuc_preds) * mask
-        loss = tf.reduce_sum(loss, axis=-1) / tf.reduce_sum(mask, axis=-1)
-        return tf.reduce_sum(loss)
+        nuc_preds._keras_mask = mask
+        loss = self.nuc_loss(tokens, nuc_preds)
+        return loss
 
     def get_config(self):
         config = super(ASVEncoder, self).get_config()
