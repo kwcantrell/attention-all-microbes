@@ -5,6 +5,7 @@ import tensorflow as tf
 class FeedForward(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super(FeedForward, self).__init__(**kwargs)
+        self.supports_masking = True
 
     def build(self, input_shape):
         units = input_shape[-1]

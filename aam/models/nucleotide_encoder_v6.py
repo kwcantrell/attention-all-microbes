@@ -102,16 +102,17 @@ class NucleotideEncoderV6(tf.keras.Model):
 
     def predict_step(self, data):
         inputs, asv_ids = data
-        asv_embeddings = self(inputs, training=False)
-        if self.pairwise_type != "mse":
-            print("normalizing embeddings!!!")
-            asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        asv_embeddings = self(inputs, return_hidden_state=False, training=False)
+        asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        # return tf.reduce_mean(asv_embeddings, axis=1), asv_ids
         return asv_embeddings, asv_ids
 
     def compute_distances(self, embeddings):
-        distances = self.dist_fn(embeddings)
-        mask = tf.linalg.band_part(tf.ones_like(distances, dtype=tf.bool), 0, 0)
+        distances = _pairwise_cosine_distance(embeddings)
+        mask = tf.linalg.band_part(tf.ones_like(distances), 0, -1)
+        mask -= tf.linalg.band_part(mask, 0, 0)
         distances = distances * mask
+        distances = tf.clip_by_value(distances, 0.0, float("inf"))
         return distances + tf.transpose(distances)
 
     def _compute_loss(self, y_true, embeddings):
@@ -169,11 +170,14 @@ class NucleotideEncoderV6(tf.keras.Model):
         }
         return output_trackers
 
-    def call(self, inputs, return_randomize=False, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def call(self, inputs, return_hidden_state=False, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
         embeddings = self.asv_encoder(inputs, training=training)
+        if return_hidden_state:
+            return embeddings[:, 1:]
         asv_embeddings = self.asv_ff(embeddings)
+
         return asv_embeddings
 
     def get_config(self):
