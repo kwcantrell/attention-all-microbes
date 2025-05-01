@@ -63,20 +63,20 @@ class ASVEncoder(tf.keras.layers.Layer):
             ]
         )
 
-    def build(self, input_shape):
-        print("Building ASVEncoder...")
-        if self.use_cls_tkn:
-            input_shape = (input_shape[0], input_shape[1] + 1)
-        self._build_input_shape = input_shape
-        self.emb_layer.build(input_shape)
+    # def build(self, input_shape):
+    #     print("Building ASVEncoder...")
+    #     if self.use_cls_tkn:
+    #         input_shape = (input_shape[0], input_shape[1] + 1)
+    #     self._build_input_shape = input_shape
+    #     self.emb_layer.build(input_shape)
 
-        input_shape = self.emb_layer.compute_output_shape(input_shape)
-        self.asv_attention.build(input_shape)
+    #     input_shape = self.emb_layer.compute_output_shape(input_shape)
+    #     self.asv_attention.build(input_shape)
 
-        input_shape = self.asv_attention.compute_output_shape(input_shape)
-        self.nuc_pred.build(input_shape)
-        self.built = True
-        print("ASVEncoder built!")
+    #     input_shape = self.asv_attention.compute_output_shape(input_shape)
+    #     self.nuc_pred.build(input_shape)
+    #     self.built = True
+    #     print("ASVEncoder built!")
 
     def compute_output_shape(self, input_shape):
         if self.use_cls_tkn:

@@ -63,9 +63,7 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
         labels = []
         for label in ax.get_xticklabels():
             text = label.get_text()
-            labels.append(
-                textwrap.fill(text, width=width, break_long_words=break_long_words)
-            )
+            labels.append(textwrap.fill(text, width=width, break_long_words=break_long_words))
         ax.set_xticklabels(labels, rotation=0)
         ax.set_yticklabels(labels, rotation=0)
 
@@ -75,9 +73,7 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
 
 
 class MeanAbsoluteError(tf.keras.callbacks.Callback):
-    def __init__(
-        self, dataset, steps, output_dir, report_back, monitor="val_loss", **kwargs
-    ):
+    def __init__(self, dataset, steps, output_dir, report_back, monitor="val_loss", **kwargs):
         super().__init__(**kwargs)
         self.dataset = dataset
         self.steps = steps
@@ -88,9 +84,7 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if self.epochs_left <= 1:
-            y_pred, y_true = self.model.predict(
-                self.dataset, steps=self.dataset.steps_per_epoch
-            )
+            y_pred, y_true = self.model.predict(self.dataset, steps=self.dataset.steps_per_epoch)
             _mean_absolute_error(y_pred, y_true, f"{self.output_dir}.png")
             self.epochs_left = 5
         else:
@@ -137,9 +131,7 @@ class ConfusionMatrx(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(
-        self, output_dir, monitor="val_loss", only_save_on_improvement=False, **kwargs
-    ):
+    def __init__(self, output_dir, monitor="val_loss", only_save_on_improvement=False, **kwargs):
         super().__init__(**kwargs)
         self.output_dir = output_dir
         self.best_metric = None
@@ -159,9 +151,6 @@ class SaveModel(tf.keras.callbacks.Callback):
                 save_format="keras",
             )
         elif not self.only_save_on_improvement:
-            self.model.save(
-                self.output_dir,
-                save_format="keras",
-            )
+            self.model.save(self.output_dir, save_format="keras")
 
         logs["best_metric"] = self.best_metric

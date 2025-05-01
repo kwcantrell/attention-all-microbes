@@ -121,6 +121,7 @@ def fit_asv_encoder(
     from aam.callbacks import LAMBLRScheduler
     from aam.data_handlers.asv_generator import ASVGenerator
     from aam.models.nucleotide_encoder_v6 import NucleotideEncoderV6
+    from aam.utils import load_model
 
     # launch datasets first so they can begin to preprocess
     common_kwargs = {
@@ -143,7 +144,7 @@ def fit_asv_encoder(
         os.makedirs(figure_path)
     if i_model is not None:
         print("loading existing model...")
-        model = tf.keras.models.load_model(i_model, compile=False)
+        model = load_model(i_model)
     else:
         model: tf.keras.Model = NucleotideEncoderV6(
             p_embedding_dim,

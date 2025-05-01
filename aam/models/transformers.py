@@ -105,27 +105,21 @@ class TransformerEncoder(tf.keras.layers.Layer):
         else:
             attention_mask = mask
             if attention_mask is not None:
-                attention_mask = tf.matmul(
-                    attention_mask, attention_mask, transpose_b=True
-                )
+                attention_mask = tf.matmul(attention_mask, attention_mask, transpose_b=True)
 
         if isinstance(inputs, (list, tuple)):
             output_tensor, key_value = inputs
             inputs = output_tensor
             for layer_idx in range(self.num_layers):
                 output_tensor = tf.cast(
-                    self.encoder_layers[layer_idx](
-                        [output_tensor, key_value, attention_mask], training=training
-                    ),
+                    self.encoder_layers[layer_idx]([output_tensor, key_value, attention_mask], training=training),
                     dtype=self.compute_dtype,
                 )
         else:
             output_tensor = inputs
             for layer_idx in range(self.num_layers):
                 output_tensor = tf.cast(
-                    self.encoder_layers[layer_idx](
-                        [output_tensor, attention_mask], training=training
-                    ),
+                    self.encoder_layers[layer_idx]([output_tensor, attention_mask], training=training),
                     dtype=self.compute_dtype,
                 )
 

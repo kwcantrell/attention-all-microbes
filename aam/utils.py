@@ -71,3 +71,26 @@ def masked_loss(sparse_cat: bool = False):
         return wrapper
 
     return decorator
+
+
+def load_model(fp):
+    """Important! tf.keras.models.load_model does not properly resote weights.
+    This function will properly restore weights from a .keras file
+    """
+    import importlib
+    import json
+    from zipfile import ZipFile
+
+    with ZipFile(fp, "r") as zobj:
+        zobj.extractall(".")
+        config = json.loads(zobj.read("config.json").decode("utf-8"))
+        build_config = config["build_config"]
+        model_config = config["config"]
+        if "build_input_shape" in model_config:
+            model_config.pop("build_input_shape")
+        module = importlib.import_module(config["module"])
+        cls = getattr(module, config["class_name"])
+        model = cls(**model_config)
+        model.build(build_config["input_shape"])
+        model.load_weights("model.weights.h5")
+    return model

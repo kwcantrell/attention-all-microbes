@@ -72,23 +72,20 @@ class NucleotideEncoderV6(tf.keras.Model):
             ],
             name="asv_ff",
         )
+        self.normalize_asv_embeddings = True
 
-    def build(self, input_shape):
-        if self.built:
-            return
-        print("Building NucleotideEncoderV6...")
-        self.asv_encoder.build(input_shape)
-        input_shape = self.asv_encoder.compute_output_shape(input_shape)
-        self.asv_ff.build(input_shape)
-        super(NucleotideEncoderV6, self).build(input_shape)
+    # def build(self, input_shape):
+    #     if self.built:
+    #         return
+    #     print("Building NucleotideEncoderV6...")
+    #     self.asv_encoder.build(input_shape)
+    #     input_shape = self.asv_encoder.compute_output_shape(input_shape)
+    #     self.asv_ff.build(input_shape)
+    #     super(NucleotideEncoderV6, self).build(input_shape)
 
-    def compile(
-        self,
-        pairwise_type="mse",
-        **kwargs,
-    ):
+    def compile(self, normalize_asv_embeddings=True, **kwargs):
+        self.normalize_asv_embeddings = normalize_asv_embeddings
         super().compile(**kwargs)
-        self.pairwise_type = pairwise_type
 
     def build_graph(self, input_shape):
         """Builds graph
@@ -103,7 +100,11 @@ class NucleotideEncoderV6(tf.keras.Model):
     def predict_step(self, data):
         inputs, asv_ids = data
         asv_embeddings = self(inputs, return_hidden_state=False, training=False)
-        asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        if self.normalize_asv_embeddings:
+            print("normalizing")
+            asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+        else:
+            print("not l2 normalizing")
         # return tf.reduce_mean(asv_embeddings, axis=1), asv_ids
         return asv_embeddings, asv_ids
 
