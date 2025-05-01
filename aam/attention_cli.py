@@ -176,11 +176,7 @@ def fit_asv_encoder(
 
     token_shape = (150,)
     model.build_graph(token_shape).summary()
-    model.compile(
-        pairwise_type=p_pairwise_type,
-        optimizer=optimizer,
-        run_eagerly=False,
-    )
+    model.compile(optimizer=optimizer, run_eagerly=False)
 
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(output_dir, log_dir)
