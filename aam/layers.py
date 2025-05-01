@@ -63,29 +63,25 @@ class ASVEncoder(tf.keras.layers.Layer):
             ]
         )
 
-    # def build(self, input_shape):
-    #     print("Building ASVEncoder...")
-    #     if self.use_cls_tkn:
-    #         input_shape = (input_shape[0], input_shape[1] + 1)
-    #     self._build_input_shape = input_shape
-    #     self.emb_layer.build(input_shape)
+    def build(self, input_shape):
+        input_shape = [None, self.max_bp]
+        self._build_input_shape = input_shape
+        # if self.use_cls_tkn:
+        #     input_shape[1] = self.max_bp + 1
+        self.emb_layer.build(input_shape)
 
-    #     input_shape = self.emb_layer.compute_output_shape(input_shape)
-    #     self.asv_attention.build(input_shape)
+        input_shape = self.emb_layer.compute_output_shape(input_shape)
+        self.asv_attention.build(input_shape)
 
-    #     input_shape = self.asv_attention.compute_output_shape(input_shape)
-    #     self.nuc_pred.build(input_shape)
-    #     self.built = True
-    #     print("ASVEncoder built!")
+        input_shape = self.asv_attention.compute_output_shape(input_shape)
+        self.nuc_pred.build(input_shape)
+        self.built = True
+        print("ASVEncoder built!")
 
     def compute_output_shape(self, input_shape):
         if self.use_cls_tkn:
-            if isinstance(input_shape, tuple):
-                input_shape = (input_shape[0], input_shape[1] + 1)
-            elif isinstance(input_shape, list):
-                input_shape[1] += 1
-
-        return input_shape + (self.embedding_dim,)
+            return [None, self.max_bp + 1, self.embedding_dim]
+        return [None, self.max_bp, self.embedding_dim]
 
     def _random_selection(self, elements, select_percent):
         mask = elements > 0

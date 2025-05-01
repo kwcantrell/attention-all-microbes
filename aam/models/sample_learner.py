@@ -4,6 +4,18 @@ from aam.models.feedforward import FeedForward
 from aam.models.transformers import TransformerEncoder
 
 
+class BatchToken(tf.keras.Model):
+    def call(self, inputs):
+        embeddings, attention_mask, cls_tkn = inputs
+        input_shape = tf.shape(embeddings, out_type=tf.int32)
+        batch_dim = input_shape[0]
+
+        cls_tokens = tf.repeat(cls_tkn, repeats=batch_dim, axis=0)
+        embeddings = tf.concat([cls_tokens, embeddings], axis=1)
+        padded_attention_mask = tf.pad(attention_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1.0)
+        return embeddings, padded_attention_mask
+
+
 @tf.keras.utils.register_keras_serializable(package="SampleLearner")
 class SampleLearner(tf.keras.Model):
     def __init__(
@@ -13,6 +25,7 @@ class SampleLearner(tf.keras.Model):
         num_hidden_layers=2,
         dropout_rate=0.0,
         output_bias=0.0,
+        output_std=1.0,
         sample_only=False,
         # build_input_shape=None,
         **kwargs,
@@ -27,6 +40,7 @@ class SampleLearner(tf.keras.Model):
         self.membership_metrics = []
 
         self.output_bias = output_bias
+        self.output_std = output_std
         self.base_model = base_model
         self.state_ready = False
         self.sample_only = True
@@ -61,19 +75,25 @@ class SampleLearner(tf.keras.Model):
             initializer="uniform",
         )
 
+        self.batch_token = BatchToken()
         self.project_ff = tf.keras.layers.Dense(256, activation="gelu", name="project_ff")
 
-        self.ff = tf.keras.Sequential(
-            [
-                FeedForward(),
-                tf.keras.layers.Dense(
-                    1,
-                    bias_initializer=tf.keras.initializers.Constant(self.output_bias),
-                    use_bias=True,
-                ),
-            ],
-            name="cls_ff",
-        )
+        if self.sample_only:
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Dense(1, use_bias=True),
+                ],
+                name="cls_ff",
+            )
+        else:
+            self.ff = tf.keras.Sequential(
+                [
+                    FeedForward(),
+                    tf.keras.layers.Dense(1, use_bias=True),
+                ],
+                name="cls_ff",
+            )
+
         self.membership_ff = tf.keras.Sequential(
             [
                 FeedForward(),
@@ -88,6 +108,14 @@ class SampleLearner(tf.keras.Model):
             ],
             name="ranks_ff",
         )
+        self.class_encoder = TransformerEncoder(
+            num_layers=1,
+            intermediate_size=512,
+            fix_bias_shape=False,
+            use_sparse_positions=False,
+            dropout_rate=0.0,
+            attention_dropout_rate=0.0,
+        )
 
         self.encoder = TransformerEncoder(
             num_layers=6,
@@ -98,33 +126,36 @@ class SampleLearner(tf.keras.Model):
             attention_dropout_rate=self.dropout_rate,
         )
 
-    def compile(self, sample_only=False, **kwargs):
+    def compile(self, sample_only, output_bias=None, output_std=None, **kwargs):
+        if output_bias is not None:
+            self.output_bias = output_bias
+
+        if output_std is not None:
+            self.output_std = output_std
+
         self.sample_metrics = [
             tf.keras.metrics.MeanAbsoluteError(name="mae"),
             tf.keras.metrics.MeanSquaredError(name="mse"),
         ]
         self.sample_only = sample_only
         if not self.sample_only:
+            self.sample_token = self.add_weight(
+                name="sample_token",
+                shape=(1, 1, 256),
+                dtype=tf.float32,
+                trainable=True,
+                initializer="uniform",
+            )
             self.project_ff.trainable = False
             self.membership_ff.trainable = False
             self.ranks_ff.trainable = False
             self.encoder.trainable = False
-            self.cls_encoder_dropout = tf.keras.layers.Dropout(0.5)
-            self.class_encoder = TransformerEncoder(
-                num_layers=1,
-                intermediate_size=512,
-                fix_bias_shape=False,
-                use_sparse_positions=False,
-                dropout_rate=0.0,
-                attention_dropout_rate=0.0,
-            )
+
             self.ff = tf.keras.Sequential(
                 [
-                    tf.keras.layers.Dropout(0.5),
+                    FeedForward(),
                     tf.keras.layers.Dense(
-                        1,
-                        bias_initializer=tf.keras.initializers.Constant(self.output_bias),
-                        use_bias=True,
+                        1, bias_initializer=tf.keras.initializers.Constant(self.output_bias), use_bias=True
                     ),
                 ],
                 name="cls_ff",
@@ -138,27 +169,21 @@ class SampleLearner(tf.keras.Model):
         string tensor
         """
         embeddings, attention_mask, counts = inputs
-        input_shape = tf.shape(embeddings, out_type=tf.int32)
-        batch_dim = input_shape[0]
         embeddings = self.project_ff(embeddings)
 
-        cls_tokens = tf.repeat(self.cls_token, repeats=batch_dim, axis=0)
-        embeddings = tf.concat([cls_tokens, embeddings], axis=1)
-        padded_attention_mask = tf.pad(attention_mask, [[0, 0], [1, 0], [0, 0]], constant_values=1.0)
-
         # encoder members
-        encodings = self.encoder(embeddings, mask=padded_attention_mask, training=training)
-
-        # compute membership prop
-        members = encodings[:, 1:]
-        mem_preds = tf.squeeze(self.membership_ff(members), axis=-1)
-        ranks_pred = self.ranks_ff(members)
+        embeddings, padded_attention_mask = self.batch_token([embeddings, attention_mask, self.cls_token])
+        embeddings = self.encoder(embeddings, mask=padded_attention_mask, training=training)
 
         if not self.sample_only:
-            encodings = self.cls_encoder_dropout(encodings, training=training)
-            encodings = self.class_encoder(encodings, mask=padded_attention_mask, training=training)
-
-        encoding = encodings[:, 0]
+            embeddings, padded_attention_mask = self.batch_token([embeddings, padded_attention_mask, self.sample_token])
+            embeddings = self.class_encoder(embeddings, mask=padded_attention_mask, training=training)
+            members = embeddings[:, 2:]
+        else:
+            members = embeddings[:, 1:]
+        mem_preds = tf.squeeze(self.membership_ff(members), axis=-1)
+        ranks_pred = self.ranks_ff(members)
+        encoding = embeddings[:, 0]
         output = self.ff(encoding, training=training)
         return output, mem_preds, ranks_pred
 
@@ -214,11 +239,11 @@ class SampleLearner(tf.keras.Model):
         # rank_labels = tf.ensure_shape(rank_labels, [None, None])
         valid_mask = tf.cast(tf.expand_dims(membership_labels, axis=-1), dtype=tf.float32)
 
-        _, _, rank_pred = self(x, training=False)
+        output, _, rank_pred = self(x, training=False)
         _, rank_diff, predicted_ranks = self._compute_relative_rank_loss(
             rank_labels, rank_pred, attention_mask * valid_mask, mae=False
         )
-        return rank_diff, predicted_ranks, rank_labels, counts
+        return rank_diff, predicted_ranks, rank_labels, counts, output, y
 
     def compute_metric(self, y, y_pred):
         y_true = y
@@ -226,8 +251,8 @@ class SampleLearner(tf.keras.Model):
             metric.update_state(y_true, y_pred)
 
     def compute_loss(self, y, y_pred):
-        y_true = y
-        loss = self.loss_fn(y_true, y_pred)
+        y = tf.cast(y, dtype=tf.float32)
+        loss = tf.square(y - y_pred)
         return tf.reduce_mean(loss)
 
     def get_inputs(self, data):
@@ -247,8 +272,9 @@ class SampleLearner(tf.keras.Model):
             mem_loss = self._compute_membership_loss(membership_labels, mem_preds, attention_mask)
             rank_loss, _, _ = self._compute_relative_rank_loss(rank_labels, ranks_pred, attention_mask)
             loss = mem_loss + rank_loss
+
             if not self.sample_only:
-                loss += self.loss_fn(y, output)
+                loss += self.compute_loss(y, output)
                 self.compute_metric(y, output)
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -270,8 +296,9 @@ class SampleLearner(tf.keras.Model):
         mem_loss = self._compute_membership_loss(membership_labels, mem_preds, attention_mask)
         rank_loss, _, _ = self._compute_relative_rank_loss(rank_labels, ranks_pred, attention_mask * valid_mask)
         loss = mem_loss + rank_loss
+
         if not self.sample_only:
-            loss += self.loss_fn(y, output)
+            loss += self.compute_loss(y, output)
             self.compute_metric(y, output)
         self.loss_tracker.update_state(loss)
 
@@ -297,6 +324,7 @@ class SampleLearner(tf.keras.Model):
                 "num_hidden_layers": self.num_hidden_layers,
                 "dropout_rate": self.dropout_rate,
                 "output_bias": self.output_bias,
+                "output_std": self.output_std,
                 "rank_dim": self.rank_dim,
                 "sample_only": self.sample_only,
                 "base_model": self.base_model,
@@ -304,8 +332,10 @@ class SampleLearner(tf.keras.Model):
         )
         return config
 
-    # def build(self, input_shape):
-    #     super(SampleLearner, self).build(input_shape)()
+    def build(self, input_shape):
+        xs = [tf.keras.layers.Input(shape=(i[1:])) for i in input_shape]
+        self.call(xs)
+        self.built = True
 
     # @classmethod
     # def from_config(cls, config):

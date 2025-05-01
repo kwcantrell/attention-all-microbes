@@ -74,14 +74,9 @@ class NucleotideEncoderV6(tf.keras.Model):
         )
         self.normalize_asv_embeddings = True
 
-    # def build(self, input_shape):
-    #     if self.built:
-    #         return
-    #     print("Building NucleotideEncoderV6...")
-    #     self.asv_encoder.build(input_shape)
-    #     input_shape = self.asv_encoder.compute_output_shape(input_shape)
-    #     self.asv_ff.build(input_shape)
-    #     super(NucleotideEncoderV6, self).build(input_shape)
+    def build(self, input_shape):
+        self.build_graph([self.max_bp])
+        self.built = True
 
     def compile(self, normalize_asv_embeddings=True, **kwargs):
         self.normalize_asv_embeddings = normalize_asv_embeddings
@@ -93,7 +88,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         Args:
             input_shape (tuple): A shape tuple (integers), not including the batch size.
         """
-        super(NucleotideEncoderV6, self).build((None,) + input_shape)
+        # super(NucleotideEncoderV6, self).build([None, 150])
         x = tf.keras.layers.Input(shape=(input_shape))
         return tf.keras.Model(inputs=[x], outputs=self.call(x))
 
