@@ -46,7 +46,9 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
     group_counts = ["{0:0.0f}".format(value) for value in cf_matrix.flatten()]
 
     cf_matrix = cf_matrix / np.sum(cf_matrix, axis=-1, keepdims=True)
-    group_percentages = ["{0:.2%}".format(value) for value in cf_matrix.flatten()]
+    group_percentages = [
+        "{0:.2%}".format(value) for value in cf_matrix.flatten()
+    ]
     labels = [f"{v1}\n{v2}" for v1, v2 in zip(group_counts, group_percentages)]
     labels = np.asarray(labels).reshape(cf_matrix.shape)
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -63,7 +65,11 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
         labels = []
         for label in ax.get_xticklabels():
             text = label.get_text()
-            labels.append(textwrap.fill(text, width=width, break_long_words=break_long_words))
+            labels.append(
+                textwrap.fill(
+                    text, width=width, break_long_words=break_long_words
+                )
+            )
         ax.set_xticklabels(labels, rotation=0)
         ax.set_yticklabels(labels, rotation=0)
 
@@ -73,7 +79,15 @@ def _confusion_matrix(pred_val, true_val, fname, cat_labels=None):
 
 
 class MeanAbsoluteError(tf.keras.callbacks.Callback):
-    def __init__(self, dataset, steps, output_dir, report_back, monitor="val_loss", **kwargs):
+    def __init__(
+        self,
+        dataset,
+        steps,
+        output_dir,
+        report_back,
+        monitor="val_loss",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.dataset = dataset
         self.steps = steps
@@ -84,7 +98,9 @@ class MeanAbsoluteError(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if self.epochs_left <= 1:
-            y_pred, y_true = self.model.predict(self.dataset, steps=self.dataset.steps_per_epoch)
+            y_pred, y_true = self.model.predict(
+                self.dataset, steps=self.dataset.steps_per_epoch
+            )
             _mean_absolute_error(y_pred, y_true, f"{self.output_dir}.png")
             self.epochs_left = 5
         else:
@@ -131,7 +147,13 @@ class ConfusionMatrx(tf.keras.callbacks.Callback):
 
 
 class SaveModel(tf.keras.callbacks.Callback):
-    def __init__(self, output_dir, monitor="val_loss", only_save_on_improvement=False, **kwargs):
+    def __init__(
+        self,
+        output_dir,
+        monitor="val_loss",
+        only_save_on_improvement=False,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.output_dir = output_dir
         self.best_metric = None
@@ -139,18 +161,21 @@ class SaveModel(tf.keras.callbacks.Callback):
         self.only_save_on_improvement = only_save_on_improvement
 
     def on_epoch_end(self, epoch, logs=None):
-        iterations = float(tf.keras.backend.get_value(self.model.optimizer.iterations))
+        iterations = float(
+            tf.keras.backend.get_value(self.model.optimizer.iterations)
+        )
         logs["iteration"] = iterations
 
         metric = logs[self.monitor]
 
-        if self.best_metric is None or metric < self.best_metric:
+        if (
+            self.best_metric is None or metric < self.best_metric
+        ) and self.only_save_on_improvement:
             self.best_metric = metric
             self.model.save(
                 self.output_dir,
                 save_format="keras",
             )
+            logs["best_metric"] = self.best_metric
         elif not self.only_save_on_improvement:
             self.model.save(self.output_dir, save_format="keras")
-
-        logs["best_metric"] = self.best_metric

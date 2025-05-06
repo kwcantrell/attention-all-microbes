@@ -17,7 +17,9 @@ def float_mask(tensor: tf.Tensor, dtype=tf.float32) -> tf.Tensor:
     return mask
 
 
-def create_random_mask(shape: tf.Tensor, percent: tf.Tensor, dtype: tf.DType = tf.float32) -> tf.Tensor:
+def create_random_mask(
+    shape: tf.Tensor, percent: tf.Tensor, dtype: tf.DType = tf.float32
+) -> tf.Tensor:
     random_mask = tf.random.uniform(
         shape,
         maxval=1,
@@ -74,7 +76,7 @@ def masked_loss(sparse_cat: bool = False):
 
 
 def load_model(fp):
-    """Important! tf.keras.models.load_model does not properly resote weights.
+    """Important! tf.keras.models.load_model does not properly restore weights.
     This function will properly restore weights from a .keras file
     """
     import importlib

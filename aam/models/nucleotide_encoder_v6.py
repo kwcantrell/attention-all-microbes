@@ -76,6 +76,7 @@ class NucleotideEncoderV6(tf.keras.Model):
 
     def build(self, input_shape):
         self.build_graph([self.max_bp])
+        super().build(input_shape)
         self.built = True
 
     def compile(self, normalize_asv_embeddings=True, **kwargs):
@@ -88,7 +89,6 @@ class NucleotideEncoderV6(tf.keras.Model):
         Args:
             input_shape (tuple): A shape tuple (integers), not including the batch size.
         """
-        # super(NucleotideEncoderV6, self).build([None, 150])
         x = tf.keras.layers.Input(shape=(input_shape))
         return tf.keras.Model(inputs=[x], outputs=self.call(x))
 
@@ -205,5 +205,5 @@ class NucleotideEncoderV6(tf.keras.Model):
         model = cls(**config)
 
         if input_shape is not None:
-            model.build_graph(tuple(input_shape[1:]))
+            model.build([None, 150])
         return model
