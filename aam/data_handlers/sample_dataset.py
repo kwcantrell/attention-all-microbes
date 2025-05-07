@@ -100,7 +100,6 @@ class SampleDataset(tf.keras.utils.Sequence):
             table = load_table(table)
 
         self.table: Table = table
-
         self.metadata_column: str = metadata_column
         self.metadata: pd.Series = metadata
         self.rarefy_depth: int = rarefy_depth
@@ -109,7 +108,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         self.sequence_embeddings = SequenceEmbeddings(
             model, sequence_embeddings, sequence_labels, normalize_embeddings
         )
-
+        self.sequence_embeddings.filter(self.table.ids(axis="observation"))
         self.table = self.sequence_embeddings.filter_table(self.table)
         self.table = self.sequence_embeddings.align_table(self.table)
 
@@ -138,12 +137,6 @@ class SampleDataset(tf.keras.utils.Sequence):
         print("dataset table shape", self.table.shape)
         count_weights = self.table.pa(inplace=False).sum(axis="observation")
         self.count_weights = count_weights / count_weights.sum()
-        # count_weights = np.array(self.table.matrix_data.todense())
-        # count_weights = (count_weights > 0).astype(np.float64).sum(axis=1)
-        # count_mask = count_weights > 0
-        # count_weights = count_weights / count_weights.sum()
-        # count_weights = (1 - count_weights) * count_mask
-        # self.count_weights = count_weights / count_weights.sum()
 
     def on_epoch_end(self):
         self.random_state.shuffle(self.sample_ids)
@@ -258,23 +251,23 @@ class SampleDataset(tf.keras.utils.Sequence):
         y_true = y_true.reindex(batch_sample_ids)
         return (embeddings, attention_masks, true_memberships), y_true
 
-    # @property
-    # def rarefied_table(self):
-    #     return self._rarefied_table
+    @property
+    def rarefied_table(self):
+        return self._rarefied_table
 
-    # @rarefied_table.setter
-    # def rarefied_table(self, rarefied_table: Table):
-    #     print("removing empty sample/obs from table")
-    #     rarefied_table.remove_empty()
-    #     self._rarefied_table = self.sequence_embeddings.align_table(
-    #         rarefied_table
-    #     )
+    @rarefied_table.setter
+    def rarefied_table(self, rarefied_table: Table):
+        print("removing empty sample/obs from table")
+        rarefied_table.remove_empty()
+        self._rarefied_table = self.sequence_embeddings.align_table(
+            rarefied_table
+        )
 
-    # def rarefy_table(self, table):
-    #     rarefied_table = table.subsample(self.rarefy_depth)
-    #     rarefied_table.remove_empty()
-    #     rarefied_table = self.sequence_embeddings.align_table(rarefied_table)
-    #     return rarefied_table
+    def rarefy_table(self, table):
+        rarefied_table = table.subsample(self.rarefy_depth)
+        rarefied_table.remove_empty()
+        rarefied_table = self.sequence_embeddings.align_table(rarefied_table)
+        return rarefied_table
 
     @property
     def metadata(self) -> pd.Series:
