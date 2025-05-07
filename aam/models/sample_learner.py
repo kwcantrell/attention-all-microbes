@@ -183,6 +183,7 @@ class SampleLearner(tf.keras.Model):
             embeddings = self.class_encoder(
                 embeddings, mask=padded_attention_mask, training=training
             )
+            embeddings = self.norm(embeddings)
 
         members = embeddings[:, 1:]
         mem_preds = tf.squeeze(
@@ -192,8 +193,8 @@ class SampleLearner(tf.keras.Model):
 
         # encoding = embeddings[:, 0]
         encoding = tf.reduce_sum(
-            embeddings * padded_attention_mask, axis=1
-        ) / tf.reduce_sum(padded_attention_mask, axis=1)
+            embeddings[:, 1:] * attention_mask, axis=1
+        ) / tf.reduce_sum(attention_mask, axis=1)
         # if not self.sample_only:
         #     encoding = self.norm(encoding)
         output = self.ff(encoding, training=training)
@@ -373,7 +374,7 @@ class SampleLearner(tf.keras.Model):
                 membership_labels, mem_preds, attention_mask
             )
             rank_loss, _, _, _ = self._compute_relative_rank_loss(
-                rank_labels, ranks_pred, attention_mask
+                rank_labels, ranks_pred, attention_mask * valid_mask
             )
             loss = mem_loss + rank_loss
             if not self.sample_only:
@@ -402,7 +403,7 @@ class SampleLearner(tf.keras.Model):
             membership_labels, mem_preds, attention_mask
         )
         rank_loss, _, _, _ = self._compute_relative_rank_loss(
-            rank_labels, ranks_pred, attention_mask
+            rank_labels, ranks_pred, attention_mask * valid_mask
         )
         loss = mem_loss + rank_loss
         if not self.sample_only:
