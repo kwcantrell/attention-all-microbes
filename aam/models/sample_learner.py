@@ -75,14 +75,12 @@ class SampleLearner(tf.keras.Model):
 
         self.membership_ff = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(32, activation="gelu"),
                 tf.keras.layers.Dense(1, activation="sigmoid"),
             ],
             name="membership_ff",
         )
         self.ranks_ff = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(32, activation="gelu"),
                 tf.keras.layers.Dense(
                     self.rank_dim, activation="softmax", name="ranks"
                 ),
@@ -110,11 +108,12 @@ class SampleLearner(tf.keras.Model):
 
         self.ff = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(32, activation="gelu", use_bias=True),
+                tf.keras.layers.Activation("tanh"),
                 tf.keras.layers.Dense(1, use_bias=True),
             ],
             name="cls_ff",
         )
+        self.ff_dropout = tf.keras.layers.Dropout(0.5)
         self.norm = tf.keras.layers.LayerNormalization(name="norm")
 
     def build_graph(self, input_shape):
@@ -157,6 +156,14 @@ class SampleLearner(tf.keras.Model):
             self.membership_ff.trainable = False
             self.ranks_ff.trainable = False
 
+            self.ff = tf.keras.Sequential(
+                [
+                    tf.keras.layers.Activation("tanh"),
+                    tf.keras.layers.Dense(1, use_bias=True),
+                ],
+                name="cls_ff",
+            )
+
         super().compile(**kwargs)
 
     def call(self, inputs, training=False):
@@ -166,14 +173,13 @@ class SampleLearner(tf.keras.Model):
         """
         embeddings, attention_mask, counts = inputs
 
-        # embeddings = self.project_ff(embeddings)
+        embeddings = self.project_ff(embeddings)
         embeddings = self.encoder(
             embeddings, mask=attention_mask, training=training
         )
 
         if not self.sample_only:
             print("Encoding those samples...")
-            # embeddings = self.cls_dropout(embeddings, training=training)
             embeddings, padded_attention_mask = self.batch_token(
                 [embeddings, attention_mask, self.cls_token]
             )
@@ -191,6 +197,7 @@ class SampleLearner(tf.keras.Model):
         ranks_pred = self.ranks_ff(members, training=training)
 
         encoding = embeddings[:, 0]
+        # encoding = self.ff_dropout(encoding, training=training)
         # encoding = tf.reduce_sum(
         #     embeddings * attention_mask, axis=1
         # ) / tf.reduce_sum(attention_mask, axis=1)

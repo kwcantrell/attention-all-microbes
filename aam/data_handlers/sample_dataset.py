@@ -150,9 +150,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end])
 
     def _gen_random_set(self, exclude, nsamples):
-        vs = self.random_state.choice(
-            self.asv_indices, nsamples, p=self.count_weights, replace=False
-        )
+        vs = self.random_state.choice(self.asv_indices, nsamples, replace=False)
         return np.setdiff1d(vs, exclude)
 
     def _batch_data(self, batch_sample_ids):
@@ -163,6 +161,7 @@ class SampleDataset(tf.keras.utils.Sequence):
             sample_data = self.table.data(sample_id, dense=False).tocoo()
             (obs_idx, _), sample_counts = sample_data.coords, sample_data.data
             count_mask = sample_counts > 0
+            obs_idx = obs_idx[count_mask]
             _sample_indices = obs_idx[count_mask]
             _sample_counts = sample_counts[count_mask]
 
@@ -211,6 +210,13 @@ class SampleDataset(tf.keras.utils.Sequence):
                     _sample_indices, random_insert, random_indices
                 )
                 _sample_counts = np.insert(_sample_counts, random_insert, 0)
+
+            ###########################################################################
+            ##Possibly delete this
+            sorted_indices = np.argsort(_sample_indices)
+            _sample_indices = _sample_indices[sorted_indices]
+            _sample_counts = _sample_counts[sorted_indices]
+            ###########################################################################
 
             # max size is self.
             embeddings.append(
