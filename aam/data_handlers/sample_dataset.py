@@ -136,12 +136,14 @@ class SampleDataset(tf.keras.utils.Sequence):
         self.random_state = np.random.default_rng(2021)
         self.asv_indices = np.arange(self.table.shape[0], dtype=np.int32)
         print("dataset table shape", self.table.shape)
-        count_weights = np.array(self.table.matrix_data.todense())
-        count_weights = (count_weights > 0).astype(np.float64).sum(axis=1)
-        count_mask = count_weights > 0
-        count_weights = count_weights / count_weights.sum()
-        count_weights = (1 - count_weights) * count_mask
+        count_weights = self.table.pa(inplace=False).sum(axis="observation")
         self.count_weights = count_weights / count_weights.sum()
+        # count_weights = np.array(self.table.matrix_data.todense())
+        # count_weights = (count_weights > 0).astype(np.float64).sum(axis=1)
+        # count_mask = count_weights > 0
+        # count_weights = count_weights / count_weights.sum()
+        # count_weights = (1 - count_weights) * count_mask
+        # self.count_weights = count_weights / count_weights.sum()
 
     def on_epoch_end(self):
         self.random_state.shuffle(self.sample_ids)
