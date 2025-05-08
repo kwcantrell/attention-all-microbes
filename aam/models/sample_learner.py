@@ -140,18 +140,18 @@ class SampleLearner(tf.keras.Model):
             tf.keras.metrics.MeanSquaredError(name="mse"),
         ]
         self.sample_only = sample_only
-        if not self.sample_only:
-            self.project_ff.trainable = False
-            self.encoder.trainable = False
-            # self.membership_ff.trainable = False
-            # self.ranks_ff.trainable = False
+        # if not self.sample_only:
+        #     self.project_ff.trainable = False
+        #     self.encoder.trainable = False
+        #     # self.membership_ff.trainable = False
+        #     # self.ranks_ff.trainable = False
 
-            # self.ff = tf.keras.Sequential(
-            #     [
-            #         tf.keras.layers.Dense(1, use_bias=True),
-            #     ],
-            #     name="cls_ff",
-            # )
+        #     # self.ff = tf.keras.Sequential(
+        #     #     [
+        #     #         tf.keras.layers.Dense(1, use_bias=True),
+        #     #     ],
+        #     #     name="cls_ff",
+        #     # )
 
         super().compile(**kwargs)
 
@@ -163,34 +163,38 @@ class SampleLearner(tf.keras.Model):
         embeddings, attention_mask, counts = inputs
 
         embeddings = self.project_ff(embeddings)
-        embeddings = self.encoder(
-            embeddings, mask=attention_mask, training=training
-        )
 
         if not self.sample_only:
-            print("Encoding those samples...")
-            # embeddings, padded_attention_mask = self.batch_token(
-            #     [embeddings, attention_mask, self.cls_token]
-            # )
-            embeddings = self.class_encoder(
+            embeddings = self.encoder(
                 embeddings, mask=attention_mask, training=training
             )
-            members = embeddings  # [:, 1:]
-        else:
+
+            embeddings, padded_attention_mask = self.batch_token(
+                [embeddings, attention_mask, self.cls_token]
+            )
             members = embeddings
+            embeddings = self.class_encoder(
+                embeddings, mask=padded_attention_mask, training=training
+            )
+
+            encoding = embeddings[:, 0]
+            # members = embeddings
+            # encoding = tf.reduce_sum(
+            #     embeddings * attention_mask, axis=1
+            # ) / tf.reduce_sum(attention_mask, axis=1)
+        else:
+            embeddings = self.encoder(
+                embeddings, mask=attention_mask, training=training
+            )
+            members = embeddings
+            encoding = tf.reduce_sum(
+                embeddings * attention_mask, axis=1
+            ) / tf.reduce_sum(attention_mask, axis=1)
 
         mem_preds = tf.squeeze(
             self.membership_ff(members, training=training), axis=-1
         )
         ranks_pred = self.ranks_ff(members, training=training)
-
-        # encoding = embeddings[:, 0]
-        # encoding = self.ff_dropout(encoding, training=training)
-        encoding = tf.reduce_sum(
-            embeddings * attention_mask, axis=1
-        ) / tf.reduce_sum(attention_mask, axis=1)
-        # if not self.sample_only:
-        #     encoding = self.norm(encoding)
         output = self.ff(encoding, training=training)
         return output, mem_preds, ranks_pred
 
