@@ -104,6 +104,7 @@ class SampleLearner(tf.keras.Model):
             use_sparse_positions=False,
             dropout_rate=0.0,
             attention_dropout_rate=0.0,
+            name="class_encoder",
         )
 
         self.encoder = TransformerEncoder(
@@ -113,12 +114,17 @@ class SampleLearner(tf.keras.Model):
             use_sparse_positions=False,
             dropout_rate=self.dropout_rate,
             attention_dropout_rate=self.dropout_rate,
+            name="encoder",
         )
-        self.project_ff = tf.keras.layers.Dense(256, activation="gelu")
+        self.project_ff = tf.keras.layers.Dense(
+            256, activation="gelu", name="project_ff"
+        )
         self.ff = tf.keras.layers.Dense(1, use_bias=True, name="cls_ff")
         self.batch_token = BatchToken()
 
-    def build_graph(self, input_shape):
+    def build_graph(self, input_shape=None):
+        if input_shape is None:
+            input_shape = self._build_input_shape
         xs = [tf.keras.layers.Input(shape=shape[1:]) for shape in input_shape]
         return tf.keras.Model(inputs=[xs], outputs=self.call(xs))
 
@@ -140,11 +146,11 @@ class SampleLearner(tf.keras.Model):
             tf.keras.metrics.MeanSquaredError(name="mse"),
         ]
         self.sample_only = sample_only
-        # if not self.sample_only:
-        #     self.project_ff.trainable = False
-        #     self.encoder.trainable = False
-        #     # self.membership_ff.trainable = False
-        #     # self.ranks_ff.trainable = False
+        if not self.sample_only:
+            self.project_ff.trainable = False
+            self.encoder.trainable = False
+            self.membership_ff.trainable = False
+            self.ranks_ff.trainable = False
 
         #     # self.ff = tf.keras.Sequential(
         #     #     [
@@ -376,7 +382,7 @@ class SampleLearner(tf.keras.Model):
             )
             loss = mem_loss + rank_loss
             if not self.sample_only:
-                loss += self.compute_loss(y, output)
+                loss = self.compute_loss(y, output)
                 self.compute_metric(y, output)
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -405,7 +411,7 @@ class SampleLearner(tf.keras.Model):
         )
         loss = mem_loss + rank_loss
         if not self.sample_only:
-            loss += self.compute_loss(y, output)
+            loss = self.compute_loss(y, output)
             self.compute_metric(y, output)
         self.loss_tracker.update_state(loss)
 
