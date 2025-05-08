@@ -169,14 +169,14 @@ class SampleLearner(tf.keras.Model):
                 embeddings, mask=attention_mask, training=training
             )
 
+            members = embeddings
+
             embeddings, padded_attention_mask = self.batch_token(
                 [embeddings, attention_mask, self.cls_token]
             )
-            members = embeddings
             embeddings = self.class_encoder(
                 embeddings, mask=padded_attention_mask, training=training
             )
-
             encoding = embeddings[:, 0]
             # members = embeddings
             # encoding = tf.reduce_sum(
