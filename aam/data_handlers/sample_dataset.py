@@ -160,9 +160,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end])
 
     def _gen_random_set(self, exclude, nsamples):
-        vs = self.random_state.choice(
-            self.asv_indices, nsamples, p=self.count_weights, replace=False
-        )
+        vs = self.random_state.choice(self.asv_indices, nsamples, replace=False)
         return np.setdiff1d(vs, exclude)
 
     def _batch_data(self, batch_sample_ids):
