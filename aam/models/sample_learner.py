@@ -87,6 +87,13 @@ class SampleLearner(tf.keras.Model):
             ],
             name="ranks_ff",
         )
+        self.cls_token = self.add_weight(
+            name="cls_token",
+            shape=(1, 1, 256),
+            dtype=tf.float32,
+            trainable=True,
+            initializer="uniform",
+        )
         self.class_encoder = TransformerEncoder(
             num_layers=1,
             intermediate_size=512,
@@ -97,7 +104,7 @@ class SampleLearner(tf.keras.Model):
         )
 
         self.encoder = TransformerEncoder(
-            num_layers=6,
+            num_layers=4,
             intermediate_size=512,
             fix_bias_shape=False,
             use_sparse_positions=False,
@@ -105,34 +112,14 @@ class SampleLearner(tf.keras.Model):
             attention_dropout_rate=self.dropout_rate,
         )
         self.project_ff = tf.keras.layers.Dense(256, activation="gelu")
-
-        self.ff = tf.keras.Sequential(
-            [
-                tf.keras.layers.Activation("tanh"),
-                tf.keras.layers.Dense(1, use_bias=True),
-            ],
-            name="cls_ff",
-        )
-        self.ff_dropout = tf.keras.layers.Dropout(0.5)
-        self.norm = tf.keras.layers.LayerNormalization(name="norm")
+        self.ff = tf.keras.layers.Dense(1, use_bias=True, name="cls_ff")
+        self.batch_token = BatchToken()
 
     def build_graph(self, input_shape):
         xs = [tf.keras.layers.Input(shape=shape[1:]) for shape in input_shape]
         return tf.keras.Model(inputs=[xs], outputs=self.call(xs))
 
     def build(self, input_shape):
-        embedding_shape = input_shape[0]
-        emb_dim = embedding_shape[-1]
-        self.cls_token = self.add_weight(
-            name="cls_token",
-            shape=(1, 1, emb_dim),
-            dtype=tf.float32,
-            trainable=True,
-            initializer="uniform",
-        )
-        self.cls_dropout = tf.keras.layers.Dropout(0.5)
-        self.batch_token = BatchToken()
-
         # ensure all layers are initialized
         self.build_graph(input_shape)
         super(SampleLearner, self).build(input_shape)
@@ -153,16 +140,15 @@ class SampleLearner(tf.keras.Model):
         if not self.sample_only:
             self.project_ff.trainable = False
             self.encoder.trainable = False
-            self.membership_ff.trainable = False
-            self.ranks_ff.trainable = False
+            # self.membership_ff.trainable = False
+            # self.ranks_ff.trainable = False
 
-            self.ff = tf.keras.Sequential(
-                [
-                    tf.keras.layers.Activation("tanh"),
-                    tf.keras.layers.Dense(1, use_bias=True),
-                ],
-                name="cls_ff",
-            )
+            # self.ff = tf.keras.Sequential(
+            #     [
+            #         tf.keras.layers.Dense(1, use_bias=True),
+            #     ],
+            #     name="cls_ff",
+            # )
 
         super().compile(**kwargs)
 
@@ -180,14 +166,13 @@ class SampleLearner(tf.keras.Model):
 
         if not self.sample_only:
             print("Encoding those samples...")
-            embeddings, padded_attention_mask = self.batch_token(
-                [embeddings, attention_mask, self.cls_token]
-            )
+            # embeddings, padded_attention_mask = self.batch_token(
+            #     [embeddings, attention_mask, self.cls_token]
+            # )
             embeddings = self.class_encoder(
-                embeddings, mask=padded_attention_mask, training=training
+                embeddings, mask=attention_mask, training=training
             )
-            embeddings = self.norm(embeddings)
-            members = embeddings[:, 1:]
+            members = embeddings  # [:, 1:]
         else:
             members = embeddings
 
@@ -196,11 +181,11 @@ class SampleLearner(tf.keras.Model):
         )
         ranks_pred = self.ranks_ff(members, training=training)
 
-        encoding = embeddings[:, 0]
+        # encoding = embeddings[:, 0]
         # encoding = self.ff_dropout(encoding, training=training)
-        # encoding = tf.reduce_sum(
-        #     embeddings * attention_mask, axis=1
-        # ) / tf.reduce_sum(attention_mask, axis=1)
+        encoding = tf.reduce_sum(
+            embeddings * attention_mask, axis=1
+        ) / tf.reduce_sum(attention_mask, axis=1)
         # if not self.sample_only:
         #     encoding = self.norm(encoding)
         output = self.ff(encoding, training=training)

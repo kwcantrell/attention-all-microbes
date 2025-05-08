@@ -27,6 +27,8 @@ class SequenceEmbeddings:
         labels, indices, _ = np.intersect1d(
             self.labels, keep, assume_unique=True, return_indices=True
         )
+        if len(indices) != len(keep):
+            print("We have a problem!!!!")
         self.embeddings = self.embeddings[indices]
         self._labels = self._labels[indices]
 
@@ -85,7 +87,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         sequence_labels: Optional[str] = None,
         normalize_embeddings: bool = False,
         shuffle: bool = False,
-        rarefy_depth: int = 1000,
+        rarefied_table=None,
         epochs: int = 1000,
         gen_new_tables: bool = False,
         gen_new_table_frequency=3,
@@ -99,18 +101,26 @@ class SampleDataset(tf.keras.utils.Sequence):
         if isinstance(table, str):
             table = load_table(table)
 
+        self.max_member_taxa = max_member_taxa
         self.table: Table = table
-        self.metadata_column: str = metadata_column
-        self.metadata: pd.Series = metadata
-        self.rarefy_depth: int = rarefy_depth
-        self.return_sample_ids: bool = return_sample_ids
-
         self.sequence_embeddings = SequenceEmbeddings(
             model, sequence_embeddings, sequence_labels, normalize_embeddings
         )
         self.sequence_embeddings.filter(self.table.ids(axis="observation"))
         self.table = self.sequence_embeddings.filter_table(self.table)
         self.table = self.sequence_embeddings.align_table(self.table)
+        self.asv_indices = np.arange(self.table.shape[0], dtype=np.int32)
+        count_weights = self.table.pa(inplace=False).sum(axis="observation")
+        count_weights = count_weights / count_weights.sum()
+        self.sorted_count_indices = np.argsort(count_weights)[::-1]
+        self.sorted_count_indices = self.sorted_count_indices[
+            : self.max_member_taxa
+        ]
+        self.count_weights = count_weights
+
+        self.metadata_column: str = metadata_column
+        self.metadata: pd.Series = metadata
+        self.return_sample_ids: bool = return_sample_ids
 
         self.shuffle = shuffle
         self.shuffle_ranks = shuffle_ranks
@@ -121,22 +131,21 @@ class SampleDataset(tf.keras.utils.Sequence):
         self.seed = seed
         self.gen_new_table_frequency = gen_new_table_frequency
         self.epochs_since_last_table = 0
-        self.max_member_taxa = max_member_taxa
 
         print("rarefy table...")
-        # self.rarefied_table: Table = self.table.subsample(rarefy_depth, seed=42)
-        self.sample_ids = self.table.ids()
-        self.size = self.table.shape[1]
+        if rarefied_table is not None:
+            self.rarefied_table: Table = rarefied_table
+        else:
+            self.rarefied_table = self.table.copy()
+
+        self.sample_ids = self.rarefied_table.ids()
+        self.size = self.rarefied_table.shape[1]
         self.batch_size = batch_size
         if self.batch_size > len(self.sample_ids):
             self.steps_per_epoch = 1
         else:
             self.steps_per_epoch = self.size // self.batch_size
         self.random_state = np.random.default_rng(2021)
-        self.asv_indices = np.arange(self.table.shape[0], dtype=np.int32)
-        print("dataset table shape", self.table.shape)
-        count_weights = self.table.pa(inplace=False).sum(axis="observation")
-        self.count_weights = count_weights / count_weights.sum()
 
     def on_epoch_end(self):
         self.random_state.shuffle(self.sample_ids)
@@ -150,7 +159,9 @@ class SampleDataset(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end])
 
     def _gen_random_set(self, exclude, nsamples):
-        vs = self.random_state.choice(self.asv_indices, nsamples, replace=False)
+        vs = self.random_state.choice(
+            self.asv_indices, nsamples, p=self.count_weights, replace=False
+        )
         return np.setdiff1d(vs, exclude)
 
     def _batch_data(self, batch_sample_ids):
@@ -158,65 +169,86 @@ class SampleDataset(tf.keras.utils.Sequence):
         attention_masks = []
         true_memberships = []
         for i, sample_id in enumerate(batch_sample_ids):
-            sample_data = self.table.data(sample_id, dense=False).tocoo()
-            (obs_idx, _), sample_counts = sample_data.coords, sample_data.data
+            full_sample_counts = self.table.data(sample_id, dense=True)
+            rarefied_sample_data = self.rarefied_table.data(
+                sample_id, dense=False
+            ).tocoo()
+            (obs_idx, _), sample_counts = (
+                rarefied_sample_data.coords,
+                rarefied_sample_data.data,
+            )
+
             count_mask = sample_counts > 0
             obs_idx = obs_idx[count_mask]
             _sample_indices = obs_idx[count_mask]
             _sample_counts = sample_counts[count_mask]
+            # total_true_members = min(len(_sample_counts), self.max_member_taxa)
+            # base_indices = np.arange(len(_sample_indices))
+            # base_indices = self.random_state.choice(
+            #     base_indices,
+            #     size=total_true_members,
+            #     p=_sample_counts / _sample_counts.sum(),
+            #     replace=False,
+            # )
+            # if self.shuffle_ranks:
+            #     num_sorted = max(1, int(total_true_members * 0.90))
+            # else:
+            #     num_sorted = total_true_members
+            # self.random_state.shuffle(base_indices)
 
-            total_true_members = min(len(_sample_counts), self.max_member_taxa)
-            base_indices = np.arange(len(_sample_indices))
-            base_indices = self.random_state.choice(
-                base_indices,
-                size=total_true_members,
-                p=_sample_counts / _sample_counts.sum(),
-                replace=False,
-            )
-            if self.shuffle_ranks:
-                num_sorted = max(1, int(total_true_members * 0.90))
-            else:
-                num_sorted = total_true_members
-            self.random_state.shuffle(base_indices)
+            # sort = base_indices[:num_sorted]
+            # sort = sort[np.argsort(_sample_counts[sort])]
+            # sort = sort[::-1]
 
-            sort = base_indices[:num_sorted]
-            sort = sort[np.argsort(_sample_counts[sort])]
-            sort = sort[::-1]
+            # if self.shuffle_ranks:
+            #     randomize = base_indices[num_sorted:total_true_members]
+            #     random_insert = self.random_state.choice(
+            #         np.arange(len(sort), dtype=np.int32),
+            #         size=len(randomize),
+            #         replace=True,
+            #     )
+            #     true_indices = np.insert(sort, random_insert, randomize)
+            # else:
+            #     true_indices = sort
+            # _sample_indices = _sample_indices[true_indices]
+            # _sample_counts = _sample_counts[true_indices]
 
-            if self.shuffle_ranks:
-                randomize = base_indices[num_sorted:total_true_members]
-                random_insert = self.random_state.choice(
-                    np.arange(len(sort), dtype=np.int32),
-                    size=len(randomize),
-                    replace=True,
-                )
-                true_indices = np.insert(sort, random_insert, randomize)
-            else:
-                true_indices = sort
-            _sample_indices = _sample_indices[true_indices]
-            _sample_counts = _sample_counts[true_indices]
+            # if self.insert_random_sequences:
+            #     random_indices = self._gen_random_set(
+            #         obs_idx, max(1, int(total_true_members * 0.15))
+            #     )
+            #     random_insert = self.random_state.choice(
+            #         np.arange(len(true_indices), dtype=np.int32),
+            #         size=len(random_indices),
+            #         # p=_sample_counts / _sample_counts.sum(),
+            #         replace=False,
+            #     )
+            #     _sample_indices = np.insert(
+            #         _sample_indices, random_insert, random_indices
+            #     )
+            #     _sample_counts = np.insert(_sample_counts, random_insert, 0)
 
-            if self.insert_random_sequences:
-                random_indices = self._gen_random_set(
-                    obs_idx, max(1, int(total_true_members * 0.15))
-                )
-                random_insert = self.random_state.choice(
-                    np.arange(len(true_indices), dtype=np.int32),
-                    size=len(random_indices),
-                    # p=_sample_counts / _sample_counts.sum(),
+            total_true_members = min(len(_sample_indices), self.max_member_taxa)
+            if total_true_members < len(_sample_indices):
+                _sample_indices = self.random_state.choice(
+                    _sample_indices,
+                    size=total_true_members,
+                    p=_sample_counts / _sample_counts.sum(),
                     replace=False,
                 )
-                _sample_indices = np.insert(
-                    _sample_indices, random_insert, random_indices
+            nadd = self.max_member_taxa - len(_sample_indices)
+            if nadd > 0:
+                missing_indices = np.setdiff1d(
+                    self.sorted_count_indices, _sample_indices
                 )
-                _sample_counts = np.insert(_sample_counts, random_insert, 0)
-
-            ###########################################################################
-            ##Possibly delete this
-            sorted_indices = np.argsort(_sample_indices)
-            _sample_indices = _sample_indices[sorted_indices]
-            _sample_counts = _sample_counts[sorted_indices]
-            ###########################################################################
+                missing_indices = missing_indices[
+                    np.argsort(self.count_weights[missing_indices])
+                ]
+                _sample_indices = np.hstack(
+                    [_sample_indices, missing_indices[:nadd]]
+                )
+            _sample_indices = _sample_indices[np.argsort(_sample_indices)]
+            _sample_counts = full_sample_counts[_sample_indices]
 
             # max size is self.
             embeddings.append(
@@ -264,6 +296,9 @@ class SampleDataset(tf.keras.utils.Sequence):
     @rarefied_table.setter
     def rarefied_table(self, rarefied_table: Table):
         print("removing empty sample/obs from table")
+        if rarefied_table is None:
+            self._rarefied_table = None
+            return
         rarefied_table.remove_empty()
         self._rarefied_table = self.sequence_embeddings.align_table(
             rarefied_table
