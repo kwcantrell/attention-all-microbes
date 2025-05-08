@@ -293,8 +293,8 @@ class SampleLearner(tf.keras.Model):
         )
 
         tie_ranks = rank_labels * tie_mask
-        tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
-        rank_labels = tf.math.reduce_min(
+        # tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
+        rank_labels = tf.math.reduce_max(
             tie_ranks, axis=1
         )  # - tf.math.floordiv(tf.reduce_sum(tie_mask), 2)
         # # # tf.print(rank_labels, counts)

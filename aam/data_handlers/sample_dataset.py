@@ -11,7 +11,7 @@ class SequenceEmbeddings:
         emb = np.load(embeddings_fp, allow_pickle=True)
         self.embeddings = emb
         print(self.embeddings.shape)
-        if model == "aam":
+        if "aam" in model:
             print("aam embeddings")
         else:
             print("normalizing embeddings")
@@ -113,7 +113,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         count_weights = self.table.pa(inplace=False).sum(axis="observation")
         count_weights = count_weights / count_weights.sum()
         self.sorted_count_indices = np.argsort(count_weights)[::-1]
-        self.count_weights = count_weights
+        self.count_weights = (count_weights > 0) / (count_weights > 0).sum()
         self.sorted_count_indices = self.sorted_count_indices[
             : self.max_member_taxa
         ]
@@ -137,7 +137,6 @@ class SampleDataset(tf.keras.utils.Sequence):
             self.rarefied_table: Table = rarefied_table
         else:
             self.rarefied_table = self.table.copy()
-
         self.sample_ids = self.rarefied_table.ids()
         self.size = self.rarefied_table.shape[1]
         self.batch_size = batch_size
@@ -239,10 +238,13 @@ class SampleDataset(tf.keras.utils.Sequence):
             nadd = self.max_member_taxa - len(_sample_indices)
             if nadd > 0:
                 if self.insert_random_sequences:
-                    missing_indices = self.random_state.choice(
-                        self.asv_indices,
-                        size=nadd,
-                        p=self.count_weights,
+                    # missing_indices = self.random_state.choice(
+                    #     self.asv_indices,
+                    #     size=nadd,
+                    #     p=self.count_weights,
+                    # )
+                    missing_indices = self._gen_random_set(
+                        _sample_indices, self.max_member_taxa
                     )
                 else:
                     missing_indices = np.setdiff1d(
