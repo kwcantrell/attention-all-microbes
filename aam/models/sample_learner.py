@@ -149,8 +149,8 @@ class SampleLearner(tf.keras.Model):
         if not self.sample_only:
             self.project_ff.trainable = False
             self.encoder.trainable = False
-            self.membership_ff.trainable = False
-            self.ranks_ff.trainable = False
+            # self.membership_ff.trainable = False
+            # self.ranks_ff.trainable = False
 
         #     # self.ff = tf.keras.Sequential(
         #     #     [
@@ -175,14 +175,13 @@ class SampleLearner(tf.keras.Model):
                 embeddings, mask=attention_mask, training=training
             )
 
-            members = embeddings
-
             embeddings, padded_attention_mask = self.batch_token(
                 [embeddings, attention_mask, self.cls_token]
             )
             embeddings = self.class_encoder(
                 embeddings, mask=padded_attention_mask, training=training
             )
+            members = embeddings[:, 1:]
             encoding = embeddings[:, 0]
             # members = embeddings
             # encoding = tf.reduce_sum(
@@ -382,7 +381,7 @@ class SampleLearner(tf.keras.Model):
             )
             loss = mem_loss + rank_loss
             if not self.sample_only:
-                loss = self.compute_loss(y, output)
+                loss += self.compute_loss(y, output)
                 self.compute_metric(y, output)
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -411,7 +410,7 @@ class SampleLearner(tf.keras.Model):
         )
         loss = mem_loss + rank_loss
         if not self.sample_only:
-            loss = self.compute_loss(y, output)
+            loss += self.compute_loss(y, output)
             self.compute_metric(y, output)
         self.loss_tracker.update_state(loss)
 
