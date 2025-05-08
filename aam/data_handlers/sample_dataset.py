@@ -97,11 +97,13 @@ class SampleDataset(tf.keras.utils.Sequence):
         insert_random_sequence=False,
         batch_size=64,
         max_member_taxa=175,
+        sort_taxa=False,
     ):
         if isinstance(table, str):
             table = load_table(table)
 
         self.max_member_taxa = max_member_taxa
+        self.sort_taxa = sort_taxa
         self.table: Table = table
         self.sequence_embeddings = SequenceEmbeddings(
             model, sequence_embeddings, sequence_labels, normalize_embeddings
@@ -256,7 +258,13 @@ class SampleDataset(tf.keras.utils.Sequence):
                 _sample_indices = np.hstack(
                     [_sample_indices, missing_indices[:nadd]]
                 )
-            _sample_indices = _sample_indices[np.argsort(_sample_indices)]
+            if self.sort_taxa:
+                _sample_indices = _sample_indices[
+                    np.argsort(full_sample_counts[_sample_indices])
+                ]
+                _sample_indices = _sample_indices[::-1]
+            else:
+                _sample_indices = _sample_indices[np.argsort(_sample_indices)]
             _sample_counts = full_sample_counts[_sample_indices]
 
             # max size is self.
@@ -337,7 +345,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         print("aligning table with metadata")
         samp_ids = np.intersect1d(self.table.ids(axis="sample"), metadata.index)
         self.table.filter(samp_ids, axis="sample", inplace=True)
-        self.table.remove_empty()
+        # self.table.remove_empty()
         metadata = metadata.loc[self.table.ids(), [self.metadata_column]]
         print(f"aligned table shape: {self.table.shape}")
         print(f"aligned metadata shape: {metadata.shape}")
