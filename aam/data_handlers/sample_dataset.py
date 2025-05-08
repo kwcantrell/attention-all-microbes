@@ -15,7 +15,7 @@ class SequenceEmbeddings:
             print("aam embeddings")
         else:
             print("normalizing embeddings")
-        # self.normalize()
+        self.normalize()
 
         self.labels = labels_fp
         print(len(self.labels))
@@ -113,10 +113,10 @@ class SampleDataset(tf.keras.utils.Sequence):
         count_weights = self.table.pa(inplace=False).sum(axis="observation")
         count_weights = count_weights / count_weights.sum()
         self.sorted_count_indices = np.argsort(count_weights)[::-1]
+        self.count_weights = count_weights
         self.sorted_count_indices = self.sorted_count_indices[
             : self.max_member_taxa
         ]
-        self.count_weights = count_weights
 
         self.metadata_column: str = metadata_column
         self.metadata: pd.Series = metadata
@@ -238,12 +238,19 @@ class SampleDataset(tf.keras.utils.Sequence):
                 )
             nadd = self.max_member_taxa - len(_sample_indices)
             if nadd > 0:
-                missing_indices = np.setdiff1d(
-                    self.sorted_count_indices, _sample_indices
-                )
-                missing_indices = missing_indices[
-                    np.argsort(self.count_weights[missing_indices])
-                ]
+                if self.insert_random_sequences:
+                    missing_indices = self.random_state.choice(
+                        self.asv_indices,
+                        size=nadd,
+                        p=self.count_weights,
+                    )
+                else:
+                    missing_indices = np.setdiff1d(
+                        self.sorted_count_indices, _sample_indices
+                    )
+                    missing_indices = missing_indices[
+                        np.argsort(self.count_weights[missing_indices])
+                    ]
                 _sample_indices = np.hstack(
                     [_sample_indices, missing_indices[:nadd]]
                 )

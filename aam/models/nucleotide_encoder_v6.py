@@ -3,7 +3,11 @@ from __future__ import annotations
 import tensorflow as tf
 
 from aam.layers import ASVEncoder
-from aam.losses import PairwiseLoss, _pairwise_cosine_distance, _pairwise_distances
+from aam.losses import (
+    PairwiseLoss,
+    _pairwise_cosine_distance,
+    _pairwise_distances,
+)
 from aam.models.feedforward import FeedForward
 
 
@@ -45,6 +49,7 @@ class NucleotideEncoderV6(tf.keras.Model):
         self.asv_tracker = tf.keras.metrics.Mean()
         self.include_pos_emb = include_pos_emb
         self.use_cls_tkn = use_cls_tkn
+        print("Using class token?", self.use_cls_tkn)
         self.asv_encoder = ASVEncoder(
             self.max_bp,
             self.attention_heads,
@@ -94,11 +99,17 @@ class NucleotideEncoderV6(tf.keras.Model):
 
     def predict_step(self, data):
         inputs, asv_ids = data
-        asv_embeddings = self(inputs, return_hidden_state=False, training=False)
         if self.normalize_asv_embeddings:
             print("normalizing")
+            asv_embeddings = self(
+                inputs, return_hidden_state=False, training=False
+            )
             asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
         else:
+            asv_embeddings = self(
+                inputs, return_hidden_state=False, training=False
+            )
+            # asv_embeddings = tf.reduce_mean(asv_embeddings, axis=1)
             print("not l2 normalizing")
         # return tf.reduce_mean(asv_embeddings, axis=1), asv_ids
         return asv_embeddings, asv_ids
@@ -166,12 +177,14 @@ class NucleotideEncoderV6(tf.keras.Model):
         }
         return output_trackers
 
-    def call(self, inputs, return_hidden_state=False, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    def call(
+        self, inputs, return_hidden_state=False, training: bool = False
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         training = training and self.trainable
 
         embeddings = self.asv_encoder(inputs, training=training)
         if return_hidden_state:
-            return embeddings[:, 1:]
+            return embeddings
         asv_embeddings = self.asv_ff(embeddings)
 
         return asv_embeddings
