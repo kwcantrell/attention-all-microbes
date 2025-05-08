@@ -109,7 +109,7 @@ class NucleotideEncoderV6(tf.keras.Model):
             asv_embeddings = self(
                 inputs, return_hidden_state=True, training=False
             )
-            asv_embeddings = tf.reduce_mean(asv_embeddings[:, 1:], axis=1)
+            asv_embeddings = tf.reduce_mean(asv_embeddings, axis=1)
             print("not l2 normalizing")
         return asv_embeddings, asv_ids
 
