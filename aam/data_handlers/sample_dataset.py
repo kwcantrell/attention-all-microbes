@@ -269,7 +269,7 @@ class SampleDataset(tf.keras.utils.Sequence):
 
             if self.shuffle_ranks:
                 random_mask = self.random_state.random(self.max_member_taxa)
-                random_mask = random_mask > 0.25
+                random_mask = random_mask > 0.5
                 random_indices = _sample_indices[~random_mask]
                 _sample_indices = _sample_indices[random_mask]
                 non_zero_mask = full_sample_counts[_sample_indices] > 0
