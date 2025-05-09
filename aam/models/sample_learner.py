@@ -225,7 +225,7 @@ class SampleLearner(tf.keras.Model):
         total_ranks = tf.shape(rank_indices)[0]
 
         prev_range = tf.range(-5, limit=0, delta=1, dtype=tf.int64)
-        noise = 0.1 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
+        noise = 0.05 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
         noise = tf.repeat(tf.expand_dims(noise, axis=0), total_ranks, axis=0)
         noise = tf.reshape(noise, shape=[-1])
 
