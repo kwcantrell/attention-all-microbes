@@ -108,7 +108,7 @@ class SampleLearner(tf.keras.Model):
         )
 
         self.encoder = TransformerEncoder(
-            num_layers=4,
+            num_layers=6,
             intermediate_size=512,
             fix_bias_shape=False,
             use_sparse_positions=False,
@@ -225,7 +225,7 @@ class SampleLearner(tf.keras.Model):
         total_ranks = tf.shape(rank_indices)[0]
 
         prev_range = tf.range(-5, limit=0, delta=1, dtype=tf.int64)
-        noise = 0.05 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
+        noise = 0.1 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
         noise = tf.repeat(tf.expand_dims(noise, axis=0), total_ranks, axis=0)
         noise = tf.reshape(noise, shape=[-1])
 
@@ -239,17 +239,17 @@ class SampleLearner(tf.keras.Model):
             rank_one_hot, prev_indices, noise
         )
 
-        # # forward
-        # next_indices = tf.expand_dims(tf.abs(prev_range), axis=-1)
-        # next_indices = tf.constant([[0, 0, 1]], dtype=tf.int64) * next_indices
-        # next_indices = rank_indices + tf.expand_dims(next_indices, axis=0)
-        # next_indices = tf.reshape(next_indices, shape=[-1, 3])
-        # next_indices = tf.where(
-        #     next_indices < self.rank_dim, next_indices, self.rank_dim - 1
-        # )
-        # rank_one_hot = tf.tensor_scatter_nd_add(
-        #     rank_one_hot, next_indices, noise
-        # )
+        # forward
+        next_indices = tf.expand_dims(tf.abs(prev_range), axis=-1)
+        next_indices = tf.constant([[0, 0, 1]], dtype=tf.int64) * next_indices
+        next_indices = rank_indices + tf.expand_dims(next_indices, axis=0)
+        next_indices = tf.reshape(next_indices, shape=[-1, 3])
+        next_indices = tf.where(
+            next_indices < self.rank_dim, next_indices, self.rank_dim - 1
+        )
+        rank_one_hot = tf.tensor_scatter_nd_add(
+            rank_one_hot, next_indices, noise
+        )
 
         return rank_one_hot
 
@@ -258,7 +258,7 @@ class SampleLearner(tf.keras.Model):
         rank_one_hot = tf.one_hot(
             rank_label, self.rank_dim, on_value=1.0, off_value=0.0
         )
-        # rank_one_hot = self._add_rank_noise(rank_one_hot)
+        rank_one_hot = self._add_rank_noise(rank_one_hot)
         predicted_rank = tf.cast(
             tf.argmax(rank_preds, axis=-1), dtype=tf.float32
         )
@@ -293,11 +293,11 @@ class SampleLearner(tf.keras.Model):
 
         tie_ranks = rank_labels * tie_mask
         # tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
-        rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
-        # # # tf.print(rank_labels, counts)
-        # rank_labels = tf.math.ceil(
-        #     tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
-        # )
+        # rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
+        # # tf.print(rank_labels, counts)
+        rank_labels = tf.math.ceil(
+            tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
+        )
         # rank_labels = tf.where(counts > 0, rank_labels, self.rank_dim - 1)
         rank_labels = tf.cast(rank_labels, dtype=tf.int32)
         return rank_labels
