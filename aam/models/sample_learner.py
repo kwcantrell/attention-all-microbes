@@ -171,11 +171,12 @@ class SampleLearner(tf.keras.Model):
         embeddings = self.project_ff(embeddings)
 
         if not self.sample_only:
+            embeddings = self.encoder(
+                embeddings, mask=attention_mask, training=training
+            )
+
             embeddings, padded_attention_mask = self.batch_token(
                 [embeddings, attention_mask, self.cls_token]
-            )
-            embeddings = self.encoder(
-                embeddings, mask=padded_attention_mask, training=training
             )
             embeddings = self.class_encoder(
                 embeddings, mask=padded_attention_mask, training=training
