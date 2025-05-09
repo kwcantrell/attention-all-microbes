@@ -266,6 +266,19 @@ class SampleDataset(tf.keras.utils.Sequence):
                 _sample_indices = _sample_indices[::-1]
             else:
                 _sample_indices = _sample_indices[np.argsort(_sample_indices)]
+
+            if self.shuffle_ranks:
+                random_mask = self.random_state.random(self.max_member_taxa)
+                random_mask = random_mask > 0.15
+                random_indices = _sample_indices[~random_mask]
+                _sample_indices = _sample_indices[random_mask]
+                random_insert = self.random_state.choice(
+                    np.arange(len(_sample_indices), dtype=np.int32),
+                    size=len(random_indices),
+                )
+                _sample_indices = np.insert(
+                    _sample_indices, random_insert, random_indices
+                )
             _sample_counts = full_sample_counts[_sample_indices]
 
             # max size is self.

@@ -94,6 +94,8 @@ class NucleotideEncoderV6(tf.keras.Model):
         Args:
             input_shape (tuple): A shape tuple (integers), not including the batch size.
         """
+        if input_shape is None:
+            input_shape = self._build_input_shape
         x = tf.keras.layers.Input(shape=(input_shape))
         return tf.keras.Model(inputs=[x], outputs=self.call(x))
 
@@ -117,8 +119,8 @@ class NucleotideEncoderV6(tf.keras.Model):
             #     [asv_embeddings, sequence_embeddings], axis=1
             # )
 
-            output_embedding = tf.reduce_sum(output_embedding, axis=1)
-            print("not l2 normalizing")
+            output_embedding = tf.reduce_mean(output_embedding, axis=1)
+            print("mean hidden states")
         return output_embedding, asv_ids
 
     def compute_distances(self, embeddings):
@@ -212,20 +214,6 @@ class NucleotideEncoderV6(tf.keras.Model):
                 "include_pos_emb": self.include_pos_emb,
                 "use_cls_tkn": self.use_cls_tkn,
                 "pairwise_type": self.pairwise_type,
-                "build_input_shape": self.get_build_config(),
             }
         )
         return config
-
-    @classmethod
-    def from_config(cls, config):
-        input_shape = None
-        if "build_input_shape" in config:
-            build_input_shape = config.pop("build_input_shape")
-            input_shape = build_input_shape["input_shape"]
-
-        model = cls(**config)
-
-        if input_shape is not None:
-            model.build([None, 150])
-        return model

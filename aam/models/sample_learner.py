@@ -152,11 +152,11 @@ class SampleLearner(tf.keras.Model):
             tf.keras.metrics.MeanSquaredError(name="mse"),
         ]
         self.sample_only = sample_only
-        if not self.sample_only:
-            self.project_ff.trainable = False
-            self.encoder.trainable = False
-            self.membership_ff.trainable = False
-            self.ranks_ff.trainable = False
+        # if not self.sample_only:
+        #     self.project_ff.trainable = False
+        #     self.encoder.trainable = False
+        #     self.membership_ff.trainable = False
+        #     self.ranks_ff.trainable = False
 
         super().compile(**kwargs)
 
@@ -170,22 +170,22 @@ class SampleLearner(tf.keras.Model):
         embeddings = self.project_ff(embeddings)
 
         if not self.sample_only:
-            embeddings = self.encoder(
-                embeddings, mask=attention_mask, training=training
-            )
-            members = embeddings
-
             embeddings, padded_attention_mask = self.batch_token(
                 [embeddings, attention_mask, self.cls_token]
             )
-            embeddings = self.class_encoder(
+            embeddings = self.encoder(
                 embeddings, mask=padded_attention_mask, training=training
             )
-            encoding = embeddings[:, 0]
+
+            # embeddings = self.class_encoder(
+            #     embeddings, mask=padded_attention_mask, training=training
+            # )
+            members = embeddings[:, 1:]
+            # encoding = embeddings[:, 0]
             # members = embeddings
-            # encoding = tf.reduce_sum(
-            #     embeddings * attention_mask, axis=1
-            # ) / tf.reduce_sum(attention_mask, axis=1)
+            encoding = tf.reduce_sum(
+                embeddings * padded_attention_mask, axis=1
+            ) / tf.reduce_sum(padded_attention_mask, axis=1)
         else:
             embeddings = self.encoder(
                 embeddings, mask=attention_mask, training=training
@@ -340,7 +340,7 @@ class SampleLearner(tf.keras.Model):
     def compute_loss(self, y, y_pred):
         y = tf.cast(y, dtype=tf.float32)
         loss = self.loss_fn(y, y_pred)
-        return tf.reduce_mean(loss)
+        return tf.math.log1p(tf.math.log1p(tf.reduce_mean(loss)))
 
     def get_inputs(self, data):
         x, y = data
@@ -363,7 +363,7 @@ class SampleLearner(tf.keras.Model):
             )
             loss = mem_loss + rank_loss
             if not self.sample_only:
-                loss = self.compute_loss(y, output)
+                loss += self.compute_loss(y, output)
                 self.compute_metric(y, output)
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -389,23 +389,13 @@ class SampleLearner(tf.keras.Model):
         )
         loss = mem_loss + rank_loss
         if not self.sample_only:
-            loss = self.compute_loss(y, output)
+            loss += self.compute_loss(y, output)
             self.compute_metric(y, output)
         self.loss_tracker.update_state(loss)
 
         output = {metric.name: metric.result() for metric in self.metrics}
         output.update({"loss": self.loss_tracker.result()})
         return output
-
-    # def predict_step(self, data):
-    #     x, y = data
-    #     output = self(x, training=False)
-    #     predictions = self.output_activation(output)
-    #     y = tf.cast(y, dtype=tf.float32)
-    #     pred_labels = tf.cast(predictions >= 0.5, dtype=tf.float32)
-    #     correct = tf.cast(pred_labels == y, dtype=tf.float32)
-    #     correct = tf.reduce_mean(correct, axis=0)
-    #     return predictions, y, correct
 
     def get_config(self):
         config = super(SampleLearner, self).get_config()
