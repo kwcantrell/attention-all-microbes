@@ -39,8 +39,8 @@ class SequenceEmbeddings:
         return self.embeddings[indices]
 
     def normalize(self):
-        emb_mean = np.mean(self.embeddings, axis=-1, keepdims=True)
-        emb_std = np.std(self.embeddings, axis=-1, keepdims=True)
+        emb_mean = np.mean(self.embeddings, axis=0, keepdims=True)
+        emb_std = np.std(self.embeddings, axis=0, keepdims=True)
         self.embeddings = (self.embeddings - emb_mean) / emb_std
 
     @property
@@ -114,8 +114,8 @@ class SampleDataset(tf.keras.utils.Sequence):
         self.asv_indices = np.arange(self.table.shape[0], dtype=np.int32)
         count_weights = self.table.pa(inplace=False).sum(axis="observation")
         count_weights = count_weights / count_weights.sum()
+        self.count_weights = count_weights / count_weights.sum()
         self.sorted_count_indices = np.argsort(count_weights)[::-1]
-        self.count_weights = (count_weights > 0) / (count_weights > 0).sum()
         self.sorted_count_indices = self.sorted_count_indices[
             : self.max_member_taxa
         ]
@@ -160,7 +160,9 @@ class SampleDataset(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end])
 
     def _gen_random_set(self, exclude, nsamples):
-        vs = self.random_state.choice(self.asv_indices, nsamples, replace=False)
+        vs = self.random_state.choice(
+            self.asv_indices, nsamples, p=self.count_weights, replace=False
+        )
         return np.setdiff1d(vs, exclude)
 
     def _batch_data(self, batch_sample_ids):
