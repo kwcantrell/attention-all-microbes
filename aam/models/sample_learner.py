@@ -119,7 +119,13 @@ class SampleLearner(tf.keras.Model):
         self.project_ff = tf.keras.layers.Dense(
             256, activation="gelu", name="project_ff"
         )
-        self.ff = tf.keras.layers.Dense(1, use_bias=True, name="cls_ff")
+        self.ff = tf.keras.Sequential(
+            [
+                FeedForward(),
+                tf.keras.layers.Dense(1, use_bias=True),
+            ],
+            name="cls_ff",
+        )
         self.batch_token = BatchToken()
 
     def build_graph(self, input_shape=None):
@@ -146,18 +152,11 @@ class SampleLearner(tf.keras.Model):
             tf.keras.metrics.MeanSquaredError(name="mse"),
         ]
         self.sample_only = sample_only
-        # if not self.sample_only:
-        #     self.project_ff.trainable = False
-        #     self.encoder.trainable = False
-        #     # self.membership_ff.trainable = False
-        #     # self.ranks_ff.trainable = False
-
-        # #     # self.ff = tf.keras.Sequential(
-        # #     #     [
-        # #     #         tf.keras.layers.Dense(1, use_bias=True),
-        # #     #     ],
-        # #     #     name="cls_ff",
-        #     # )
+        if not self.sample_only:
+            self.project_ff.trainable = False
+            self.encoder.trainable = False
+            self.membership_ff.trainable = False
+            self.ranks_ff.trainable = False
 
         super().compile(**kwargs)
 
@@ -176,17 +175,17 @@ class SampleLearner(tf.keras.Model):
             )
             members = embeddings
 
-            # embeddings, padded_attention_mask = self.batch_token(
-            #     [embeddings, attention_mask, self.cls_token]
-            # )
-            embeddings = self.class_encoder(
-                embeddings, mask=attention_mask, training=training
+            embeddings, padded_attention_mask = self.batch_token(
+                [embeddings, attention_mask, self.cls_token]
             )
-            # encoding = embeddings[:, 0]
+            embeddings = self.class_encoder(
+                embeddings, mask=padded_attention_mask, training=training
+            )
+            encoding = embeddings[:, 0]
             # members = embeddings
-            encoding = tf.reduce_sum(
-                embeddings * attention_mask, axis=1
-            ) / tf.reduce_sum(attention_mask, axis=1)
+            # encoding = tf.reduce_sum(
+            #     embeddings * attention_mask, axis=1
+            # ) / tf.reduce_sum(attention_mask, axis=1)
         else:
             embeddings = self.encoder(
                 embeddings, mask=attention_mask, training=training
@@ -231,48 +230,33 @@ class SampleLearner(tf.keras.Model):
         rank_indices = tf.expand_dims(tf.where(rank_one_hot > 0), axis=1)
         total_ranks = tf.shape(rank_indices)[0]
 
-        prev_range = tf.range(-25, limit=0, delta=1, dtype=tf.int64)
-        noise = 0.1 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
+        prev_range = tf.range(-2, limit=0, delta=1, dtype=tf.int64)
+        noise = 0.05 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
         noise = tf.repeat(tf.expand_dims(noise, axis=0), total_ranks, axis=0)
         noise = tf.reshape(noise, shape=[-1])
 
+        # previous
         prev_indices = tf.expand_dims(prev_range, axis=-1)
         prev_indices = tf.constant([[0, 0, 1]], dtype=tf.int64) * prev_indices
-        rank_indices = rank_indices + tf.expand_dims(prev_indices, axis=0)
-        rank_indices = tf.reshape(rank_indices, shape=[-1, 3])
-        rank_indices = tf.where(rank_indices > 0, rank_indices, 0)
+        prev_indices = rank_indices + tf.expand_dims(prev_indices, axis=0)
+        prev_indices = tf.reshape(prev_indices, shape=[-1, 3])
+        prev_indices = tf.where(prev_indices > 0, prev_indices, 0)
         rank_one_hot = tf.tensor_scatter_nd_add(
-            rank_one_hot, rank_indices, noise
+            rank_one_hot, prev_indices, noise
         )
-        # one_away = rank_indices + tf.constant(
-        #     [[[0, 0, -1], [0, 0, 1]]], dtype=tf.int64
-        # )
-        # one_away = tf.reshape(one_away, shape=[-1, 3])
-        # one_away = tf.where(one_away > 0, one_away, 0)
-        # one_away = tf.where(
-        #     one_away < self.rank_dim, one_away, self.rank_dim - 1
-        # )
-        # num_indices = tf.shape(one_away)[0]
-        # rank_one_hot = tf.tensor_scatter_nd_add(
-        #     rank_one_hot,
-        #     one_away,
-        #     tf.ones([num_indices], dtype=tf.float32) * 0.025,
-        # )
 
-        # two_away = rank_indices + tf.constant(
-        #     [[[0, 0, -2], [0, 0, 2]]], dtype=tf.int64
-        # )
-        # two_away = tf.reshape(two_away, shape=[-1, 3])
-        # two_away = tf.where(two_away > 0, two_away, 0)
-        # two_away = tf.where(
-        #     two_away < self.rank_dim, two_away, self.rank_dim - 1
-        # )
-        # num_indices = tf.shape(two_away)[0]
-        # rank_one_hot = tf.tensor_scatter_nd_add(
-        #     rank_one_hot,
-        #     two_away,
-        #     tf.ones([num_indices], dtype=tf.float32) * 0.0125,
-        # )
+        # forward
+        next_indices = tf.expand_dims(tf.abs(prev_range), axis=-1)
+        next_indices = tf.constant([[0, 0, 1]], dtype=tf.int64) * next_indices
+        next_indices = rank_indices + tf.expand_dims(next_indices, axis=0)
+        next_indices = tf.reshape(next_indices, shape=[-1, 3])
+        next_indices = tf.where(
+            next_indices < self.rank_dim, next_indices, self.rank_dim - 1
+        )
+        rank_one_hot = tf.tensor_scatter_nd_add(
+            rank_one_hot, next_indices, noise
+        )
+
         return rank_one_hot
 
     def _compute_relative_rank_loss(self, rank_label, rank_preds, mask):
@@ -315,11 +299,11 @@ class SampleLearner(tf.keras.Model):
 
         tie_ranks = rank_labels * tie_mask
         # tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
-        rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
+        # rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
         # # # tf.print(rank_labels, counts)
-        # rank_labels = tf.math.ceil(
-        #     tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
-        # )
+        rank_labels = tf.math.ceil(
+            tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
+        )
         # rank_labels = tf.where(counts > 0, rank_labels, self.rank_dim - 1)
         rank_labels = tf.cast(rank_labels, dtype=tf.int32)
         return rank_labels
@@ -330,12 +314,7 @@ class SampleLearner(tf.keras.Model):
         output, _, rank_pred = self(x, training=False)
 
         if self.sample_only:
-            membership_labels = counts > 0
             rank_labels = self._create_rank_labels(counts)
-            valid_mask = tf.cast(
-                tf.expand_dims(membership_labels, axis=-1), dtype=tf.float32
-            )
-
             _, rank_diff, predicted_ranks, mask = (
                 self._compute_relative_rank_loss(
                     rank_labels, rank_pred, attention_mask
@@ -361,8 +340,7 @@ class SampleLearner(tf.keras.Model):
     def compute_loss(self, y, y_pred):
         y = tf.cast(y, dtype=tf.float32)
         loss = self.loss_fn(y, y_pred)
-        # loss = tf.math.log(loss)
-        return tf.math.log(tf.reduce_mean(loss))
+        return tf.reduce_mean(loss)
 
     def get_inputs(self, data):
         x, y = data
@@ -375,9 +353,6 @@ class SampleLearner(tf.keras.Model):
         membership_labels = counts > 0
 
         rank_labels = self._create_rank_labels(counts)
-        valid_mask = tf.cast(
-            tf.expand_dims(membership_labels, axis=-1), dtype=tf.float32
-        )
         with tf.GradientTape() as tape:
             output, mem_preds, ranks_pred = self(x, training=True)
             mem_loss = self._compute_membership_loss(
@@ -388,7 +363,7 @@ class SampleLearner(tf.keras.Model):
             )
             loss = mem_loss + rank_loss
             if not self.sample_only:
-                loss += self.compute_loss(y, output)
+                loss = self.compute_loss(y, output)
                 self.compute_metric(y, output)
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -404,9 +379,6 @@ class SampleLearner(tf.keras.Model):
         embeddings, attention_mask, counts = x
         membership_labels = counts > 0
         rank_labels = self._create_rank_labels(counts)
-        valid_mask = tf.cast(
-            tf.expand_dims(membership_labels, axis=-1), dtype=tf.float32
-        )
 
         output, mem_preds, ranks_pred = self(x, training=False)
         mem_loss = self._compute_membership_loss(
@@ -417,7 +389,7 @@ class SampleLearner(tf.keras.Model):
         )
         loss = mem_loss + rank_loss
         if not self.sample_only:
-            loss += self.compute_loss(y, output)
+            loss = self.compute_loss(y, output)
             self.compute_metric(y, output)
         self.loss_tracker.update_state(loss)
 
