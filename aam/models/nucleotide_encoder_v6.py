@@ -104,14 +104,21 @@ class NucleotideEncoderV6(tf.keras.Model):
             asv_embeddings = self(
                 inputs, return_hidden_state=False, training=False
             )
-            asv_embeddings = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
+            output_embedding = tf.linalg.l2_normalize(asv_embeddings, axis=-1)
         else:
-            asv_embeddings = self(
-                inputs, return_hidden_state=True, training=False
+            embeddings = self(inputs, return_hidden_state=True, training=False)
+            asv_embeddings = tf.linalg.l2_normalize(embeddings[:, 0], axis=-1)
+            sequence_embeddings = tf.reduce_mean(embeddings[:, 1:], axis=1)
+
+            asv_embeddings = tf.expand_dims(asv_embeddings, axis=1)
+            sequence_embeddings = tf.expand_dims(sequence_embeddings, axis=1)
+            output_embedding = tf.concat(
+                [asv_embeddings, sequence_embeddings], axis=1
             )
-            asv_embeddings = tf.reduce_mean(asv_embeddings, axis=1)
+
+            output_embedding = tf.reduce_mean(output_embedding, axis=1)
             print("not l2 normalizing")
-        return asv_embeddings, asv_ids
+        return output_embedding, asv_ids
 
     def compute_distances(self, embeddings):
         distances = _pairwise_cosine_distance(embeddings)
@@ -183,6 +190,8 @@ class NucleotideEncoderV6(tf.keras.Model):
 
         embeddings = self.asv_encoder(inputs, training=training)
         if return_hidden_state:
+            asv_embeddings = tf.expand_dims(self.asv_ff(embeddings), axis=1)
+            embeddings = tf.concat([asv_embeddings, embeddings[:, 1:]], axis=1)
             return embeddings
         asv_embeddings = self.asv_ff(embeddings)
 
