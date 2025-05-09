@@ -229,35 +229,50 @@ class SampleLearner(tf.keras.Model):
     def _add_rank_noise(self, rank_one_hot):
         rank_one_hot = rank_one_hot * 0.9
         rank_indices = tf.expand_dims(tf.where(rank_one_hot > 0), axis=1)
-        one_away = rank_indices + tf.constant(
-            [[[0, 0, -1], [0, 0, 1]]], dtype=tf.int64
-        )
-        one_away = tf.reshape(one_away, shape=[-1, 3])
-        one_away = tf.where(one_away > 0, one_away, 0)
-        one_away = tf.where(
-            one_away < self.rank_dim, one_away, self.rank_dim - 1
-        )
-        num_indices = tf.shape(one_away)[0]
-        rank_one_hot = tf.tensor_scatter_nd_add(
-            rank_one_hot,
-            one_away,
-            tf.ones([num_indices], dtype=tf.float32) * 0.025,
-        )
+        total_ranks = tf.shape(rank_indices)[0]
 
-        two_away = rank_indices + tf.constant(
-            [[[0, 0, -2], [0, 0, 2]]], dtype=tf.int64
-        )
-        two_away = tf.reshape(two_away, shape=[-1, 3])
-        two_away = tf.where(two_away > 0, two_away, 0)
-        two_away = tf.where(
-            two_away < self.rank_dim, two_away, self.rank_dim - 1
-        )
-        num_indices = tf.shape(two_away)[0]
+        prev_range = tf.range(-25, limit=0, delta=1, dtype=tf.int64)
+        noise = 0.1 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
+        noise = tf.repeat(tf.expand_dims(noise, axis=0), total_ranks, axis=0)
+        noise = tf.reshape(noise, shape=[-1])
+
+        prev_indices = tf.expand_dims(prev_range, axis=-1)
+        prev_indices = tf.constant([[0, 0, 1]], dtype=tf.int64) * prev_indices
+        rank_indices = rank_indices + tf.expand_dims(prev_indices, axis=0)
+        rank_indices = tf.reshape(rank_indices, shape=[-1, 3])
+        rank_indices = tf.where(rank_indices > 0, rank_indices, 0)
         rank_one_hot = tf.tensor_scatter_nd_add(
-            rank_one_hot,
-            two_away,
-            tf.ones([num_indices], dtype=tf.float32) * 0.0125,
+            rank_one_hot, rank_indices, noise
         )
+        # one_away = rank_indices + tf.constant(
+        #     [[[0, 0, -1], [0, 0, 1]]], dtype=tf.int64
+        # )
+        # one_away = tf.reshape(one_away, shape=[-1, 3])
+        # one_away = tf.where(one_away > 0, one_away, 0)
+        # one_away = tf.where(
+        #     one_away < self.rank_dim, one_away, self.rank_dim - 1
+        # )
+        # num_indices = tf.shape(one_away)[0]
+        # rank_one_hot = tf.tensor_scatter_nd_add(
+        #     rank_one_hot,
+        #     one_away,
+        #     tf.ones([num_indices], dtype=tf.float32) * 0.025,
+        # )
+
+        # two_away = rank_indices + tf.constant(
+        #     [[[0, 0, -2], [0, 0, 2]]], dtype=tf.int64
+        # )
+        # two_away = tf.reshape(two_away, shape=[-1, 3])
+        # two_away = tf.where(two_away > 0, two_away, 0)
+        # two_away = tf.where(
+        #     two_away < self.rank_dim, two_away, self.rank_dim - 1
+        # )
+        # num_indices = tf.shape(two_away)[0]
+        # rank_one_hot = tf.tensor_scatter_nd_add(
+        #     rank_one_hot,
+        #     two_away,
+        #     tf.ones([num_indices], dtype=tf.float32) * 0.0125,
+        # )
         return rank_one_hot
 
     def _compute_relative_rank_loss(
