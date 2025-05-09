@@ -164,22 +164,22 @@ class SampleLearner(tf.keras.Model):
         embeddings = self.project_ff(embeddings)
 
         if not self.sample_only:
-            embeddings, padded_attention_mask = self.batch_token(
-                [embeddings, attention_mask, self.cls_token]
-            )
+            # embeddings, padded_attention_mask = self.batch_token(
+            #     [embeddings, attention_mask, self.cls_token]
+            # )
             embeddings = self.encoder(
-                embeddings, mask=padded_attention_mask, training=training
+                embeddings, mask=attention_mask, training=training
             )
 
             # embeddings = self.class_encoder(
-            #     embeddings, mask=padded_attention_mask, training=training
+            #     embeddings, mask=attention_mask, training=training
             # )
-            members = embeddings[:, 1:]
+            members = embeddings  # [:, 1:]
             # encoding = embeddings[:, 0]
             # members = embeddings
             encoding = tf.reduce_sum(
-                embeddings * padded_attention_mask, axis=1
-            ) / tf.reduce_sum(padded_attention_mask, axis=1)
+                embeddings * attention_mask, axis=1
+            ) / tf.reduce_sum(attention_mask, axis=1)
         else:
             embeddings = self.encoder(
                 embeddings, mask=attention_mask, training=training
@@ -293,11 +293,11 @@ class SampleLearner(tf.keras.Model):
 
         tie_ranks = rank_labels * tie_mask
         # tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
-        # rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
+        rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
         # # tf.print(rank_labels, counts)
-        rank_labels = tf.math.ceil(
-            tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
-        )
+        # rank_labels = tf.math.ceil(
+        #     tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
+        # )
         # rank_labels = tf.where(counts > 0, rank_labels, self.rank_dim - 1)
         rank_labels = tf.cast(rank_labels, dtype=tf.int32)
         return rank_labels
