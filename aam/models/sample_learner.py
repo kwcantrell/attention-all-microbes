@@ -225,7 +225,7 @@ class SampleLearner(tf.keras.Model):
         total_ranks = tf.shape(rank_indices)[0]
 
         prev_range = tf.range(-5, limit=0, delta=1, dtype=tf.int64)
-        noise = 0.05 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
+        noise = 0.1 * tf.pow(2.0, tf.cast(prev_range, dtype=tf.float32))
         noise = tf.repeat(tf.expand_dims(noise, axis=0), total_ranks, axis=0)
         noise = tf.reshape(noise, shape=[-1])
 
@@ -293,11 +293,11 @@ class SampleLearner(tf.keras.Model):
 
         tie_ranks = rank_labels * tie_mask
         # tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
-        rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
+        # rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
         # # tf.print(rank_labels, counts)
-        # rank_labels = tf.math.ceil(
-        #     tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
-        # )
+        rank_labels = tf.math.ceil(
+            tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
+        )
         # rank_labels = tf.where(counts > 0, rank_labels, self.rank_dim - 1)
         rank_labels = tf.cast(rank_labels, dtype=tf.int32)
         return rank_labels
@@ -305,13 +305,16 @@ class SampleLearner(tf.keras.Model):
     def predict_step(self, data):
         x, y = data
         _, attention_mask, counts = x
+        membership_labels = counts > 0
         output, _, rank_pred = self(x, training=False)
-
+        valid_mask = tf.expand_dims(
+            tf.cast(membership_labels, dtype=tf.float32), axis=-1
+        )
         if self.sample_only:
             rank_labels = self._create_rank_labels(counts)
             _, rank_diff, predicted_ranks, mask = (
                 self._compute_relative_rank_loss(
-                    rank_labels, rank_pred, attention_mask
+                    rank_labels, rank_pred, attention_mask * valid_mask
                 )
             )
             return (
@@ -347,13 +350,16 @@ class SampleLearner(tf.keras.Model):
         membership_labels = counts > 0
 
         rank_labels = self._create_rank_labels(counts)
+        valid_mask = tf.expand_dims(
+            tf.cast(membership_labels, dtype=tf.float32), axis=-1
+        )
         with tf.GradientTape() as tape:
             output, mem_preds, ranks_pred = self(x, training=True)
             mem_loss = self._compute_membership_loss(
                 membership_labels, mem_preds, attention_mask
             )
             rank_loss, _, _, _ = self._compute_relative_rank_loss(
-                rank_labels, ranks_pred, attention_mask
+                rank_labels, ranks_pred, attention_mask * valid_mask
             )
             loss = mem_loss + rank_loss
             if not self.sample_only:
@@ -372,11 +378,14 @@ class SampleLearner(tf.keras.Model):
 
         embeddings, attention_mask, counts = x
         membership_labels = counts > 0
+        valid_mask = tf.expand_dims(
+            tf.cast(membership_labels, dtype=tf.float32), axis=-1
+        )
         rank_labels = self._create_rank_labels(counts)
 
         output, mem_preds, ranks_pred = self(x, training=False)
         mem_loss = self._compute_membership_loss(
-            membership_labels, mem_preds, attention_mask
+            membership_labels, mem_preds, attention_mask * valid_mask
         )
         rank_loss, _, _, _ = self._compute_relative_rank_loss(
             rank_labels, ranks_pred, attention_mask
