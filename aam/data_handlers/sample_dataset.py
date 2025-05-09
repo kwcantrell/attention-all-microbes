@@ -113,6 +113,7 @@ class SampleDataset(tf.keras.utils.Sequence):
         self.table = self.sequence_embeddings.align_table(self.table)
         self.asv_indices = np.arange(self.table.shape[0], dtype=np.int32)
         count_weights = self.table.pa(inplace=False).sum(axis="observation")
+        count_weights = (count_weights > 0).astype(np.float32)
         count_weights = count_weights / count_weights.sum()
         self.count_weights = count_weights / count_weights.sum()
         self.sorted_count_indices = np.argsort(count_weights)[::-1]

@@ -275,9 +275,7 @@ class SampleLearner(tf.keras.Model):
         # )
         return rank_one_hot
 
-    def _compute_relative_rank_loss(
-        self, rank_label, rank_preds, mask, mae=True
-    ):
+    def _compute_relative_rank_loss(self, rank_label, rank_preds, mask):
         mask = tf.ensure_shape(mask, [None, None, 1])
         rank_one_hot = tf.one_hot(
             rank_label, self.rank_dim, on_value=1.0, off_value=0.0
@@ -296,8 +294,7 @@ class SampleLearner(tf.keras.Model):
         # rank_loss = rank_loss * rank_weight
         rank_loss = self._apply_loss_mask(rank_loss, mask)
 
-        if mae:
-            rank_diff = tf.abs(rank_diff)
+        rank_diff = tf.abs(rank_diff)
         mask = tf.squeeze(mask, axis=-1) > 0
         self.rank_metric.update_state(rank_diff[mask])
         mask = tf.cast(mask, dtype=tf.float32)
@@ -341,10 +338,7 @@ class SampleLearner(tf.keras.Model):
 
             _, rank_diff, predicted_ranks, mask = (
                 self._compute_relative_rank_loss(
-                    rank_labels,
-                    rank_pred,
-                    attention_mask,
-                    mae=False,
+                    rank_labels, rank_pred, attention_mask
                 )
             )
             return (
