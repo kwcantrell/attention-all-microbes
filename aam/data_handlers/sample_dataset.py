@@ -272,11 +272,8 @@ class SampleDataset(tf.keras.utils.Sequence):
                 random_mask = random_mask > 0.5
                 random_indices = _sample_indices[~random_mask]
                 _sample_indices = _sample_indices[random_mask]
-                non_zero_mask = full_sample_counts[_sample_indices] > 0
                 random_insert = self.random_state.choice(
-                    np.arange(len(_sample_indices), dtype=np.int32)[
-                        non_zero_mask
-                    ],
+                    np.arange(len(_sample_indices), dtype=np.int32),
                     size=len(random_indices),
                 )
                 _sample_indices = np.insert(
