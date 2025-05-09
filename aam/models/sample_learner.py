@@ -385,10 +385,10 @@ class SampleLearner(tf.keras.Model):
 
         output, mem_preds, ranks_pred = self(x, training=False)
         mem_loss = self._compute_membership_loss(
-            membership_labels, mem_preds, attention_mask * valid_mask
+            membership_labels, mem_preds, attention_mask
         )
         rank_loss, _, _, _ = self._compute_relative_rank_loss(
-            rank_labels, ranks_pred, attention_mask
+            rank_labels, ranks_pred, attention_mask * valid_mask
         )
         loss = mem_loss + rank_loss
         if not self.sample_only:
