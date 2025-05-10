@@ -161,16 +161,14 @@ class SampleDataset(tf.keras.utils.Sequence):
         return self._batch_data(self.sample_ids[start:end])
 
     def _gen_random_set(self, exclude, nsamples):
-        vs = self.random_state.choice(
-            self.asv_indices, nsamples, p=self.count_weights, replace=False
-        )
+        vs = self.random_state.choice(self.asv_indices, nsamples, replace=False)
         return np.setdiff1d(vs, exclude)
 
     def _batch_data(self, batch_sample_ids):
         embeddings = []
         attention_masks = []
         true_memberships = []
-        for i, sample_id in enumerate(batch_sample_ids):
+        for sample_id in batch_sample_ids:
             full_sample_counts = self.table.data(sample_id, dense=True)
             rarefied_sample_data = self.rarefied_table.data(
                 sample_id, dense=False
@@ -181,54 +179,8 @@ class SampleDataset(tf.keras.utils.Sequence):
             )
 
             count_mask = sample_counts > 0
-            obs_idx = obs_idx[count_mask]
             _sample_indices = obs_idx[count_mask]
             _sample_counts = sample_counts[count_mask]
-            # total_true_members = min(len(_sample_counts), self.max_member_taxa)
-            # base_indices = np.arange(len(_sample_indices))
-            # base_indices = self.random_state.choice(
-            #     base_indices,
-            #     size=total_true_members,
-            #     p=_sample_counts / _sample_counts.sum(),
-            #     replace=False,
-            # )
-            # if self.shuffle_ranks:
-            #     num_sorted = max(1, int(total_true_members * 0.90))
-            # else:
-            #     num_sorted = total_true_members
-            # self.random_state.shuffle(base_indices)
-
-            # sort = base_indices[:num_sorted]
-            # sort = sort[np.argsort(_sample_counts[sort])]
-            # sort = sort[::-1]
-
-            # if self.shuffle_ranks:
-            #     randomize = base_indices[num_sorted:total_true_members]
-            #     random_insert = self.random_state.choice(
-            #         np.arange(len(sort), dtype=np.int32),
-            #         size=len(randomize),
-            #         replace=True,
-            #     )
-            #     true_indices = np.insert(sort, random_insert, randomize)
-            # else:
-            #     true_indices = sort
-            # _sample_indices = _sample_indices[true_indices]
-            # _sample_counts = _sample_counts[true_indices]
-
-            # if self.insert_random_sequences:
-            #     random_indices = self._gen_random_set(
-            #         obs_idx, max(1, int(total_true_members * 0.15))
-            #     )
-            #     random_insert = self.random_state.choice(
-            #         np.arange(len(true_indices), dtype=np.int32),
-            #         size=len(random_indices),
-            #         # p=_sample_counts / _sample_counts.sum(),
-            #         replace=False,
-            #     )
-            #     _sample_indices = np.insert(
-            #         _sample_indices, random_insert, random_indices
-            #     )
-            #     _sample_counts = np.insert(_sample_counts, random_insert, 0)
 
             total_true_members = min(len(_sample_indices), self.max_member_taxa)
             if total_true_members < len(_sample_indices):
@@ -275,6 +227,7 @@ class SampleDataset(tf.keras.utils.Sequence):
                 random_insert = self.random_state.choice(
                     np.arange(len(_sample_indices), dtype=np.int32),
                     size=len(random_indices),
+                    replace=False,
                 )
                 _sample_indices = np.insert(
                     _sample_indices, random_insert, random_indices
