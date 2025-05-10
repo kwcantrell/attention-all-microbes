@@ -258,7 +258,7 @@ class SampleLearner(tf.keras.Model):
         rank_one_hot = tf.one_hot(
             rank_label, self.rank_dim, on_value=1.0, off_value=0.0
         )
-        rank_one_hot = self._add_rank_noise(rank_one_hot)
+        # rank_one_hot = self._add_rank_noise(rank_one_hot)
         predicted_rank = tf.cast(
             tf.argmax(rank_preds, axis=-1), dtype=tf.float32
         )
@@ -293,11 +293,11 @@ class SampleLearner(tf.keras.Model):
 
         tie_ranks = rank_labels * tie_mask
         # tie_ranks = tf.where(tie_mask > 0, tie_ranks, self.rank_dim)
-        # rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
+        rank_labels = tf.math.reduce_max(tie_ranks, axis=1)
         # # tf.print(rank_labels, counts)
-        rank_labels = tf.math.ceil(
-            tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
-        )
+        # rank_labels = tf.math.ceil(
+        #     tf.reduce_sum(tie_ranks, axis=1) / tf.reduce_sum(tie_mask, axis=1)
+        # )
         # rank_labels = tf.where(counts > 0, rank_labels, self.rank_dim - 1)
         rank_labels = tf.cast(rank_labels, dtype=tf.int32)
         return rank_labels
