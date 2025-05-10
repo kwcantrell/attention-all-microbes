@@ -38,7 +38,9 @@ def add_lock(func):
             return func(obj, *args, **kwargs)
 
         if getattr(obj, lock):
-            raise Exception(f"Attempting to modify locked property '{func.__name__}'")
+            raise Exception(
+                f"Attempting to modify locked property '{func.__name__}'"
+            )
 
         setattr(obj, lock, True)
         return func(obj, *args, **kwargs)
@@ -125,11 +127,16 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
         sparse_indices, embeddings = [], []
         for batch_i, s_id in enumerate(batch_sample_ids):
             sample_data = self.rarefied_table.data(s_id, dense=False).tocoo()
-            (obs_indices, _), sample_counts = sample_data.coords, sample_data.data
+            (obs_indices, _), sample_counts = (
+                sample_data.coords,
+                sample_data.data,
+            )
 
             count_mask = sample_counts > 0
             obs_indices = obs_indices[count_mask]
-            sparse_indices.append([[batch_i, i] for i in range(len(obs_indices))])
+            sparse_indices.append(
+                [[batch_i, i] for i in range(len(obs_indices))]
+            )
             embeddings.append(self.sequence_embeddings[obs_indices])
 
         sparse_indices = np.vstack(sparse_indices, dtype=np.int32)
@@ -162,13 +169,12 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
     def rarefied_table(self, rarefied_table: Table):
         print("computing weighted unifrac distances...")
         self.distances = weighted_normalized(rarefied_table, self.tree)
-
-        # print("finishing processing rarefied table...")
-        # self._metadata = self._metadata.loc[rarefied_table.ids()]
         self.sample_ids = rarefied_table.ids()
         self.sample_indices = np.arange(len(self.sample_ids))
 
-        self._rarefied_table = self.sequence_embeddings.align_table(rarefied_table)
+        self._rarefied_table = self.sequence_embeddings.align_table(
+            rarefied_table
+        )
 
         print("creating encoder target...")
 
@@ -183,7 +189,9 @@ class UnifracGeneratorV2(tf.keras.utils.Sequence):
             return
 
         if isinstance(metadata, str):
-            metadata = pd.read_csv(metadata, sep="\t", index_col=0, dtype={0: str})
+            metadata = pd.read_csv(
+                metadata, sep="\t", index_col=0, dtype={0: str}
+            )
 
         if self.metadata_column not in metadata.columns:
             raise Exception(f"Invalid metadata column {self.metadata_column}")
@@ -217,7 +225,9 @@ if __name__ == "__main__":
     )
     model = UnifracEncoderV2()
     sparse_indicies = tf.TensorShape([None, 2])
-    embeddings = tf.TensorShape([None, ug.sequence_embeddings.embeddings.shape[-1]])
+    embeddings = tf.TensorShape(
+        [None, ug.sequence_embeddings.embeddings.shape[-1]]
+    )
     model.build([sparse_indicies, embeddings])
     x, y = ug[0]
     e1 = model(x)

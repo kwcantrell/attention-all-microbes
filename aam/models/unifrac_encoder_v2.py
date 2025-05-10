@@ -5,53 +5,47 @@ from typing import Union
 import tensorflow as tf
 
 from aam.losses import PairwiseLoss
+from aam.models.feedforward import FeedForward
 from aam.models.transformers import TransformerEncoder
 
 
 @tf.keras.saving.register_keras_serializable(package="UnifracEncoderV2")
 class UnifracEncoderV2(tf.keras.Model):
-    def __init__(
-        self,
-        num_encoder_layers=12,
-        num_filters=32,
-        kernel_size=3,
-        conv_blocks_per_layer=8,
-        **kwargs,
-    ):
+    def __init__(self, **kwargs):
         super(UnifracEncoderV2, self).__init__(**kwargs)
         self.unifrac_loss = PairwiseLoss(use_mean_pairs=False)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-        print("Num layers:", num_encoder_layers)
-        print("blocks per layers:", conv_blocks_per_layer)
-        self.num_encoder_layers = num_encoder_layers
-        self.num_filters = num_filters
-        self.kernel_size = kernel_size
-        self.conv_blocks_per_layer = conv_blocks_per_layer
 
-    def build(self, input_shape):
-        if self.built:
-            print("UnifracEncoderV2 is already built")
-            return
-        sparse_indices, embeddings = input_shape
         self.encoder = TransformerEncoder(
             num_layers=8,
             num_attention_heads=4,
             intermediate_size=1024,
             use_linear_bias=True,
+            name="unifrac_encoder",
         )
-        self.ff = tf.keras.Sequential(
+
+    def build_graph(self, input_shape):
+        """Builds graph
+
+        Args:
+            input_shape (tuple): A shape tuple (integers), not including the batch size.
+        """
+        if input_shape is None:
+            input_shape = self._build_input_shape
+        x = tf.keras.layers.Input(shape=(input_shape))
+        return tf.keras.Model(inputs=[x], outputs=self.call(x))
+
+    def build(self, input_shape):
+        embedding_dim = input_shape[-1]
+        self.asv_ff = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(embeddings[-1], activation="gelu"),
-            ]
+                FeedForward(),
+                tf.keras.layers.Dense(embedding_dim, dtype=tf.float32),
+            ],
+            name="unifrac_ff",
         )
-        self._rezero = self.add_weight(
-            name="rezero",
-            dtype=tf.float32,
-            initializer=tf.keras.initializers.Zeros(),
-            trainable=True,
-        )
-        self.output_activation = tf.keras.layers.Activation("linear", dtype=tf.float32)
         super(UnifracEncoderV2, self).build(input_shape)
+        self.built = True
 
     def predict_step(
         self,
@@ -128,12 +122,16 @@ class UnifracEncoderV2(tf.keras.Model):
         dense_embeddings, mask = self._get_dense_embeddings(inputs)
         dense_embeddings = tf.cast(dense_embeddings, dtype=self.compute_dtype)
 
-        encoder_output = self.encoder(dense_embeddings, mask=mask, training=training)
-        ff_input = tf.reduce_sum(encoder_output, axis=1) / tf.reduce_sum(mask, axis=1)
-
-        output = ff_input + tf.cast(self._rezero, dtype=self.compute_dtype) * self.ff(
-            ff_input
+        encoder_output = self.encoder(
+            dense_embeddings, mask=mask, training=training
         )
+        ff_input = tf.reduce_sum(encoder_output, axis=1) / tf.reduce_sum(
+            mask, axis=1
+        )
+
+        output = ff_input + tf.cast(
+            self._rezero, dtype=self.compute_dtype
+        ) * self.ff(ff_input)
 
         print("UnifracEncoderV2 exit...")
         return self.output_activation(output)

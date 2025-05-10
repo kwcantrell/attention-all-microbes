@@ -163,31 +163,15 @@ class SampleLearner(tf.keras.Model):
 
         embeddings = self.project_ff(embeddings)
 
-        if not self.sample_only:
-            # embeddings, padded_attention_mask = self.batch_token(
-            #     [embeddings, attention_mask, self.cls_token]
-            # )
-            embeddings = self.encoder(
-                embeddings, mask=attention_mask, training=training
-            )
+        embeddings, padded_attention_mask = self.batch_token(
+            [embeddings, attention_mask, self.cls_token]
+        )
+        embeddings = self.encoder(
+            embeddings, mask=padded_attention_mask, training=training
+        )
 
-            # embeddings = self.class_encoder(
-            #     embeddings, mask=attention_mask, training=training
-            # )
-            members = embeddings  # [:, 1:]
-            # encoding = embeddings[:, 0]
-            # members = embeddings
-            encoding = tf.reduce_sum(
-                embeddings * attention_mask, axis=1
-            ) / tf.reduce_sum(attention_mask, axis=1)
-        else:
-            embeddings = self.encoder(
-                embeddings, mask=attention_mask, training=training
-            )
-            members = embeddings
-            encoding = tf.reduce_sum(
-                embeddings * attention_mask, axis=1
-            ) / tf.reduce_sum(attention_mask, axis=1)
+        members = embeddings[:, 1:]
+        encoding = embeddings[:, 0]
 
         mem_preds = tf.squeeze(
             self.membership_ff(members, training=training), axis=-1
